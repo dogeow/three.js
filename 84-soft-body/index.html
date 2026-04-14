@@ -54,7 +54,7 @@
 
     // ─── Scene ────────────────────────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -102,7 +102,7 @@
     // ─── Ground ──────────────────────────────────────────────────────────────
     const groundGeo = new THREE.PlaneGeometry(30, 30);
     const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x151520,
+      color: 0x1a1a28,
       roughness: 0.85,
       metalness: 0.15
     });
@@ -112,8 +112,10 @@
     scene.add(ground);
 
     // Grid lines on ground
-    const gridHelper = new THREE.GridHelper(30, 30, 0x333355, 0x222240);
+    const gridHelper = new THREE.GridHelper(30, 6, 0x333355, 0x1a1a30);
     gridHelper.position.y = 0.001;
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.4;
     scene.add(gridHelper);
 
     // ─── Obstacles ───────────────────────────────────────────────────────────
@@ -270,7 +272,7 @@
       color: 0x88ddff,
       wireframe: true,
       transparent: true,
-      opacity: 0.08
+      opacity: 0.04
     });
     const wireMesh = new THREE.Mesh(wireGeo, wireMat);
     scene.add(wireMesh);

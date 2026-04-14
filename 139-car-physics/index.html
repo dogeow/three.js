@@ -471,14 +471,14 @@
 
       // --- Steering ---
       const speedFactor = Math.min(Math.abs(velocity) / 5, 1);
-      const targetSteer = steerInput * maxSteerAngle * speedFactor;
+      const targetSteer = -steerInput * maxSteerAngle * speedFactor;
       steerAngle += (targetSteer - steerAngle) * steerSpeed * dt * 8;
 
       // --- Heading (Ackermann-ish) ---
       if (Math.abs(velocity) > 0.05) {
         const turnRadius = wheelBase / (Math.tan(Math.abs(steerAngle)) + 0.0001);
         const angularVel = velocity / turnRadius * Math.sign(steerAngle);
-        heading += angularVel * dt;
+        heading -= angularVel * dt;
       }
 
       // --- Move car ---

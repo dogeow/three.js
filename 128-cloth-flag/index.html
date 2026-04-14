@@ -390,20 +390,17 @@
 
       // Set particle positions to geometry
       const pos = clothGeo.attributes.position;
-      const uvs = clothGeo.attributes.uv;
       for (let j = 0; j <= segH; j++) {
         for (let i = 0; i <= segW; i++) {
           const idx = j * (segW + 1) + i;
           pos.setXYZ(idx, particles[idx].pos.x, particles[idx].pos.y, particles[idx].pos.z);
-          // Flip V so top of flag (j=0) maps to v=1 (top of texture)
-          uvs.setXY(idx, i / segW, 1.0 - j / segH);
         }
       }
       pos.needsUpdate = true;
-      uvs.needsUpdate = true;
       clothGeo.computeVertexNormals();
 
       const tex = createFlagTexture();
+      tex.flipY = false;
       const mat = new THREE.MeshStandardMaterial({
         map: tex,
         side: THREE.DoubleSide,
