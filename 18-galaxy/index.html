@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>18 · 程序化银河</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
+    background: rgba(0,0,0,.5); padding: 8px 12px; border-radius: 6px;
+    max-width: 320px;
+  }
+  .ctrl {
+    position: fixed; top: 12px; right: 12px;
+    color: #fff; font: 12px monospace;
+    background: rgba(0,0,0,.5); padding: 10px; border-radius: 6px;
+  }
+  .ctrl label { display: block; margin: 4px 0; }
+  input[type=range] { width: 160px; }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：程序化粒子艺术 + 螺旋公式</b><br>
+  · 螺旋臂：半径 r 加上角度 θ = r·k 的偏转<br>
+  · 随机扰动 + 内核→外缘渐变色 = 星云质感
+</div>
+<div class="ctrl">
+  <label>粒子数 <input id="count" type="range" min="5000" max="200000" step="5000" value="80000"></label>
+  <label>螺旋臂数 <input id="arms" type="range" min="2" max="8" step="1" value="4"></label>
+  <label>扭曲程度 <input id="spin" type="range" min="0" max="5" step="0.1" value="1.5"></label>
+  <label>随机度 <input id="rand" type="range" min="0" max="1" step="0.02" value="0.4"></label>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x000005)
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200)
+camera.position.set(0, 4, 8)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// ============ 银河生成 ============
+// 两种颜色混合：靠近中心暖色，外围冷色
+const innerColor = new THREE.Color(0xff6633)
+const outerColor = new THREE.Color(0x1b3984)
+
+let points = null
+let currentMaterial = null
+
+function generateGalaxy({ count, arms, spin, randomness }) {
+  // 清掉旧的
+  if (points) {
+    points.geometry.dispose()
+    points.material.dispose()
+    scene.remove(points)
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  const positions = new Float32Array(count * 3)
+  const colors = new Float32Array(count * 3)
+
+  const radius = 5
+  const color = new THREE.Color()
+
+  for (let i = 0; i < count; i++) {
+    // 每个粒子随机一个半径（靠中心密集：用 pow 压缩分布）
+    const r = Math.pow(Math.random(), 2) * radius
+
+    // 决定它在哪条旋臂上
+    const armAngle = ((i % arms) / arms) * Math.PI * 2
+    // 半径越大，扭曲越多 —— 形成螺旋
+    const spinAngle = r * spin
+
+    // 在理想螺旋位置附近做高斯式扰动
+    const rx = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * randomness * r
+    const ry = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * randomness * r * 0.3
+    const rz = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * randomness * r
+
+    positions[i * 3]     = Math.cos(armAngle + spinAngle) * r + rx
+    positions[i * 3 + 1] = ry
+    positions[i * 3 + 2] = Math.sin(armAngle + spinAngle) * r + rz
+
+    // 颜色：内核 -> 外缘渐变
+    color.copy(innerColor).lerp(outerColor, r / radius)
+    colors[i * 3]     = color.r
+    colors[i * 3 + 1] = color.g
+    colors[i * 3 + 2] = color.b
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+
+  const material = new THREE.PointsMaterial({
+    size: 0.03,
+    sizeAttenuation: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending, // 加法混合 = 星光互相叠加更亮
+    vertexColors: true
+  })
+  currentMaterial = material
+
+  points = new THREE.Points(geometry, material)
+  scene.add(points)
+}
+
+// ============ UI ============
+const $count = document.getElementById('count')
+const $arms = document.getElementById('arms')
+const $spin = document.getElementById('spin')
+const $rand = document.getElementById('rand')
+
+function regen() {
+  generateGalaxy({
+    count: +$count.value,
+    arms: +$arms.value,
+    spin: +$spin.value,
+    randomness: +$rand.value
+  })
+}
+;[$count, $arms, $spin, $rand].forEach(el => el.addEventListener('input', regen))
+regen()
+
+// ============ 渲染循环 ============
+const clock = new THREE.Clock()
+function animate() {
+  requestAnimationFrame(animate)
+  if (points) points.rotation.y = clock.getElapsedTime() * 0.05 // 银河自转
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>19 · OutlinePass 选中描边</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #0f172a; cursor: default; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
+    background: rgba(0,0,0,.5); padding: 8px 12px; border-radius: 6px;
+    max-width: 340px;
+  }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：OutlinePass 选中描边</b><br>
+  · 鼠标悬停 → 蓝色描边<br>
+  · 点击 → 橙色锁定描边（再点取消）<br>
+  · 常见于 3D 编辑器、Unity Inspector 式选中效果
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0f172a)
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(6, 6, 10)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.6))
+const dir = new THREE.DirectionalLight(0xffffff, 1)
+dir.position.set(5, 10, 5)
+scene.add(dir)
+
+// 一堆可选物体
+const selectables = []
+for (let i = 0; i < 12; i++) {
+  const geo = [
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.SphereGeometry(0.6, 32, 32),
+    new THREE.ConeGeometry(0.6, 1.2, 32),
+    new THREE.TorusKnotGeometry(0.4, 0.15, 64, 16)
+  ][i % 4]
+  const mesh = new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color().setHSL(i / 12, 0.5, 0.6),
+      metalness: 0.3,
+      roughness: 0.4
+    })
+  )
+  mesh.position.set(
+    (Math.random() - 0.5) * 8,
+    (Math.random() - 0.5) * 4,
+    (Math.random() - 0.5) * 8
+  )
+  scene.add(mesh)
+  selectables.push(mesh)
+}
+
+// ============ 两个独立的 OutlinePass ============
+// 悬停用蓝色，锁定用橙色 —— 两套独立参数
+const composer = new EffectComposer(renderer)
+composer.setPixelRatio(devicePixelRatio)
+composer.setSize(innerWidth, innerHeight)
+composer.addPass(new RenderPass(scene, camera))
+
+const hoverPass = new OutlinePass(new THREE.Vector2(innerWidth, innerHeight), scene, camera)
+hoverPass.edgeStrength = 3
+hoverPass.edgeThickness = 1
+hoverPass.visibleEdgeColor.set('#38bdf8')     // 可见边
+hoverPass.hiddenEdgeColor.set('#1e40af')      // 被其他物体遮住时的边色
+composer.addPass(hoverPass)
+
+const selectPass = new OutlinePass(new THREE.Vector2(innerWidth, innerHeight), scene, camera)
+selectPass.edgeStrength = 6
+selectPass.edgeThickness = 2
+selectPass.pulsePeriod = 2 // 脉冲动画（秒），营造呼吸高亮
+selectPass.visibleEdgeColor.set('#f97316')
+selectPass.hiddenEdgeColor.set('#7c2d12')
+composer.addPass(selectPass)
+
+composer.addPass(new OutputPass())
+
+// ============ 拾取 ============
+const raycaster = new THREE.Raycaster()
+const mouse = new THREE.Vector2()
+let selected = [] // 当前锁定的
+
+addEventListener('pointermove', e => {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+})
+
+addEventListener('click', e => {
+  // 避免 OrbitControls 拖拽后误触发；这里用简单判断，实战可加距离阈值
+  if (e.target !== renderer.domElement) return
+  raycaster.setFromCamera(mouse, camera)
+  const hit = raycaster.intersectObjects(selectables)[0]
+  if (!hit) return
+  const obj = hit.object
+  if (selected.includes(obj)) {
+    selected = selected.filter(o => o !== obj)
+  } else {
+    selected.push(obj)
+  }
+  selectPass.selectedObjects = selected
+})
+
+// ============ 渲染循环 ============
+function animate() {
+  requestAnimationFrame(animate)
+
+  // 每帧更新悬停描边对象
+  raycaster.setFromCamera(mouse, camera)
+  const hit = raycaster.intersectObjects(selectables)[0]
+  hoverPass.selectedObjects = hit ? [hit.object] : []
+  document.body.style.cursor = hit ? 'pointer' : 'default'
+
+  // 微小自转让场景活起来
+  selectables.forEach((m, i) => { m.rotation.y += 0.002 + i * 0.0001 })
+
+  controls.update()
+  composer.render()
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  composer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>
