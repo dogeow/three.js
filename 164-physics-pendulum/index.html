@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>双摆混沌 — Three.js</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+
+    .tip {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.75);
+      border: 1px solid #ffc107;
+      color: #ffc107;
+      padding: 8px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      pointer-events: none;
+      z-index: 100;
+      white-space: nowrap;
+    }
+
+    #info {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.4);
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div class="tip">双摆混沌——非线性动力学，初始条件的微小变化导致完全不同的轨迹</div>
+  <div id="info">拖拽鼠标旋转 · 滚轮缩放</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+    // ─── Scene Setup ──────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050510);
+
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+    camera.position.set(0, 2, 12);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // ─── Lights ────────────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(5, 10, 7);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+    const rimLight = new THREE.PointLight(0x4488ff, 1, 30);
+    rimLight.position.set(-5, 5, -5);
+    scene.add(rimLight);
+
+    // ─── Pivot / Ceiling ───────────────────────────────────────────────────────
+    const pivotMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8, roughness: 0.2 })
+    );
+    pivotMesh.position.set(0, 3, 0);
+    scene.add(pivotMesh);
+
+    // Small ring at pivot
+    const ringGeo = new THREE.TorusGeometry(0.25, 0.04, 8, 24);
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.copy(pivotMesh.position);
+    ring.rotation.x = Math.PI / 2;
+    scene.add(ring);
+
+    // ─── Pendulum Params ───────────────────────────────────────────────────────
+    const params = {
+      gravity: 9.8,
+      damping: 0.0005,
+      theta1: Math.PI / 3,
+      theta2: Math.PI / 2,
+      L1: 2.2,
+      L2: 2.0,
+      m1: 1.0,
+      m2: 1.0,
+      showTrail: true,
+      trailColor: '#ff4400',
+      reset: () => resetPendulum(),
+    };
+
+    // State variables (Verlet integration)
+    let theta1 = params.theta1;
+    let theta2 = params.theta2;
+    let omega1 = 0;
+    let omega2 = 0;
+    let prevTheta1 = theta1;
+    let prevTheta2 = theta2;
+
+    const dt = 0.016;
+
+    // ─── Physics (Runge-Kutta 4 for double pendulum) ──────────────────────────
+    function derivatives(th1, th2, w1, w2) {
+      const { m1, m2, L1, L2, gravity } = params;
+      const delta = th2 - th1;
+      const sinD = Math.sin(delta);
+      const cosD = Math.cos(delta);
+      const denom = m1 + m2 * (1 - cosD * cosD);
+
+      const a1 = (
+        m2 * L1 * w1 * w1 * sinD * cosD +
+        m2 * gravity * Math.sin(th2) * cosD +
+        m2 * L2 * w2 * w2 * sinD -
+        (m1 + m2) * gravity * Math.sin(th1)
+      ) / (L1 * denom);
+
+      const a2 = (
+        -m2 * L2 * w2 * w2 * sinD * cosD +
+        (m1 + m2) * (gravity * Math.sin(th1) * cosD - L1 * w1 * w1 * sinD - gravity * Math.sin(th2))
+      ) / (L2 * denom);
+
+      return [w1 + dt * a1, w2 + dt * a2];
+    }
+
+    function stepPhysics() {
+      const { gravity, damping, L1, L2, m1, m2 } = params;
+
+      // RK4 integration
+      const k1 = derivatives(theta1, theta2, omega1, omega2);
+      const k2 = derivatives(theta1 + dt*k1[0]/2, theta2 + dt*k1[1]/2, omega1 + dt*k1[0]/2, omega2 + dt*k1[1]/2);
+      const k3 = derivatives(theta1 + dt*k2[0]/2, theta2 + dt*k2[1]/2, omega1 + dt*k2[0]/2, omega2 + dt*k2[1]/2);
+      const k4 = derivatives(theta1 + dt*k3[0], theta2 + dt*k3[1], omega1 + dt*k3[0], omega2 + dt*k3[1]);
+
+      theta1 += dt * (k1[0] + 2*k2[0] + 2*k3[0] + k4[0]) / 6;
+      theta2 += dt * (k1[1] + 2*k2[1] + 2*k3[1] + k4[1]) / 6;
+
+      // Apply damping
+      omega1 *= (1 - damping);
+      omega2 *= (1 - damping);
+    }
+
+    function getPositions() {
+      const { L1, L2 } = params;
+      const pivot = pivotMesh.position;
+      const x1 = pivot.x + L1 * Math.sin(theta1);
+      const y1 = pivot.y - L1 * Math.cos(theta1);
+      const x2 = x1 + L2 * Math.sin(theta2);
+      const y2 = y1 - L2 * Math.cos(theta2);
+      return { pivot, x1, y1, x2, y2 };
+    }
+
+    function resetPendulum() {
+      theta1 = params.theta1;
+      theta2 = params.theta2;
+      omega1 = 0;
+      omega2 = 0;
+      clearTrail();
+    }
+
+    // ─── 3D Meshes ─────────────────────────────────────────────────────────────
+    // Rod 1
+    const rod1Geo = new THREE.CylinderGeometry(0.055, 0.055, params.L1, 12);
+    const rodMat = new THREE.MeshStandardMaterial({
+      color: 0xb0b0b0, metalness: 0.85, roughness: 0.15
+    });
+    const rod1Mesh = new THREE.Mesh(rod1Geo, rodMat);
+    rod1Mesh.castShadow = true;
+    scene.add(rod1Mesh);
+
+    // Ball 1
+    const ball1Geo = new THREE.SphereGeometry(0.22, 24, 24);
+    const ball1Mat = new THREE.MeshStandardMaterial({
+      color: 0xee5535, metalness: 0.3, roughness: 0.4,
+      emissive: 0x331100, emissiveIntensity: 0.5
+    });
+    const ball1Mesh = new THREE.Mesh(ball1Geo, ball1Mat);
+    ball1Mesh.castShadow = true;
+    scene.add(ball1Mesh);
+
+    // Joint sphere
+    const jointGeo = new THREE.SphereGeometry(0.12, 16, 16);
+    const jointMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.9, roughness: 0.1 });
+    const jointMesh = new THREE.Mesh(jointGeo, jointMat);
+    scene.add(jointMesh);
+
+    // Rod 2
+    const rod2Geo = new THREE.CylinderGeometry(0.045, 0.045, params.L2, 12);
+    const rodMat2 = new THREE.MeshStandardMaterial({
+      color: 0xb0b0b0, metalness: 0.85, roughness: 0.15
+    });
+    const rod2Mesh = new THREE.Mesh(rod2Geo, rodMat2);
+    rod2Mesh.castShadow = true;
+    scene.add(rod2Mesh);
+
+    // Ball 2
+    const ball2Geo = new THREE.SphereGeometry(0.20, 24, 24);
+    const ball2Mat = new THREE.MeshStandardMaterial({
+      color: 0xff8c00, metalness: 0.3, roughness: 0.4,
+      emissive: 0x332200, emissiveIntensity: 0.5
+    });
+    const ball2Mesh = new THREE.Mesh(ball2Geo, ball2Mat);
+    ball2Mesh.castShadow = true;
+    scene.add(ball2Mesh);
+
+    // ─── Trail ─────────────────────────────────────────────────────────────────
+    const MAX_TRAIL = 1200;
+    const trailPositions = new Float32Array(MAX_TRAIL * 3);
+    const trailColors = new Float32Array(MAX_TRAIL * 3);
+    let trailCount = 0;
+
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    trailGeo.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
+
+    const trailMat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+      linewidth: 1,
+    });
+    const trailLine = new THREE.Line(trailGeo, trailMat);
+    trailLine.frustumCulled = false;
+    scene.add(trailLine);
+
+    function updateTrail(pos) {
+      if (!params.showTrail) return;
+
+      // Shift old positions
+      for (let i = MAX_TRAIL - 1; i > 0; i--) {
+        trailPositions[i * 3]     = trailPositions[(i - 1) * 3];
+        trailPositions[i * 3 + 1] = trailPositions[(i - 1) * 3 + 1];
+        trailPositions[i * 3 + 2] = trailPositions[(i - 1) * 3 + 2];
+      }
+      trailPositions[0] = pos.x;
+      trailPositions[1] = pos.y;
+      trailPositions[2] = pos.z;
+
+      // Color gradient
+      const col = new THREE.Color(params.trailColor);
+      const fadeCount = Math.min(trailCount, MAX_TRAIL);
+      for (let i = 0; i < MAX_TRAIL; i++) {
+        const t = 1 - i / MAX_TRAIL;
+        const alpha = t * t;
+        trailColors[i * 3]     = col.r * alpha;
+        trailColors[i * 3 + 1] = col.g * alpha;
+        trailColors[i * 3 + 2] = col.b * alpha;
+      }
+
+      trailGeo.attributes.position.needsUpdate = true;
+      trailGeo.attributes.color.needsUpdate = true;
+      trailGeo.setDrawRange(0, Math.min(trailCount + 1, MAX_TRAIL));
+      trailCount++;
+    }
+
+    function clearTrail() {
+      trailPositions.fill(0);
+      trailColors.fill(0);
+      trailGeo.attributes.position.needsUpdate = true;
+      trailGeo.attributes.color.needsUpdate = true;
+      trailGeo.setDrawRange(0, 0);
+      trailCount = 0;
+    }
+
+    // ─── Sync Meshes ────────────────────────────────────────────────────────────
+    const _up = new THREE.Vector3(0, 1, 0);
+    const _dir = new THREE.Vector3();
+
+    function syncMeshes() {
+      const { pivot, x1, y1, x2, y2 } = getPositions();
+
+      // Ball 1
+      ball1Mesh.position.set(x1, y1, 0);
+
+      // Joint
+      jointMesh.position.set(x1, y1, 0);
+
+      // Ball 2
+      ball2Mesh.position.set(x2, y2, 0);
+
+      // Rod 1: from pivot to ball1
+      _dir.set(x1 - pivot.x, y1 - pivot.y, 0).normalize();
+      rod1Mesh.position.set(
+        pivot.x + (x1 - pivot.x) / 2,
+        pivot.y + (y1 - pivot.y) / 2,
+        0
+      );
+      rod1Mesh.quaternion.setFromUnitVectors(_up, _dir);
+
+      // Rod 2: from ball1 to ball2
+      _dir.set(x2 - x1, y2 - y1, 0).normalize();
+      rod2Mesh.position.set(
+        x1 + (x2 - x1) / 2,
+        y1 + (y2 - y1) / 2,
+        0
+      );
+      rod2Mesh.quaternion.setFromUnitVectors(_up, _dir);
+
+      updateTrail(ball2Mesh.position);
+    }
+
+    // ─── Floor Grid (subtle) ────────────────────────────────────────────────────
+    const gridHelper = new THREE.GridHelper(20, 20, 0x111122, 0x111122);
+    gridHelper.position.y = -4;
+    scene.add(gridHelper);
+
+    // ─── GUI ────────────────────────────────────────────────────────────────────
+    const gui = new GUI();
+    const physicsFolder = gui.addFolder('物理参数');
+    physicsFolder.add(params, 'gravity', 1, 20, 0.1).name('重力');
+    physicsFolder.add(params, 'damping', 0, 0.01, 0.0001).name('阻尼');
+    physicsFolder.add(params, 'L1', 0.5, 4, 0.1).name('连杆1长度').onChange(v => { rod1Geo.parameters && (rod1Mesh.scale.y = v / params.L1); });
+    physicsFolder.add(params, 'L2', 0.5, 4, 0.1).name('连杆2长度');
+    physicsFolder.add(params, 'm1', 0.2, 5, 0.1).name('质量1');
+    physicsFolder.add(params, 'm2', 0.2, 5, 0.1).name('质量2');
+
+    const initFolder = gui.addFolder('初始条件');
+    initFolder.add(params, 'theta1', -Math.PI, Math.PI, 0.01).name('θ₁ 初始角').onChange(v => { if (trailCount === 0) theta1 = v; });
+    initFolder.add(params, 'theta2', -Math.PI, Math.PI, 0.01).name('θ₂ 初始角').onChange(v => { if (trailCount === 0) theta2 = v; });
+    initFolder.add(params, 'reset').name('🔄 重置摆');
+
+    const trailFolder = gui.addFolder('轨迹');
+    trailFolder.add(params, 'showTrail').name('显示轨迹').onChange(v => {
+      if (!v) trailGeo.setDrawRange(0, 0);
+    });
+    trailFolder.addColor(params, 'trailColor').name('轨迹颜色').onChange(() => {
+      // force color refresh
+    });
+
+    // ─── Animate ───────────────────────────────────────────────────────────────
+    function animate() {
+      requestAnimationFrame(animate);
+      stepPhysics();
+      syncMeshes();
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    syncMeshes();
+    animate();
+
+    // ─── Resize ─────────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>

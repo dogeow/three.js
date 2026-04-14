@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal Door</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #info {
+    position: absolute; top: 12px; left: 12px;
+    color: #aaa; font-family: monospace; font-size: 13px;
+    pointer-events: none; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div id="info">
+  Walk through the portals to teleport.<br>
+  Orange portal · Blue portal
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Renderer ───────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ─── Scene & Camera ──────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111111);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.7, 6);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.9;
+controls.minDistance = 0.5;
+controls.maxDistance = 20;
+
+// ─── GUI ──────────────────────────────────────────────────────────────────────
+const params = {
+  portalSize: 1.6,
+  teleportOffset: 2.0,
+  glowIntensity: 1.2,
+  autoRotate: false,
+  cameraSpeed: 0.4,
+};
+const gui = new GUI();
+gui.add(params, 'portalSize', 0.5, 3.0, 0.05).name('Portal Size').onChange(() => rebuildPortals());
+gui.add(params, 'teleportOffset', 0.5, 5.0, 0.1).name('Teleport Offset');
+gui.add(params, 'glowIntensity', 0.0, 3.0, 0.05).name('Glow Intensity');
+gui.add(params, 'autoRotate').name('Auto Rotate Camera');
+gui.add(params, 'cameraSpeed', 0.1, 2.0, 0.05).name('Auto Rotate Speed');
+
+// ─── Corridor Builder ────────────────────────────────────────────────────────
+function buildCorridor(scene) {
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.8, metalness: 0.1 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9, metalness: 0.0 });
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1.0 });
+
+  // Floor
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Ceiling
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), ceilMat);
+  ceil.rotation.x = Math.PI / 2;
+  ceil.position.y = 4;
+  scene.add(ceil);
+
+  // Left wall
+  const wallL = new THREE.Mesh(new THREE.PlaneGeometry(20, 4), wallMat.clone());
+  wallL.rotation.y = Math.PI / 2;
+  wallL.position.set(-3, 2, 0);
+  wallL.receiveShadow = true;
+  scene.add(wallL);
+
+  // Right wall
+  const wallR = new THREE.Mesh(new THREE.PlaneGeometry(20, 4), wallMat.clone());
+  wallR.rotation.y = -Math.PI / 2;
+  wallR.position.set(3, 2, 0);
+  wallR.receiveShadow = true;
+  scene.add(wallR);
+
+  // Back wall (with hole for blue portal)
+  const wallB = new THREE.Mesh(new THREE.PlaneGeometry(6, 4), wallMat.clone());
+  wallB.position.set(0, 2, -10);
+  wallB.receiveShadow = true;
+  scene.add(wallB);
+
+  // Front wall (with hole for orange portal)
+  const wallF = new THREE.Mesh(new THREE.PlaneGeometry(6, 4), wallMat.clone());
+  wallF.rotation.y = Math.PI;
+  wallF.position.set(0, 2, 10);
+  wallF.receiveShadow = true;
+  scene.add(wallF);
+
+  // Decorative strips
+  const stripMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.5 });
+  for (let z = -8; z <= 8; z += 4) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), stripMat);
+    strip.position.set(-2.95, 0.01, z);
+    scene.add(strip);
+    const strip2 = strip.clone();
+    strip2.position.x = 2.95;
+    scene.add(strip2);
+  }
+
+  // Pillars near portals
+  const pillarMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7, metalness: 0.3 });
+  const pillarPositions = [
+    [-2.6, 1.5, -9.6], [2.6, 1.5, -9.6],
+    [-2.6, 1.5, 9.6],  [2.6, 1.5, 9.6],
+  ];
+  pillarPositions.forEach(([x, y, z]) => {
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3, 0.2), pillarMat);
+    pillar.position.set(x, y, z);
+    pillar.castShadow = true;
+    pillar.receiveShadow = true;
+    scene.add(pillar);
+  });
+}
+
+// ─── Lights ───────────────────────────────────────────────────────────────────
+function buildLights(scene) {
+  // Orange side
+  const ambOrange = new THREE.AmbientLight(0xff6622, 0.3);
+  ambOrange.position.set(-3, 3, 9);
+  scene.add(ambOrange);
+  const ptOrange = new THREE.PointLight(0xff8833, 2, 12);
+  ptOrange.position.set(0, 2.5, 9);
+  ptOrange.castShadow = true;
+  ptOrange.shadow.mapSize.set(512, 512);
+  scene.add(ptOrange);
+
+  // Blue side
+  const ambBlue = new THREE.AmbientLight(0x2266ff, 0.3);
+  ambBlue.position.set(-3, 3, -9);
+  scene.add(ambBlue);
+  const ptBlue = new THREE.PointLight(0x4488ff, 2, 12);
+  ptBlue.position.set(0, 2.5, -9);
+  ptBlue.castShadow = true;
+  ptBlue.shadow.mapSize.set(512, 512);
+  scene.add(ptBlue);
+
+  // Corridor fill
+  const fill = new THREE.HemisphereLight(0x333333, 0x111111, 0.5);
+  scene.add(fill);
+
+  // Orange portal glow light
+  const glowOrange = new THREE.PointLight(0xff6600, params.glowIntensity * 1.5, 5);
+  glowOrange.position.set(0, 1.6, 9);
+  glowOrange.name = 'glowOrange';
+  scene.add(glowOrange);
+
+  // Blue portal glow light
+  const glowBlue = new THREE.PointLight(0x0066ff, params.glowIntensity * 1.5, 5);
+  glowBlue.position.set(0, 1.6, -9);
+  glowBlue.name = 'glowBlue';
+  scene.add(glowBlue);
+}
+
+// ─── Portal Class ────────────────────────────────────────────────────────────
+class Portal {
+  constructor(position, rotation, color, label) {
+    this.position = position.clone();
+    this.rotation = rotation.clone();
+    this.color = new THREE.Color(color);
+    this.label = label;
+    this.size = params.portalSize;
+
+    // Render target
+    this.renderTarget = new THREE.WebGLRenderTarget(
+      window.innerWidth * renderer.getPixelRatio(),
+      window.innerHeight * renderer.getPixelRatio(),
+      { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat }
+    );
+
+    this.group = new THREE.Group();
+    this.group.position.copy(position);
+    this.group.rotation.copy(rotation);
+
+    this.build();
+    scene.add(this.group);
+  }
+
+  build() {
+    this.group.clear();
+
+    // Frame torus
+    const torusGeo = new THREE.TorusGeometry(this.size, 0.06, 16, 64);
+    const torusMat = new THREE.MeshStandardMaterial({
+      color: this.color,
+      roughness: 0.3,
+      metalness: 0.8,
+      emissive: this.color,
+      emissiveIntensity: 0.3,
+    });
+    this.frameMesh = new THREE.Mesh(torusGeo, torusMat);
+    this.frameMesh.castShadow = true;
+    this.group.add(this.frameMesh);
+
+    // Inner plane
+    const planeGeo = new THREE.PlaneGeometry(this.size * 2, this.size * 2);
+    this.planeMesh = new THREE.Mesh(planeGeo, new THREE.MeshBasicMaterial({
+      map: this.renderTarget.texture,
+      side: THREE.DoubleSide,
+    }));
+    this.group.add(this.planeMesh);
+
+    // Glow ring
+    const glowGeo = new THREE.TorusGeometry(this.size + 0.08, 0.04, 8, 64);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: this.color,
+      transparent: true,
+      opacity: 0.6,
+    });
+    this.glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    this.group.add(this.glowMesh);
+
+    // Outer decorative ring
+    const ring2Geo = new THREE.TorusGeometry(this.size + 0.18, 0.02, 8, 64);
+    const ring2Mat = new THREE.MeshBasicMaterial({
+      color: this.color,
+      transparent: true,
+      opacity: 0.3,
+    });
+    this.ring2Mesh = new THREE.Mesh(ring2Geo, ring2Mat);
+    this.group.add(this.ring2Mesh);
+  }
+
+  getWorldNormal() {
+    const normal = new THREE.Vector3(0, 0, 1);
+    normal.applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion()));
+    return normal;
+  }
+
+  getWorldPosition() {
+    return this.group.getWorldPosition(new THREE.Vector3());
+  }
+
+  updateGlow(intensity, time) {
+    const pulse = 0.5 + 0.5 * Math.sin(time * 3.0);
+    this.glowMesh.material.opacity = 0.3 + pulse * 0.5 * intensity;
+    const scale = 1.0 + pulse * 0.05 * intensity;
+    this.glowMesh.scale.setScalar(scale);
+    this.ring2Mesh.material.opacity = 0.1 + pulse * 0.2 * intensity;
+  }
+}
+
+// ─── Portal Teleportation ─────────────────────────────────────────────────────
+let portals = [];
+
+function rebuildPortals() {
+  portals.forEach(p => {
+    scene.remove(p.group);
+    p.renderTarget.dispose();
+  });
+  portals = [];
+  createPortals();
+}
+
+function createPortals() {
+  // Orange portal at +Z end
+  const orange = new Portal(
+    new THREE.Vector3(0, 1.6, 9.5),
+    new THREE.Euler(0, Math.PI, 0),
+    0xff6600,
+    'orange'
+  );
+
+  // Blue portal at -Z end
+  const blue = new Portal(
+    new THREE.Vector3(0, 1.6, -9.5),
+    new THREE.Euler(0, 0, 0),
+    0x0066ff,
+    'blue'
+  );
+
+  orange.other = blue;
+  blue.other = orange;
+
+  portals.push(orange, blue);
+}
+
+let lastTeleportTime = 0;
+const TELEPORT_COOLDOWN = 0.6;
+
+function checkTeleport() {
+  const now = performance.now() / 1000;
+  if (now - lastTeleportTime < TELEPORT_COOLDOWN) return;
+
+  const camPos = camera.position.clone();
+
+  for (const portal of portals) {
+    const portalPos = portal.getWorldPosition();
+    const normal = portal.getWorldNormal();
+
+    // Vector from portal to camera
+    const toCam = camPos.clone().sub(portalPos);
+
+    // Signed distance along normal
+    const dist = toCam.dot(normal);
+
+    if (Math.abs(dist) < 0.15) {
+      // Project camera position onto portal plane
+      const projected = camPos.clone().sub(normal.clone().multiplyScalar(dist));
+
+      // Check if within portal radius
+      const local = projected.clone().sub(portalPos);
+      // Rotate local back to portal local space to check radius
+      const invQ = portal.group.getWorldQuaternion(new THREE.Quaternion()).invert();
+      local.applyQuaternion(invQ);
+
+      if (Math.sqrt(local.x * local.x + local.y * local.y) < portal.size) {
+        // TELEPORT!
+        const other = portal.other;
+        const otherPos = other.getWorldPosition();
+        const otherNormal = other.getWorldNormal();
+
+        // Direction camera is looking
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+
+        // Reflect the look direction across the portal normal
+        const reflected = dir.clone().sub(otherNormal.clone().multiplyScalar(2 * dir.dot(otherNormal))).normalize();
+
+        // New camera position: offset from other portal
+        const offset = otherNormal.clone().multiplyScalar(params.teleportOffset);
+        camera.position.copy(otherPos.clone().add(offset));
+
+        // Adjust position so camera doesn't go through floor
+        camera.position.y = Math.max(camera.position.y, 0.3);
+
+        // Re-aim camera
+        camera.lookAt(camera.position.clone().add(reflected));
+
+        lastTeleportTime = now;
+        break;
+      }
+    }
+  }
+}
+
+// ─── Build Scene ──────────────────────────────────────────────────────────────
+buildCorridor(scene);
+buildLights(scene);
+createPortals();
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  portals.forEach(p => {
+    p.renderTarget.setSize(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+  });
+});
+
+// ─── Animation ────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let autoAngle = 0;
+
+function renderPortalView(portal) {
+  const other = portal.other;
+
+  // Camera from portal POV
+  const portalWorldPos = portal.getWorldPosition();
+  const portalWorldNormal = portal.getWorldNormal();
+  const portalWorldQ = portal.group.getWorldQuaternion(new THREE.Quaternion());
+
+  // Get camera in portal local space
+  const localCamPos = camera.position.clone().sub(portalWorldPos);
+  const invQ = portalWorldQ.clone().invert();
+  localCamPos.applyQuaternion(invQ);
+
+  // Mirror X coordinate (flip through the portal)
+  localCamPos.x = -localCamPos.x;
+
+  // Get camera look direction in portal local space
+  const camDir = new THREE.Vector3();
+  camera.getWorldDirection(camDir);
+  camDir.applyQuaternion(invQ);
+  camDir.x = -camDir.x; // mirror
+
+  // Get camera up in portal local space
+  const camUp = new THREE.Vector3(0, 1, 0);
+  camUp.applyQuaternion(invQ);
+  camUp.x = -camUp.x; // mirror
+
+  // Set up temporary camera
+  const tempCam = new THREE.PerspectiveCamera();
+  tempCam.copy(camera);
+  tempCam.position.copy(portalWorldPos);
+  tempCam.lookAt(portalWorldPos.clone().add(camDir));
+
+  // Also need to mirror the camera for the render
+  // We render from just inside the destination portal
+  const renderPos = other.getWorldPosition().clone();
+  const otherNormal = other.getWorldNormal();
+  renderPos.add(otherNormal.clone().multiplyScalar(0.1));
+
+  tempCam.position.copy(renderPos);
+
+  // Look toward the other direction
+  const lookTarget = renderPos.clone().add(camDir);
+  tempCam.lookAt(lookTarget);
+  tempCam.fov = camera.fov;
+  tempCam.aspect = camera.aspect;
+  tempCam.updateProjectionMatrix();
+
+  // Hide portal meshes in this render target
+  const prevVisible = portal.planeMesh.visible;
+  const prevFrameVisible = portal.frameMesh.visible;
+  const prevGlowVisible = portal.glowMesh.visible;
+  const prevRing2Visible = portal.ring2Mesh.visible;
+  const prevOtherVisible = other.planeMesh.visible;
+  const prevOtherFrameVisible = other.frameMesh.visible;
+  const prevOtherGlowVisible = other.glowMesh.visible;
+  const prevOtherRing2Visible = other.ring2Mesh.visible;
+
+  portal.planeMesh.visible = false;
+  portal.frameMesh.visible = false;
+  portal.glowMesh.visible = false;
+  portal.ring2Mesh.visible = false;
+  other.planeMesh.visible = false;
+  other.frameMesh.visible = false;
+  other.glowMesh.visible = false;
+  other.ring2Mesh.visible = false;
+
+  // Render to portal's render target
+  renderer.setRenderTarget(portal.renderTarget);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  renderer.render(scene, tempCam);
+
+  // Restore visibility
+  portal.planeMesh.visible = prevVisible;
+  portal.frameMesh.visible = prevFrameVisible;
+  portal.glowMesh.visible = prevGlowVisible;
+  portal.ring2Mesh.visible = prevRing2Visible;
+  other.planeMesh.visible = prevOtherVisible;
+  other.frameMesh.visible = prevOtherFrameVisible;
+  other.glowMesh.visible = prevOtherGlowVisible;
+  other.ring2Mesh.visible = prevOtherRing2Visible;
+
+  renderer.setRenderTarget(null);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  const time = clock.getElapsedTime();
+
+  controls.update();
+
+  // Auto-rotate camera around corridor
+  if (params.autoRotate) {
+    autoAngle += delta * params.cameraSpeed * 0.3;
+    camera.position.x = Math.sin(autoAngle) * 6;
+    camera.position.z = Math.cos(autoAngle) * 6;
+    camera.position.y = 2 + Math.sin(autoAngle * 0.5) * 0.5;
+    camera.lookAt(0, 1.5, 0);
+  }
+
+  // Teleport check
+  checkTeleport();
+
+  // Update glow
+  const glowIntensity = params.glowIntensity;
+  portals.forEach(p => p.updateGlow(glowIntensity, time));
+
+  // Update glow lights
+  const glowOrange = scene.getObjectByName('glowOrange');
+  const glowBlue = scene.getObjectByName('glowBlue');
+  if (glowOrange) glowOrange.intensity = glowIntensity * 1.5 * (0.7 + 0.3 * Math.sin(time * 3));
+  if (glowBlue) glowBlue.intensity = glowIntensity * 1.5 * (0.7 + 0.3 * Math.sin(time * 3 + Math.PI));
+
+  // Render portal views
+  portals.forEach(p => renderPortalView(p));
+
+  // Main render
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

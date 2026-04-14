@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terrain Erosion</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #0a0a0f; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #info {
+    position: absolute; top: 16px; left: 16px; color: #a0e0ff;
+    font-size: 13px; pointer-events: none; line-height: 1.8;
+    text-shadow: 0 0 8px #0066aa;
+  }
+  #progress {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: #7fffd4; font-size: 14px; text-align: center;
+    text-shadow: 0 0 10px #00ffaa;
+    transition: opacity 0.4s;
+  }
+  #progress-bar-wrap {
+    width: 320px; height: 6px; background: rgba(255,255,255,0.1);
+    border-radius: 3px; margin-top: 8px; overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%; background: linear-gradient(90deg, #00ffaa, #00aaff);
+    border-radius: 3px; width: 0%; transition: width 0.1s;
+  }
+</style>
+</head>
+<body>
+<div id="info">
+  Terrain Erosion<br>
+  Hydraulic + Thermal
+</div>
+<div id="progress">
+  <span id="progress-text">Ready — click Generate</span>
+  <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// ─── Scene ───────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.0018);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 2000);
+camera.position.set(0, 140, 220);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.maxPolarAngle = Math.PI * 0.48;
+
+// ─── Lights ──────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x334466, 0.9));
+const dir = new THREE.DirectionalLight(0xffeedd, 1.4);
+dir.position.set(80, 120, 60);
+scene.add(dir);
+const fill = new THREE.DirectionalLight(0x4466aa, 0.5);
+fill.position.set(-60, 80, -80);
+scene.add(fill);
+
+// ─── Terrain Mesh ─────────────────────────────────────────────────────────────
+const SEGS = 128;
+const SIZE = 200;
+const geom = new THREE.PlaneGeometry(SIZE, SIZE, SEGS, SEGS);
+geom.rotateX(-Math.PI / 2);
+
+const mat = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  metalness: 0.05,
+  roughness: 0.85,
+  side: THREE.FrontSide,
+});
+const mesh = new THREE.Mesh(geom, mat);
+scene.add(mesh);
+
+// Wireframe overlay
+const wireMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, opacity: 0.06, transparent: true });
+const wireMesh = new THREE.Mesh(geom, wireMat);
+scene.add(wireMesh);
+
+// ─── Color Palette ─────────────────────────────────────────────────────────────
+function heightColor(h) {
+  // h: 0..1
+  const valley  = new THREE.Color(0x1a5c2a); // deep green
+  const lowland = new THREE.Color(0x2e7d32); // green
+  const hillside = new THREE.Color(0x6d4c41); // brown
+  const highland = new THREE.Color(0x8d6e63); // lighter brown
+  const snow     = new THREE.Color(0xe0e8f0); // near-white
+  const rock     = new THREE.Color(0x546e7a); // blue-gray rock
+
+  if (h < 0.15) return valley;
+  if (h < 0.30) return lowland;
+  if (h < 0.55) return hillside;
+  if (h < 0.72) return highland;
+  if (h < 0.88) return snow;
+  return rock;
+}
+
+// ─── Noise ─────────────────────────────────────────────────────────────────────
+function hash(x, y) {
+  let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function valueNoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash(ix, iy), b = hash(ix + 1, iy);
+  const c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+
+function fbm(x, y, octaves) {
+  let v = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    v += amp * valueNoise(x * freq, y * freq);
+    amp *= 0.5; freq *= 2.1;
+  }
+  return v;
+}
+
+// ─── Heightmap Storage ─────────────────────────────────────────────────────────
+let heights = new Float32Array((SEGS + 1) * (SEGS + 1));
+const pos = geom.attributes.position;
+
+function idx(i, j) { return j * (SEGS + 1) + i; }
+
+// ─── Apply Heights to Geometry ────────────────────────────────────────────────
+function applyHeights() {
+  const count = pos.count;
+  for (let k = 0; k < count; k++) {
+    const x = pos.getX(k), z = pos.getZ(k);
+    // Convert world coords back to grid coords
+    const gi = Math.round((x / SIZE + 0.5) * SEGS);
+    const gj = Math.round((z / SIZE + 0.5) * SEGS);
+    const ci = Math.max(0, Math.min(SEGS, gi));
+    const cj = Math.max(0, Math.min(SEGS, gj));
+    pos.setY(k, heights[idx(ci, cj)]);
+  }
+  pos.needsUpdate = true;
+  geom.computeVertexNormals();
+
+  // Update colors
+  const colorArr = new Float32Array(count * 3);
+  const maxH = Math.max(...heights), minH = Math.min(...heights);
+  const range = maxH - minH || 1;
+  for (let k = 0; k < count; k++) {
+    const gi = Math.round((pos.getX(k) / SIZE + 0.5) * SEGS);
+    const gj = Math.round((pos.getZ(k) / SIZE + 0.5) * SEGS);
+    const ci = Math.max(0, Math.min(SEGS, gi));
+    const cj = Math.max(0, Math.min(SEGS, gj));
+    const h = (heights[idx(ci, cj)] - minH) / range;
+    const col = heightColor(h);
+    colorArr[k * 3] = col.r;
+    colorArr[k * 3 + 1] = col.g;
+    colorArr[k * 3 + 2] = col.b;
+  }
+  geom.setAttribute('color', new THREE.BufferAttribute(colorArr, 3));
+}
+
+// ─── Generate Terrain ─────────────────────────────────────────────────────────
+function generateHeightmap(scale, amplitude) {
+  for (let j = 0; j <= SEGS; j++) {
+    for (let i = 0; i <= SEGS; i++) {
+      const wx = (i / SEGS - 0.5) * SIZE;
+      const wz = (j / SEGS - 0.5) * SIZE;
+      const nx = wx * scale / SIZE;
+      const nz = wz * scale / SIZE;
+      const h = fbm(nx + 10, nz + 20, 7);
+      heights[idx(i, j)] = h * amplitude;
+    }
+  }
+}
+
+// ─── Hydraulic Erosion ─────────────────────────────────────────────────────────
+async function hydraulicErosion(iterations, capacity, deposition, evaporation, erosionStrength) {
+  const inertia = 0.05;
+  const gravity = 12.0;
+  const minSlope = 0.01;
+  const maxSlope = 1.5;
+
+  const R = SEGS;
+
+  function sampleH(i, j) {
+    if (i < 0 || i > R || j < 0 || j > R) return 0;
+    return heights[idx(i, j)];
+  }
+
+  function gradient(i, j) {
+    const dx = (sampleH(i + 1, j) - sampleH(i - 1, j)) * 0.5;
+    const dz = (sampleH(i, j + 1) - sampleH(i, j - 1)) * 0.5;
+    return { dx, dz };
+  }
+
+  function bilinear(wx, wz) {
+    // world coords to grid
+    const gi = (wx / SIZE + 0.5) * R;
+    const gj = (wz / SIZE + 0.5) * R;
+    const i0 = Math.floor(gi), j0 = Math.floor(gj);
+    const fi = gi - i0, fj = gj - j0;
+    const i1 = Math.min(i0 + 1, R), j1 = Math.min(j0 + 1, R);
+    const h00 = sampleH(i0, j0), h10 = sampleH(i1, j0);
+    const h01 = sampleH(i0, j1), h11 = sampleH(i1, j1);
+    return (h00*(1-fi)+h10*fi)*(1-fj) + (h01*(1-fi)+h11*fi)*fj;
+  }
+
+  const batchSize = 100;
+  for (let iter = 0; iter < iterations; iter++) {
+    // random droplet
+    let px = (Math.random() - 0.5) * SIZE;
+    let pz = (Math.random() - 0.5) * SIZE;
+    let vx = 0, vz = 0;
+    let water = 1.0;
+    let sediment = 0.0;
+
+    for (let step = 0; step < 64; step++) {
+      const gi = Math.round((px / SIZE + 0.5) * R);
+      const gj = Math.round((pz / SIZE + 0.5) * R);
+      if (gi < 1 || gi > R - 1 || gj < 1 || gj > R - 1) break;
+
+      const { dx, dz } = gradient(gi, gj);
+      const len = Math.sqrt(dx * dx + dz * dz) + 1e-6;
+
+      vx = vx * inertia - dx / len * (1 - inertia);
+      vz = vz * inertia - dz / len * (1 - inertia);
+
+      px += vx;
+      pz += vz;
+
+      if (Math.abs(px) > SIZE * 0.5 || Math.abs(pz) > SIZE * 0.5) break;
+
+      const h = bilinear(px, pz);
+      const slope = Math.sqrt(dx * dx + dz * dz);
+
+      // capacity
+      const cap = Math.max(Math.abs(slope) * water * erosionStrength, 0.01);
+      const drop = water * evaporation;
+      water -= drop;
+      if (water < 0.001) break;
+
+      if (sediment > cap) {
+        // deposit
+        const ds = (sediment - cap) * deposition;
+        sediment -= ds;
+        const gi2 = Math.round((px / SIZE + 0.5) * R);
+        const gj2 = Math.round((pz / SIZE + 0.5) * R);
+        if (gi2 >= 0 && gi2 <= R && gj2 >= 0 && gj2 <= R) {
+          heights[idx(gi2, gj2)] += ds;
+        }
+      } else {
+        // erode
+        const erodeAmt = Math.min((cap - sediment) * 0.4, maxSlope);
+        sediment += erodeAmt;
+        const gi2 = Math.round((px / SIZE + 0.5) * R);
+        const gj2 = Math.round((pz / SIZE + 0.5) * R);
+        if (gi2 >= 0 && gi2 <= R && gj2 >= 0 && gj2 <= R) {
+          heights[idx(gi2, gj2)] -= erodeAmt;
+        }
+      }
+    }
+
+    if (iter % batchSize === 0) {
+      setProgress('Hydraulic', iter / iterations, `Hydraulic Erosion ${Math.round(iter / iterations * 100)}%`);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+}
+
+// ─── Thermal Erosion ─────────────────────────────────────────────────────────
+async function thermalErosion(iterations, talusAngle, erosionRate) {
+  const R = SEGS;
+  const talusThreshold = Math.tan(talusAngle * Math.PI / 180);
+  const batchSize = 50;
+
+  function sampleH(i, j) {
+    if (i < 0 || i > R || j < 0 || j > R) return 0;
+    return heights[idx(i, j)];
+  }
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let j = 1; j < R; j += 2) {
+      for (let i = 1; i < R; i += 2) {
+        const h0 = sampleH(i, j);
+        const neighbors = [
+          [i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1],
+          [i - 1, j - 1], [i + 1, j - 1], [i - 1, j + 1], [i + 1, j + 1]
+        ];
+
+        for (const [ni, nj] of neighbors) {
+          if (ni < 0 || ni > R || nj < 0 || nj > R) continue;
+          const h1 = sampleH(ni, nj);
+          const dh = h0 - h1;
+          const dist = Math.sqrt((i - ni) * (i - ni) + (j - nj) * (j - nj));
+          const slope = dh / dist;
+
+          if (slope > talusThreshold) {
+            const move = (slope - talusThreshold) * erosionRate * 0.5;
+            heights[idx(i, j)] -= move;
+            heights[idx(ni, nj)] += move;
+          }
+        }
+      }
+    }
+
+    if (iter % batchSize === 0) {
+      setProgress('Thermal', iter / iterations, `Thermal Erosion ${Math.round(iter / iterations * 100)}%`);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+}
+
+// ─── Progress ─────────────────────────────────────────────────────────────────
+let progressTimeout;
+function setProgress(type, value, text) {
+  const bar = document.getElementById('progress-bar');
+  const txt = document.getElementById('progress-text');
+  if (type === 'done') {
+    bar.style.width = '100%';
+    txt.textContent = 'Complete';
+    setTimeout(() => {
+      document.getElementById('progress').style.opacity = '0';
+    }, 1500);
+  } else {
+    document.getElementById('progress').style.opacity = '1';
+    bar.style.width = (value * 100) + '%';
+    txt.textContent = text;
+  }
+}
+
+// ─── GUI ──────────────────────────────────────────────────────────────────────
+const params = {
+  noiseScale: 2.5,
+  amplitude: 28,
+  hydraulicIterations: 1500,
+  hydraulicCapacity: 8,
+  hydraulicDeposition: 0.05,
+  hydraulicEvaporation: 0.02,
+  erosionStrength: 3.5,
+  thermalIterations: 800,
+  talusAngle: 35,
+  erosionRate: 0.3,
+  wireframe: false,
+  generate: () => runAll(),
+};
+
+const gui = new GUI({ title: 'Terrain Erosion' });
+gui.add(params, 'noiseScale', 0.5, 8, 0.1).name('Noise Scale');
+gui.add(params, 'amplitude', 5, 60, 1).name('Amplitude');
+
+const hydFolder = gui.addFolder('Hydraulic Erosion');
+hydFolder.add(params, 'hydraulicIterations', 0, 5000, 100).name('Iterations');
+hydFolder.add(params, 'erosionStrength', 0.5, 10, 0.5).name('Strength');
+hydFolder.add(params, 'hydraulicCapacity', 1, 20, 1).name('Capacity');
+hydFolder.add(params, 'hydraulicDeposition', 0.01, 0.5, 0.01).name('Deposition');
+hydFolder.add(params, 'hydraulicEvaporation', 0.005, 0.1, 0.005).name('Evaporation');
+
+const thermFolder = gui.addFolder('Thermal Erosion');
+thermFolder.add(params, 'thermalIterations', 0, 2000, 50).name('Iterations');
+thermFolder.add(params, 'talusAngle', 20, 60, 1).name('Talus Angle °');
+thermFolder.add(params, 'erosionRate', 0.05, 1, 0.05).name('Erosion Rate');
+
+gui.add(params, 'wireframe').name('Wireframe').onChange(v => {
+  wireMat.opacity = v ? 0.18 : 0.06;
+});
+gui.add(params, 'generate').name('▶ Generate & Erode');
+
+// ─── Full Pipeline ────────────────────────────────────────────────────────────
+async function runAll() {
+  setProgress('gen', 0, 'Generating heightmap…');
+  document.getElementById('progress').style.opacity = '1';
+
+  heights.fill(0);
+  generateHeightmap(params.noiseScale, params.amplitude);
+
+  applyHeights();
+  setProgress('Hydraulic', 0, 'Starting hydraulic erosion…');
+
+  if (params.hydraulicIterations > 0) {
+    await hydraulicErosion(
+      params.hydraulicIterations,
+      params.hydraulicCapacity,
+      params.hydraulicDeposition,
+      params.hydraulicEvaporation,
+      params.erosionStrength
+    );
+  }
+
+  setProgress('Thermal', 0, 'Starting thermal erosion…');
+  if (params.thermalIterations > 0) {
+    await thermalErosion(
+      params.thermalIterations,
+      params.talusAngle,
+      params.erosionRate
+    );
+  }
+
+  applyHeights();
+  setProgress('done', 1, 'Complete!');
+}
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─── Animate ──────────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// Initial generation for display
+(function initTerrain() {
+  generateHeightmap(2.5, 28);
+  applyHeights();
+})();
+</script>
+</body>
+</html>

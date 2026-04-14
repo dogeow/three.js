@@ -1,6 +1,6 @@
 # Three.js 入门到进阶教程
 
-一套循序渐进的 Three.js 教程，**161 节**独立可运行的 HTML 示例，从第一个 Hello Cube 一路到 PBR、后期、物理、骨骼动画、程序化地形等高级技术。
+一套循序渐进的 Three.js 教程，**169 节**独立可运行的 HTML 示例，从第一个 Hello Cube 一路到 PBR、后期、物理、骨骼动画、程序化地形等高级技术。
 
 ## 运行方式
 
@@ -18,6 +18,7 @@ python3 -m http.server 8000
 ---
 
 ## 核心概念速览
+- [170] Particle Attractor - distance-based force field, velocity color coding
 
 Three.js 渲染一帧需要三样东西：
 
@@ -313,6 +314,22 @@ animate()
 | [160](./160-mini-golf/index.html) | **迷你高尔夫 ★** | 2D 物理、传送带瞄准、球洞检测、多球洞 |
 | [161](./161-sushi-plate/index.html) | **旋转寿司 ★** | 环形传送带、点击点餐、账单系统、无限补盘 |
 
+### 二十六、综合创意 6（162~169）
+
+| # | 章节 | 技术点 |
+|---|------|-------|
+| [162](./162-wave-collapse/index.html) | **波函数塌缩 WFC ★** | 程序化地牢生成，WFC 算法逐步塌缩，可视化熵降低过程 |
+| [163](./163-volumetric-cloud/index.html) | **体积云 Raymarching ★** | GLSL 体积密度采样，48 步光线累积，动态云层流动 |
+| [164](./164-physics-pendulum/index.html) | **双摆混沌物理 ★** | Lagrangian 方程 RK4 积分，混沌敏感度，轨迹保留动画 |
+| [165](./165-interactive-piano/index.html) | **交互钢琴 ★** | Web Audio 多谐波合成，ADSR 包络，3D 白键/黑键，点击/键盘触发 |
+| [166](./166-procedural-clouds/index.html) | **程序化云层 ★** | 多层 2D FBM 噪声，覆盖度/速度可调，UV 漂移流动 |
+| [167](./167-holographic-comm/index.html) | **全息通信器 ★** | 全息投影锥，扫描环，脉冲粒子，输入文字实时全息渲染 |
+| [168](./168-qubit-viz/index.html) | **量子比特可视化 ★** | 三维布洛赫球，θ/φ 角拖拽，预设 Pauli 态 |
+| [169](./169-time-dilation/index.html) | **时间膨胀效应 ★** | 狭义相对论 Lorentz 因子，地面/飞船双时钟，多普勒频移着色 |
+| [172](./172-voxel-fracture/index.html) | **Voxel Fracture ★** | 点击爆炸、Verlet物理、InstancedMesh碎片模拟 |
+| [173](./173-audio-fft-visualizer/index.html) | **Audio FFT Visualizer ★** | Web Audio API频谱分析、3D柱图频谱驱动 |
+| [174](./174-sdf-raymarcher/index.html) | **SDF Ray Marching ★** | GLSL光线步进、SDF基础体素、软阴影、环境光遮蔽 |
+
 ---
 
 ## 学习建议
@@ -496,3 +513,18 @@ animate()
 - **迷你高尔夫** → 160
 - **传送带** → 161
 - **MeshPhysicalMaterial** → 53 / 121 / 142 / 146 / 151
+- **Wave Function Collapse** → 162
+- **Volumetric Cloud** → 163
+- **Double Pendulum** → 164
+- **Interactive Piano** → 165
+- **Procedural Clouds** → 166
+- **Holographic Communicator** → 167
+- **Bloch Sphere** → 168
+- **Time Dilation** → 169
+
+## 二十七、新示例（170~）
+
+| [171](./171-morph-blob/index.html) | **Morph Blob ★** | FBM顶点变形、虹彩菲涅尔着色、鼠标悬停发光 |
+| [175](./175-fluid-dye/index.html) | **Fluid Dye Sim ★** | Navier-Stokes流体、染料平流、ping-pong FBO、鼠标注入 |
+| [176](./176-terrain-erosion/index.html) | **Terrain Erosion ★** | 程序化地形、水力侵蚀、热力侵蚀、实时顶点位移 |
+| [177](./177-portal-portal/index.html) | **Portal Door ★** | StencilBuffer传送门、RenderTarget视口替换、穿越位移 |
