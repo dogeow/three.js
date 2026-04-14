@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Three.js Animation & Tween</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0f;
+      overflow: hidden;
+      font-family: 'Orbitron', monospace;
+      color: #00ffff;
+    }
+
+    canvas { display: block; }
+
+    /* ── Info Panel ── */
+    #info {
+      position: fixed;
+      top: 24px;
+      left: 24px;
+      background: rgba(0,0,0,0.75);
+      border: 1px solid #00ffff;
+      border-radius: 4px;
+      padding: 16px 20px;
+      pointer-events: none;
+      box-shadow: 0 0 20px rgba(0,255,255,0.15), inset 0 0 10px rgba(0,255,255,0.05);
+    }
+    #info h1 {
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #00ffff;
+      text-shadow: 0 0 8px #00ffff;
+      margin-bottom: 8px;
+    }
+    #info p {
+      font-size: 10px;
+      color: #8888aa;
+      line-height: 1.6;
+      letter-spacing: 0.5px;
+    }
+    #info .neon { color: #ff00ff; text-shadow: 0 0 6px #ff00ff; }
+
+    /* ── Grid lines ── */
+    #grid-label {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      font-size: 9px;
+      letter-spacing: 1px;
+      color: #334;
+      pointer-events: none;
+    }
+
+    /* ── FPS counter ── */
+    #fps {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      font-size: 10px;
+      color: #00ffff55;
+      letter-spacing: 1px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="info">
+  <h1>Three.js <span class="neon">Tween</span> &amp; Animation</h1>
+  <p>
+    Drag lil-gui panel (top-right) to control<br>
+    speed · scale · color · lerp factor
+  </p>
+</div>
+<div id="fps">FPS: --</div>
+<div id="grid-label">// animation.html — cyberpunk tween demo</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'lil-gui';
+
+/* ═══════════════════════════════════════════════
+   SCENE SETUP
+═══════════════════════════════════════════════ */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.035);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 6, 14);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.maxPolarAngle = Math.PI * 0.85;
+controls.minDistance = 4;
+controls.maxDistance = 30;
+
+/* ═══════════════════════════════════════════════
+   LIGHTING
+═══════════════════════════════════════════════ */
+scene.add(new THREE.AmbientLight(0x111122, 1.2));
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(8, 12, 6);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 60;
+dirLight.shadow.camera.left = -20;
+dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 20;
+dirLight.shadow.camera.bottom = -20;
+scene.add(dirLight);
+
+const pointCyan = new THREE.PointLight(0x00ffff, 4, 30);
+pointCyan.position.set(-8, 4, -4);
+scene.add(pointCyan);
+
+const pointMagenta = new THREE.PointLight(0xff00ff, 4, 30);
+pointMagenta.position.set(8, 4, 4);
+scene.add(pointMagenta);
+
+/* ═══════════════════════════════════════════════
+   HELPERS — Grid & Axes
+═══════════════════════════════════════════════ */
+const grid = new THREE.GridHelper(40, 40, 0x112233, 0x08081a);
+grid.position.y = -2;
+scene.add(grid);
+
+const axesHelper = new THREE.AxesHelper(3);
+axesHelper.position.set(-18, -1.9, -8);
+scene.add(axesHelper);
+
+/* ═══════════════════════════════════════════════
+   FLOOR (reflective)
+═══════════════════════════════════════════════ */
+const floorGeo = new THREE.PlaneGeometry(40, 40);
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x050510,
+  roughness: 0.15,
+  metalness: 0.9,
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -2.01;
+floor.receiveShadow = true;
+scene.add(floor);
+
+/* ═══════════════════════════════════════════════
+   TWEEN UTILITIES
+═══════════════════════════════════════════════ */
+
+/**
+ * Easing functions (selectable via GUI)
+ */
+const Easings = {
+  linear:        t => t,
+  quadIn:        t => t * t,
+  quadOut:       t => t * (2 - t),
+  quadInOut:     t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+  cubicIn:       t => t * t * t,
+  cubicOut:      t => (--t) * t * t + 1,
+  cubicInOut:    t => t < 0.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1,
+  elasticOut:    t => Math.abs(--t) < 1e-6 ? 1 : Math.pow(2, -10*t) * Math.sin((t*10-0.75)*(2*Math.PI)/3) + 1,
+  bounceOut:     t => { const n1=7.5625,d1=2.75; if(t<1/d1)return n1*t*t; if(t<2/d1)return n1*(t-=1.5/d1)*t+0.75; if(t<2.5/d1)return n1*(t-=2.25/d1)*t+0.9375; return n1*(t-=2.625/d1)*t+0.984375; },
+  backIn:        t => t * t * (2.70158 * t - 1.70158),
+  backOut:       t => (--t) * t * (2.70158 * t + 1.70158) + 1,
+};
+
+/** Tween a scalar value */
+class TweenScalar {
+  constructor(start, end, duration, easing = 'quadOut', loop = false) {
+    this.start = start;
+    this.end = end;
+    this.duration = duration;
+    this.easingName = easing;
+    this.loop = loop;
+    this.elapsed = 0;
+    this.done = false;
+    this.value = start;
+  }
+
+  update(dt) {
+    if (this.done) return;
+    this.elapsed += dt;
+    const t = Math.min(this.elapsed / this.duration, 1);
+    const eased = Easings[this.easingName](t);
+    this.value = this.start + (this.end - this.start) * eased;
+    if (t >= 1) {
+      if (this.loop) {
+        this.elapsed = 0;
+      } else {
+        this.done = true;
+        this.value = this.end;
+      }
+    }
+  }
+
+  reset() {
+    this.elapsed = 0;
+    this.done = false;
+  }
+
+  restart(end) {
+    if (end !== undefined) this.end = end;
+    this.elapsed = 0;
+    this.done = false;
+  }
+}
+
+/** Tween a THREE.Vector3 */
+class TweenVec3 {
+  constructor(start, end, duration, easing = 'quadOut', loop = false) {
+    this.start = start.clone();
+    this.end = end.clone();
+    this.duration = duration;
+    this.easingName = easing;
+    this.loop = loop;
+    this.elapsed = 0;
+    this.done = false;
+    this.value = start.clone();
+  }
+
+  update(dt) {
+    if (this.done) return;
+    this.elapsed += dt;
+    const t = Math.min(this.elapsed / this.duration, 1);
+    const eased = Easings[this.easingName](t);
+    this.value.lerpVectors(this.start, this.end, eased);
+    if (t >= 1) {
+      if (this.loop) {
+        const tmp = this.start.clone();
+        this.start.copy(this.end);
+        this.end.copy(tmp);
+        this.elapsed = 0;
+      } else {
+        this.done = true;
+        this.value.copy(this.end);
+      }
+    }
+  }
+
+  reset() { this.elapsed = 0; this.done = false; }
+
+  restart(end) {
+    if (end !== undefined) this.end = end.clone();
+    const tmp = this.start.clone();
+    this.start.copy(this.value);
+    this.end.copy(end || tmp);
+    this.elapsed = 0;
+    this.done = false;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   MATERIAL FACTORY
+═══════════════════════════════════════════════ */
+function makeMaterial(hex, emissiveIntensity = 0.4, opacity = 1) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: hex,
+    emissive: hex,
+    emissiveIntensity,
+    roughness: 0.2,
+    metalness: 0.8,
+    transparent: opacity < 1,
+    opacity,
+  });
+  return mat;
+}
+
+/* ═══════════════════════════════════════════════
+   CUBE 1 — Manual RAF + Rotation
+═══════════════════════════════════════════════ */
+const cube1Geo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
+const cube1Mat = makeMaterial(0x00ffff, 0.6);
+const cube1 = new THREE.Mesh(cube1Geo, cube1Mat);
+cube1.position.set(-7, 1, 0);
+cube1.castShadow = true;
+scene.add(cube1);
+
+/* ═══════════════════════════════════════════════
+   CUBE 2 — Position Tween (bouncing)
+═══════════════════════════════════════════════ */
+const cube2Geo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
+const cube2Mat = makeMaterial(0xff00ff, 0.6);
+const cube2 = new THREE.Mesh(cube2Geo, cube2Mat);
+cube2.position.set(-3.5, -2, 0);
+cube2.castShadow = true;
+scene.add(cube2);
+
+// Tweens for cube2 position (bounce up/down)
+const tweenCube2Y = new TweenVec3(
+  new THREE.Vector3(-3.5, -2, 0),
+  new THREE.Vector3(-3.5,  3, 0),
+  1.4,
+  'bounceOut',
+  true
+);
+
+/* ═══════════════════════════════════════════════
+   CUBE 3 — Scale Tween (pulsing)
+═══════════════════════════════════════════════ */
+const cube3Geo = new THREE.BoxGeometry(1.4, 1.4, 1.4);
+const cube3Mat = makeMaterial(0xffaa00, 0.5);
+const cube3 = new THREE.Mesh(cube3Geo, cube3Mat);
+cube3.position.set(1, 1, -3);
+cube3.castShadow = true;
+scene.add(cube3);
+
+const tweenCube3Scale = new TweenScalar(1, 1.6, 0.9, 'elasticOut', true);
+
+/* ═══════════════════════════════════════════════
+   CUBE 4 — Color Lerp
+═══════════════════════════════════════════════ */
+const cube4Geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+const cube4Mat = makeMaterial(0x00ff88, 0.6);
+const cube4 = new THREE.Mesh(cube4Geo, cube4Mat);
+cube4.position.set(5.5, 1, -1);
+cube4.castShadow = true;
+scene.add(cube4);
+
+// Color tween for cube4
+const colorA = new THREE.Color(0x00ff88);
+const colorB = new THREE.Color(0xff8800);
+let colorT = 0;
+let colorDir = 1;
+
+/* ═══════════════════════════════════════════════
+   CUBE 5 — Orbit / circular motion (manual)
+═══════════════════════════════════════════════ */
+const cube5Geo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+const cube5Mat = makeMaterial(0xaa00ff, 0.5);
+const cube5 = new THREE.Mesh(cube5Geo, cube5Mat);
+cube5.position.set(0, -2, -8);
+cube5.castShadow = true;
+scene.add(cube5);
+
+/* ═══════════════════════════════════════════════
+   CUBE 6 — Lerp position (smooth glide)
+═══════════════════════════════════════════════ */
+const cube6Geo = new THREE.BoxGeometry(1.3, 1.3, 1.3);
+const cube6Mat = makeMaterial(0x0088ff, 0.5);
+const cube6 = new THREE.Mesh(cube6Geo, cube6Mat);
+cube6.position.set(10, -2, 2);
+cube6.castShadow = true;
+scene.add(cube6);
+
+const target6 = new THREE.Vector3(10, 4, 2);
+const tweenCube6Y = new TweenScalar(4, -2, 2.0, 'sineInOut', true);
+
+/* ═══════════════════════════════════════════════
+   PARTICLES — ambient floating dust
+═══════════════════════════════════════════════ */
+const PARTICLE_COUNT = 300;
+const particleGeo = new THREE.BufferGeometry();
+const pPositions = new Float32Array(PARTICLE_COUNT * 3);
+const pSpeeds = new Float32Array(PARTICLE_COUNT);
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  pPositions[i*3]   = (Math.random() - 0.5) * 30;
+  pPositions[i*3+1] = (Math.random() - 0.5) * 15;
+  pPositions[i*3+2] = (Math.random() - 0.5) * 30;
+  pSpeeds[i] = 0.2 + Math.random() * 0.8;
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+const particleMat = new THREE.PointsMaterial({
+  color: 0x00ffff,
+  size: 0.06,
+  transparent: true,
+  opacity: 0.6,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const particles = new THREE.Points(particleGeo, particleMat);
+scene.add(particles);
+
+/* ═══════════════════════════════════════════════
+   GUI
+═══════════════════════════════════════════════ */
+const params = {
+  speed:       1.0,
+  scale:       1.0,
+  colorCyan:   '#00ffff',
+  colorMagenta:'#ff00ff',
+  lerpFactor:  0.08,
+  autoRotate:  true,
+  easing:      'quadOut',
+};
+
+const gui = new GUI({ title: '⚡ Controls' });
+gui.domElement.style.fontFamily = 'Orbitron, monospace';
+
+const fAnim = gui.addFolder('Animation');
+fAnim.add(params, 'speed', 0.1, 3.0, 0.05).name('Speed');
+fAnim.add(params, 'scale', 0.3, 2.5, 0.05).name('Scale');
+fAnim.add(params, 'autoRotate').name('Auto Rotate');
+fAnim.add(params, 'easing', Object.keys(Easings)).name('Easing');
+
+const fColors = gui.addFolder('Neon Colors');
+fColors.addColor(params, 'colorCyan').name('Cyan').onChange(v => {
+  cube1Mat.color.set(v);
+  cube1Mat.emissive.set(v);
+  pointCyan.color.set(v);
+});
+fColors.addColor(params, 'colorMagenta').name('Magenta').onChange(v => {
+  cube2Mat.color.set(v);
+  cube2Mat.emissive.set(v);
+  pointMagenta.color.set(v);
+});
+fColors.addColor(params, 'lerpFactor', 0.01, 0.5, 0.01).name('Lerp Factor');
+
+gui.close();
+
+/* ═══════════════════════════════════════════════
+   RESIZE
+═══════════════════════════════════════════════ */
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ═══════════════════════════════════════════════
+   FPS
+═══════════════════════════════════════════════ */
+const fpsEl = document.getElementById('fps');
+let fpsCount = 0, fpsTimer = 0;
+
+/* ═══════════════════════════════════════════════
+   ANIMATION LOOP
+═══════════════════════════════════════════════ */
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const rawDt = clock.getDelta();
+  const dt    = Math.min(rawDt, 0.05) * params.speed; // clamped, scaled
+  const time  = clock.elapsedTime;
+
+  /* ── Cube 1: manual RAF rotation ── */
+  cube1.rotation.x += 0.012 * params.speed;
+  cube1.rotation.y += 0.018 * params.speed;
+  cube1.rotation.z += 0.009 * params.speed;
+  cube1.position.y  = Math.sin(time * 1.2 * params.speed) * 0.6;
+
+  /* ── Cube 2: position tween ── */
+  tweenCube2Y.duration = 1.4 / params.speed;
+  tweenCube2Y.easingName = params.easing;
+  tweenCube2Y.update(dt);
+  cube2.position.copy(tweenCube2Y.value);
+  cube2.rotation.x += 0.015 * params.speed;
+  cube2.rotation.y += 0.022 * params.speed;
+
+  /* ── Cube 3: scale tween ── */
+  tweenCube3Scale.duration = 0.9 / params.speed;
+  tweenCube3Scale.easingName = params.easing;
+  tweenCube3Scale.update(dt);
+  const s = tweenCube3Scale.value * params.scale;
+  cube3.scale.setScalar(s);
+  cube3.rotation.y += 0.02 * params.speed;
+
+  /* ── Cube 4: color lerp ── */
+  colorT += dt * 0.4 * params.speed;
+  if (colorT > 1) { colorT = 1; colorDir = -1; }
+  if (colorT < 0) { colorT = 0; colorDir =  1; }
+  const lerpI = params.lerpFactor * params.speed;
+  cube4Mat.color.lerpColors(colorA, colorB, colorT);
+  cube4Mat.emissive.lerpColors(colorA, colorB, colorT);
+  cube4.rotation.y += 0.025 * params.speed;
+  cube4.rotation.x += 0.01 * params.speed;
+
+  /* ── Cube 5: orbit / circular path ── */
+  const orbitR  = 5;
+  const orbitSpd = 0.5 * params.speed;
+  cube5.position.x = Math.cos(time * orbitSpd) * orbitR;
+  cube5.position.z = Math.sin(time * orbitSpd) * orbitR;
+  cube5.position.y = Math.sin(time * orbitSpd * 2) * 1.5 + 1;
+  cube5.rotation.y = time * orbitSpd * 2;
+  cube5.rotation.x = Math.sin(time * orbitSpd) * 0.5;
+
+  /* ── Cube 6: lerp position (smooth glide up/down) ── */
+  tweenCube6Y.duration = 2.0 / params.speed;
+  tweenCube6Y.easingName = params.easing;
+  tweenCube6Y.update(dt);
+  cube6.position.y = tweenCube6Y.value;
+  cube6.rotation.y += 0.016 * params.speed;
+  cube6.rotation.z += 0.008 * params.speed;
+
+  /* ── Particles: drift upward ── */
+  const pos = particles.geometry.attributes.position;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    pos.array[i*3+1] += pSpeeds[i] * dt * 0.3;
+    if (pos.array[i*3+1] > 8) pos.array[i*3+1] = -8;
+  }
+  pos.needsUpdate = true;
+
+  /* ── Glow lights pulse ── */
+  pointCyan.intensity  = 4 + Math.sin(time * 2.1) * 1.5;
+  pointMagenta.intensity = 4 + Math.cos(time * 1.7) * 1.5;
+
+  /* ── FPS ── */
+  fpsCount++;
+  fpsTimer += rawDt;
+  if (fpsTimer >= 1) {
+    fpsEl.textContent = `FPS: ${fpsCount}`;
+    fpsCount = 0;
+    fpsTimer = 0;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

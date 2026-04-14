@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Diffusion-Limited Aggregation — Fractal Tree Growth</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #0a0a0f;
+      font-family: 'Courier New', monospace;
+      color: #e0e0e0;
+    }
+    canvas { display: block; }
+
+    #overlay {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      pointer-events: none;
+      user-select: none;
+    }
+    #overlay h1 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      color: #a0c8ff;
+      text-transform: uppercase;
+    }
+    #overlay p {
+      margin: 0;
+      font-size: 11px;
+      color: #556677;
+      letter-spacing: 0.06em;
+    }
+
+    #hint {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: #334455;
+      letter-spacing: 0.08em;
+      pointer-events: none;
+      user-select: none;
+    }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+<div id="overlay">
+  <h1>Diffusion-Limited Aggregation</h1>
+  <p>fractal tree growth &mdash; random walk particles sticking to a central seed</p>
+</div>
+<div id="hint">click anywhere to reset</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+const MAX_PARTICLES = 3000;
+const SPAWN_RADIUS  = 22;
+const SEED_RADIUS   = 0.4;
+const CATCH_RADIUS  = 0.55;
+const WALK_STEP     = 0.06;
+const SPAWN_COUNT   = 4;      // particles spawned per frame (adjustable)
+
+const params = {
+  particleCount:   2000,
+  spawnRate:       4,
+  walkSpeed:       0.06,
+  catchRadius:     0.55,
+  colorScheme:     'Aurora',
+  reset:           () => resetSimulation(),
+};
+
+// ─── Scene Setup ─────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.038);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 2, 18);
+camera.lookAt(0, 0, 0);
+
+// ─── Lighting ─────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x223344, 1.0));
+const dirLight = new THREE.DirectionalLight(0x8899cc, 1.2);
+dirLight.position.set(5, 10, 7);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x3366ff, 2.0, 30);
+pointLight.position.set(0, 0, 0);
+scene.add(pointLight);
+
+// ─── InstancedMesh ───────────────────────────────────────────────────────────
+const geo = new THREE.SphereGeometry(0.18, 7, 7);
+const mat = new THREE.MeshStandardMaterial({
+  roughness: 0.4,
+  metalness: 0.3,
+  vertexColors: false,
+});
+const instancedMesh = new THREE.InstancedMesh(geo, mat, MAX_PARTICLES);
+instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+instancedMesh.count = 0;
+scene.add(instancedMesh);
+
+// ─── Color Schemes ───────────────────────────────────────────────────────────
+const COLOR_SCHEMES = {
+  Aurora:    [0x00ffc8, 0x00aaff, 0xaa00ff, 0xff00aa, 0x00ff66, 0x6600ff],
+  Fire:      [0xff2200, 0xff6600, 0xffaa00, 0xff4400, 0xff8800, 0xffcc00],
+  Ocean:     [0x0066ff, 0x00aaff, 0x00ddff, 0x0099ff, 0x00ccff, 0x33ddff],
+  Forest:    [0x00ff44, 0x22cc00, 0x008833, 0x66ff88, 0x00cc55, 0x33ff66],
+  Cosmic:    [0xff00ff, 0x00ffff, 0xff66ff, 0x66ffff, 0xcc00ff, 0x00ffcc],
+  Mono:      [0xffffff, 0xccddff, 0xaabbff, 0x8899ff, 0x6677ee, 0x4455cc],
+};
+
+function getColor(index, total) {
+  const scheme = COLOR_SCHEMES[params.colorScheme] || COLOR_SCHEMES.Aurora;
+  const t = (index / Math.max(total, 1));
+  const idx = Math.floor(t * scheme.length) % scheme.length;
+  return new THREE.Color(scheme[idx]);
+}
+
+// ─── DLA Simulation State ──────────────────────────────────────────────────────
+let particles = [];    // { x, y, z, stuck, born }
+let stuckPositions = [];
+let dummy = new THREE.Object3D();
+
+function resetSimulation() {
+  particles = [];
+  stuckPositions = [];
+  instancedMesh.count = 0;
+
+  // Seed particles at origin
+  const seedCount = 12;
+  for (let i = 0; i < seedCount; i++) {
+    const angle = (i / seedCount) * Math.PI * 2;
+    const r = SEED_RADIUS * (0.8 + Math.random() * 0.4);
+    stuckPositions.push({
+      x: Math.cos(angle) * r,
+      y: (Math.random() - 0.5) * 0.3,
+      z: Math.sin(angle) * r,
+    });
+  }
+  updateInstancedMesh();
+}
+
+function spawnParticle() {
+  const angle  = Math.random() * Math.PI * 2;
+  const phi    = Math.acos(2 * Math.random() - 1);
+  const r      = SPAWN_RADIUS;
+  particles.push({
+    x: Math.sin(phi) * Math.cos(angle) * r,
+    y: Math.sin(phi) * Math.sin(angle) * r,
+    z: Math.cos(phi) * r,
+    stuck: false,
+    born: Date.now(),
+  });
+}
+
+function stepParticle(p) {
+  // Brownian motion — random walk in 3D
+  const speed = params.walkSpeed;
+  p.x += (Math.random() - 0.5) * 2 * speed;
+  p.y += (Math.random() - 0.5) * 2 * speed;
+  p.z += (Math.random() - 0.5) * 2 * speed;
+
+  // Gentle gravity pull toward equator
+  p.y -= 0.003;
+
+  // Boundary: if particle escapes too far, respawn it
+  const dist2 = p.x * p.x + p.y * p.y + p.z * p.z;
+  if (dist2 > SPAWN_RADIUS * SPAWN_RADIUS * 1.1) {
+    // Respawn at boundary
+    const angle  = Math.random() * Math.PI * 2;
+    const phi    = Math.acos(2 * Math.random() - 1);
+    const r      = SPAWN_RADIUS;
+    p.x = Math.sin(phi) * Math.cos(angle) * r;
+    p.y = Math.sin(phi) * Math.sin(angle) * r;
+    p.z = Math.cos(phi) * r;
+    return;
+  }
+
+  // Check catch radius against all stuck positions
+  const cr2 = params.catchRadius * params.catchRadius;
+  for (let i = 0; i < stuckPositions.length; i++) {
+    const s = stuckPositions[i];
+    const dx = p.x - s.x;
+    const dy = p.y - s.y;
+    const dz = p.z - s.z;
+    if (dx * dx + dy * dy + dz * dz < cr2) {
+      p.stuck = true;
+      stuckPositions.push({ x: p.x, y: p.y, z: p.z });
+      break;
+    }
+  }
+}
+
+function updateInstancedMesh() {
+  const total = Math.min(stuckPositions.length, MAX_PARTICLES);
+  for (let i = 0; i < total; i++) {
+    const pos = stuckPositions[i];
+    dummy.position.set(pos.x, pos.y, pos.z);
+    // Vary scale a bit for organic feel
+    const s = 0.7 + (i % 7) * 0.05;
+    dummy.scale.set(s, s, s);
+    dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, dummy.matrix);
+    instancedMesh.setColorAt(i, getColor(i, total));
+  }
+  instancedMesh.count = total;
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+}
+
+// ─── Camera subtle animation ─────────────────────────────────────────────────
+let camAngle = 0;
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: 'DLA Controls' });
+gui.add(params, 'particleCount',   500,  5000, 100).name('Max Particles');
+gui.add(params, 'spawnRate',        1,    20,   1).name('Spawn Rate');
+gui.add(params, 'walkSpeed',      0.01,  0.2, 0.005).name('Walk Speed');
+gui.add(params, 'catchRadius',    0.2,   2.0, 0.05).name('Catch Radius');
+gui.add(params, 'colorScheme', Object.keys(COLOR_SCHEMES)).name('Color Scheme');
+gui.add(params, 'reset').name('🔄 Reset Simulation');
+
+// ─── Click to Reset ───────────────────────────────────────────────────────────
+window.addEventListener('click', () => resetSimulation());
+window.addEventListener('touchend', () => resetSimulation(), { passive: true });
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Initialize ───────────────────────────────────────────────────────────────
+resetSimulation();
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  // Spawn new particles
+  const targetCount = Math.min(params.particleCount, MAX_PARTICLES);
+  const toSpawn = Math.min(params.spawnRate, targetCount - stuckPositions.length);
+  for (let i = 0; i < toSpawn; i++) {
+    if (stuckPositions.length + particles.filter(p => !p.stuck).length < targetCount) {
+      spawnParticle();
+    }
+  }
+
+  // Step free particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    if (!p.stuck) {
+      stepParticle(p);
+    }
+  }
+
+  // Occasionally update mesh (every ~3 frames for performance)
+  if (Math.random() < 0.35) {
+    // Remove particles that got stuck
+    const newlyStuck = particles.filter(p => p.stuck);
+    // We rebuild stuckPositions from scratch to stay in sync
+    // Instead, track stuck count differently
+    updateInstancedMesh();
+  }
+
+  // Subtle camera orbit
+  camAngle += dt * 0.08;
+  camera.position.x = Math.sin(camAngle) * 18;
+  camera.position.z = Math.cos(camAngle) * 18;
+  camera.position.y = 2 + Math.sin(camAngle * 0.3) * 1.5;
+  camera.lookAt(0, 0, 0);
+
+  // Point light flicker
+  pointLight.intensity = 1.8 + Math.sin(Date.now() * 0.002) * 0.4;
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// ─── Debug Exports ────────────────────────────────────────────────────────────
+window.THREE = THREE;
+window.scene = scene;
+window.camera = camera;
+window.renderer = renderer;
+window.instancedMesh = instancedMesh;
+window.params = params;
+window.stuckPositions = stuckPositions;
+window.particles = particles;
+window.resetSimulation = resetSimulation;
+
+console.log('[DLA] Ready. Click to reset. Debug: window.params, window.stuckPositions');
+</script>
+</body>
+</html>

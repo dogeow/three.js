@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Perlin Noise Flow Map</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: monospace; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      color: #7af;
+      font-size: 13px;
+      line-height: 1.7;
+      pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    #info strong { color: #af7; }
+  </style>
+</head>
+<body>
+<div id="info">
+  <strong>Perlin Noise Flow Map</strong><br>
+  A <strong>flow field</strong> is a vector field where each point in space has a direction/velocity.<br>
+  We use <strong>Perlin noise</strong> (smooth, coherent randomness) to generate the field directions.<br>
+  Particles follow the field — their paths trace beautiful organic patterns.<br>
+  <br>
+  Drag to orbit &nbsp;|&nbsp; Scroll to zoom
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Perlin Noise Implementation ─────────────────────────────────────────────
+// Classic Perlin noise 2D implementation for generating smooth, coherent random values.
+// Perlin noise produces smooth gradients between values, making it ideal for flow fields.
+// The noise is deterministic (same input = same output) and smoothly interpolates.
+class PerlinNoise {
+  constructor(seed = 42) {
+    this.p = [];
+    this.perm = [];
+    const random = this.seededRandom(seed);
+    for (let i = 0; i < 256; i++) this.p[i] = i;
+    // Shuffle using Fisher-Yates
+    for (let i = 255; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
+    }
+    for (let i = 0; i < 512; i++) this.perm[i] = this.p[i & 255];
+  }
+
+  seededRandom(seed) {
+    return () => {
+      seed = (seed * 16807) % 2147483647;
+      return (seed - 1) / 2147483646;
+    };
+  }
+
+  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+
+  lerp(a, b, t) { return a + t * (b - a); }
+
+  grad(hash, x, y) {
+    const h = hash & 7;
+    const u = h < 4 ? x : y;
+    const v = h < 4 ? y : x;
+    return ((h & 1) ? -u : u) + ((h & 2) ? -2 * v : 2 * v);
+  }
+
+  noise(x, y) {
+    const X = Math.floor(x) & 255;
+    const Y = Math.floor(y) & 255;
+    x -= Math.floor(x);
+    y -= Math.floor(y);
+    const u = this.fade(x);
+    const v = this.fade(y);
+    const A = this.perm[X] + Y;
+    const B = this.perm[X + 1] + Y;
+    return this.lerp(
+      this.lerp(this.grad(this.perm[A], x, y), this.grad(this.perm[B], x - 1, y), u),
+      this.lerp(this.grad(this.perm[A + 1], x, y - 1), this.grad(this.perm[B + 1], x - 1, y - 1), u),
+      v
+    );
+  }
+
+  // Fractal Brownian Motion: layered noise for more natural, multi-scale patterns
+  fbm(x, y, octaves = 4) {
+    let value = 0, amplitude = 0.5, frequency = 1;
+    for (let i = 0; i < octaves; i++) {
+      value += amplitude * this.noise(x * frequency, y * frequency);
+      amplitude *= 0.5;
+      frequency *= 2;
+    }
+    return value;
+  }
+}
+
+const perlin = new PerlinNoise(137);
+
+// ─── Scene Setup ──────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020408);
+scene.fog = new THREE.FogExp2(0x020408, 0.018);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 28, 38);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.maxPolarAngle = Math.PI / 2 - 0.05;
+controls.minDistance = 5;
+controls.maxDistance = 100;
+
+// ─── Parameters ───────────────────────────────────────────────────────────────
+const params = {
+  flowSpeed: 1.2,
+  noiseScale: 0.08,
+  particleCount: 4000,
+  trailLength: 60,
+  noiseOctaves: 4,
+  showGrid: true,
+  showFlowMap: true,
+  gridOpacity: 0.35,
+};
+
+// ─── Flow Field Functions ──────────────────────────────────────────────────────
+// Get the flow vector at world position (x, z) at time t
+// The vector points in the direction of particle movement at that location
+function getFlowVector(x, z, t) {
+  const nx = x * params.noiseScale;
+  const nz = z * params.noiseScale;
+  // Angle from Perlin noise — creates a coherent directional field
+  const angle = perlin.fbm(nx + t * 0.08, nz + t * 0.06, params.noiseOctaves) * Math.PI * 4;
+  return new THREE.Vector2(Math.cos(angle), Math.sin(angle));
+}
+
+// ─── Flow Map Visualization (color-coded plane) ───────────────────────────────
+const flowMapRes = 64;
+const flowMapData = new Float32Array(flowMapRes * flowMapRes * 4); // RGBA
+
+function updateFlowMapData(time) {
+  const halfSize = 32;
+  const step = (halfSize * 2) / flowMapRes;
+  for (let row = 0; row < flowMapRes; row++) {
+    for (let col = 0; col < flowMapRes; col++) {
+      const x = -halfSize + col * step;
+      const z = -halfSize + row * step;
+      const vec = getFlowVector(x, z, time);
+      const idx = (row * flowMapRes + col) * 4;
+      // Map direction to color: vec.x → R, vec.y → G, length could modulate brightness
+      flowMapData[idx]     = (vec.x * 0.5 + 0.5); // R: -1..1 → 0..1
+      flowMapData[idx + 1] = (vec.y * 0.5 + 0.5); // G: -1..1 → 0..1
+      flowMapData[idx + 2] = 0.3;                  // B: subtle blue base
+      flowMapData[idx + 3] = 1.0;
+    }
+  }
+}
+
+const flowMapTexture = new THREE.DataTexture(
+  flowMapData, flowMapRes, flowMapRes,
+  THREE.RGBAFormat, THREE.FloatType
+);
+flowMapTexture.needsUpdate = true;
+
+const flowMapMat = new THREE.MeshBasicMaterial({
+  map: flowMapTexture,
+  transparent: true,
+  opacity: 0.22,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const flowMapMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(64, 64),
+  flowMapMat
+);
+flowMapMesh.rotation.x = -Math.PI / 2;
+flowMapMesh.position.y = -0.05;
+scene.add(flowMapMesh);
+
+// ─── Grid Plane with Direction Arrows ─────────────────────────────────────────
+// A grid where each cell shows the flow direction via color
+function buildGridArrows() {
+  const group = new THREE.Group();
+  const gridSize = 32;
+  const divisions = 32;
+  const step = (gridSize * 2) / divisions;
+  const arrowGeo = new THREE.ConeGeometry(0.07, 0.3, 4);
+  arrowGeo.translate(0, 0.08, 0);
+  arrowGeo.rotateX(Math.PI / 2);
+
+  for (let row = 0; row < divisions; row++) {
+    for (let col = 0; col < divisions; col++) {
+      const x = -gridSize + col * step + step * 0.5;
+      const z = -gridSize + row * step + step * 0.5;
+      const vec = getFlowVector(x, z, 0);
+      const hue = (Math.atan2(vec.y, vec.x) / (Math.PI * 2) + 1) % 1;
+      const color = new THREE.Color().setHSL(hue, 0.9, 0.55);
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 });
+      const arrow = new THREE.Mesh(arrowGeo, mat);
+      arrow.position.set(x, 0, z);
+      arrow.rotation.y = -Math.atan2(vec.y, vec.x) + Math.PI / 2;
+      group.add(arrow);
+    }
+  }
+  return group;
+}
+
+const gridArrows = buildGridArrows();
+scene.add(gridArrows);
+
+// Ground plane
+const groundGeo = new THREE.PlaneGeometry(80, 80);
+const groundMat = new THREE.MeshBasicMaterial({
+  color: 0x040c14,
+  transparent: true,
+  opacity: 0.95,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.1;
+scene.add(ground);
+
+// Grid helper
+const gridHelper = new THREE.GridHelper(64, 32, 0x0d2030, 0x071525);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.5;
+scene.add(gridHelper);
+
+// ─── Particle Ribbon Trail System ─────────────────────────────────────────────
+// Each particle has a trail of past positions drawn as a line.
+// Trail color encodes direction (HSL hue from flow angle).
+const PARTICLE_COUNT = params.particleCount;
+const TRAIL_LENGTH = params.trailLength;
+
+class ParticleTrail {
+  constructor() {
+    this.positions = new Float32Array(TRAIL_LENGTH * 3);
+    this.colors = new Float32Array(TRAIL_LENGTH * 3);
+    this.currentIndex = 0;
+    this.count = 0;
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+    geo.setDrawRange(0, 0);
+
+    const mat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.line = new THREE.Line(geo, mat);
+    this.geo = geo;
+  }
+
+  push(x, y, z, dirX, dirZ) {
+    const hue = (Math.atan2(dirZ, dirX) / (Math.PI * 2) + 1) % 1;
+    const color = new THREE.Color().setHSL(hue, 0.95, 0.6);
+
+    // Shift all positions back by 1
+    for (let i = TRAIL_LENGTH - 1; i > 0; i--) {
+      this.positions[i * 3]     = this.positions[(i - 1) * 3];
+      this.positions[i * 3 + 1] = this.positions[(i - 1) * 3 + 1];
+      this.positions[i * 3 + 2] = this.positions[(i - 1) * 3 + 2];
+      this.colors[i * 3]        = this.colors[(i - 1) * 3];
+      this.colors[i * 3 + 1]    = this.colors[(i - 1) * 3 + 1];
+      this.colors[i * 3 + 2]    = this.colors[(i - 1) * 3 + 2];
+    }
+    this.positions[0] = x;
+    this.positions[1] = y;
+    this.positions[2] = z;
+    this.colors[0]   = color.r;
+    this.colors[1]   = color.g;
+    this.colors[2]   = color.b;
+
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.color.needsUpdate = true;
+    this.geo.setDrawRange(0, Math.min(this.count + 1, TRAIL_LENGTH));
+  }
+}
+
+// Particle data: position + velocity
+const particles = [];
+const trails = [];
+const BOUNDS = 32;
+
+function randomStart() {
+  return {
+    x: (Math.random() - 0.5) * BOUNDS * 2,
+    y: 0.15 + Math.random() * 0.5,
+    z: (Math.random() - 0.5) * BOUNDS * 2,
+  };
+}
+
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  const pos = randomStart();
+  particles.push({ ...pos, age: Math.random() * 500 });
+  trails.push(new ParticleTrail());
+  scene.add(trails[i].line);
+}
+
+// Particle dots (small spheres rendered as instanced mesh for performance)
+const instancedGeo = new THREE.SphereGeometry(0.06, 4, 4);
+const instancedMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const instancedMesh = new THREE.InstancedMesh(instancedGeo, instancedMat, PARTICLE_COUNT);
+instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(instancedMesh);
+
+const dummy = new THREE.Object3D();
+const particleColors = new Float32Array(PARTICLE_COUNT * 3);
+
+// ─── GUI Controls ─────────────────────────────────────────────────────────────
+const gui = new GUI();
+gui.add(params, 'flowSpeed', 0.1, 5, 0.1).name('Flow Speed');
+gui.add(params, 'noiseScale', 0.01, 0.3, 0.005).name('Noise Scale').onChange(() => {
+  // Rebuild grid arrows when scale changes
+  scene.remove(gridArrows);
+  gridArrows.geometry?.dispose();
+  const newGrid = buildGridArrows();
+  scene.add(newGrid);
+});
+gui.add(params, 'noiseOctaves', 1, 6, 1).name('Noise Octaves').onChange(() => {
+  scene.remove(gridArrows);
+  const newGrid = buildGridArrows();
+  scene.add(newGrid);
+});
+gui.add(params, 'particleCount', 500, 8000, 100).name('Particle Count').onChange(() => {
+  // Adjust particle count requires rebuilding — just clamp for now
+});
+gui.add(params, 'trailLength', 10, 120, 1).name('Trail Length');
+gui.add(params, 'showGrid').name('Show Grid').onChange(v => {
+  gridHelper.visible = v;
+  gridArrows.visible = v;
+});
+gui.add(params, 'showFlowMap').name('Show Flow Map').onChange(v => {
+  flowMapMesh.visible = v;
+});
+gui.add(params, 'gridOpacity', 0, 1, 0.01).name('Grid Opacity').onChange(v => {
+  gridArrows.traverse(child => {
+    if (child.isMesh) child.material.opacity = v * 0.5;
+  });
+  gridHelper.material.opacity = v * 0.5;
+  flowMapMat.opacity = v * 0.22;
+});
+
+// ─── Animation Loop ────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let globalTime = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = Math.min(clock.getDelta(), 0.05);
+  globalTime += delta;
+
+  const effectiveTrailLength = Math.floor(params.trailLength);
+  const activeParticles = Math.min(params.particleCount, PARTICLE_COUNT);
+
+  // Update flow map visualization
+  updateFlowMapData(globalTime);
+  flowMapTexture.needsUpdate = true;
+
+  for (let i = 0; i < activeParticles; i++) {
+    const p = particles[i];
+    const trail = trails[i];
+
+    // Get flow vector at particle position
+    const vec = getFlowVector(p.x, p.z, globalTime);
+
+    // Move particle along flow field
+    const speed = params.flowSpeed * (0.7 + Math.random() * 0.6);
+    p.x += vec.x * speed * delta * 5;
+    p.z += vec.y * speed * delta * 5;
+    p.age++;
+
+    // Wrap around boundaries (toroidal space)
+    const bound = BOUNDS;
+    if (p.x >  bound) p.x -= bound * 2;
+    if (p.x < -bound) p.x += bound * 2;
+    if (p.z >  bound) p.z -= bound * 2;
+    if (p.z < -bound) p.z += bound * 2;
+
+    // Only start drawing trail after a few steps
+    if (p.age > 2) {
+      trail.push(p.x, p.y, p.z, vec.x, vec.y);
+    }
+
+    // Update instanced mesh
+    dummy.position.set(p.x, p.y, p.z);
+    dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, dummy.matrix);
+
+    // Color from flow direction
+    const hue = (Math.atan2(vec.y, vec.x) / (Math.PI * 2) + 1) % 1;
+    const col = new THREE.Color().setHSL(hue, 0.95, 0.65);
+    instancedMesh.setColorAt(i, col);
+  }
+
+  // Hide unused particles
+  for (let i = activeParticles; i < PARTICLE_COUNT; i++) {
+    dummy.position.set(0, -1000, 0);
+    dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, dummy.matrix);
+  }
+
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+
+  // Rebuild grid arrows periodically (to reflect changing flow field)
+  // For performance, we just rebuild on parameter change
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ─── Resize Handler ───────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>

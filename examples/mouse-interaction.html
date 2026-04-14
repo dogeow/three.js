@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Three.js Mouse Interaction</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #0d0d0d; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+
+    #info {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(10,10,10,0.82);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: #e0e0e0;
+      font-size: 13px;
+      line-height: 1.9;
+      min-width: 220px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    #info .label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+    #info .value { color: #5cf; font-family: 'Consolas', monospace; font-size: 12px; }
+    #info .highlight { color: #ff6b6b; }
+    #info hr { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 8px 0; }
+
+    #legend {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 24px;
+      background: rgba(10,10,10,0.78);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 30px;
+      padding: 10px 28px;
+      color: #aaa;
+      font-size: 12px;
+      backdrop-filter: blur(8px);
+    }
+    #legend span { display: flex; align-items: center; gap: 7px; }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-cube   { background: #4ecdc4; }
+    .dot-sphere { background: #ff6b6b; }
+    .dot-spawn  { background: #ffe66d; }
+    .dot-drag   { background: #c44eff; }
+
+    #tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(20,20,20,0.9);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 11px;
+      color: #ccc;
+      display: none;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <div class="label">Mouse NDC</div>
+    <div class="value" id="ndc">x: — , y: —</div>
+    <div class="label" style="margin-top:6px">World Pos</div>
+    <div class="value" id="world">x: — , y: — , z: —</div>
+    <div class="label" style="margin-top:6px">Picked Object</div>
+    <div class="value highlight" id="picked">—</div>
+    <hr>
+    <div class="label">Mode</div>
+    <div class="value" id="mode">Orbit (default)</div>
+  </div>
+
+  <div id="legend">
+    <span><span class="dot dot-cube"></span> Cube</span>
+    <span><span class="dot dot-sphere"></span> Sphere</span>
+    <span><span class="dot dot-spawn"></span> Click to spawn</span>
+    <span><span class="dot dot-drag"></span> Drag objects</span>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+    // ── Scene Setup ──────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d0d0d);
+    scene.fog = new THREE.Fog(0x0d0d0d, 30, 80);
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+    camera.position.set(0, 6, 18);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    // ── Lights ──────────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0x404060, 1.2));
+
+    const sun = new THREE.DirectionalLight(0xffeedd, 1.4);
+    sun.position.set(10, 20, 10);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 80;
+    sun.shadow.camera.left = -20;
+    sun.shadow.camera.right = 20;
+    sun.shadow.camera.top = 20;
+    sun.shadow.camera.bottom = -20;
+    scene.add(sun);
+
+    const rim = new THREE.DirectionalLight(0x4060ff, 0.5);
+    rim.position.set(-12, 5, -10);
+    scene.add(rim);
+
+    // ── Ground ───────────────────────────────────────────────────────────────
+    const groundGeo = new THREE.PlaneGeometry(60, 60, 30, 30);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x181820,
+      roughness: 0.9,
+      metalness: 0.1,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    ground.userData.isGround = true;
+    scene.add(ground);
+
+    // subtle grid
+    const grid = new THREE.GridHelper(60, 60, 0x2a2a35, 0x1e1e28);
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    // ── Materials ────────────────────────────────────────────────────────────
+    const cubeMat = new THREE.MeshStandardMaterial({ color: 0x4ecdc4, roughness: 0.3, metalness: 0.4 });
+    const sphereMat = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.3, metalness: 0.4 });
+    const torusMat = new THREE.MeshStandardMaterial({ color: 0xffe66d, roughness: 0.3, metalness: 0.4 });
+    const highlightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.6, emissive: 0x4488ff, emissiveIntensity: 0.4 });
+    const spawnMat = new THREE.MeshStandardMaterial({ color: 0xffe66d, roughness: 0.3, metalness: 0.5 });
+
+    const originalMats = new Map();
+
+    // ── Interactive Objects ───────────────────────────────────────────────────
+    const interactiveObjects = [];
+
+    function addCube(x, y, z) {
+      const g = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+      const m = new THREE.Mesh(g, cubeMat.clone());
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.userData.type = 'Cube';
+      m.userData.baseColor = 0x4ecdc4;
+      scene.add(m);
+      interactiveObjects.push(m);
+      return m;
+    }
+
+    function addSphere(x, y, z) {
+      const g = new THREE.SphereGeometry(0.75, 32, 32);
+      const m = new THREE.Mesh(g, sphereMat.clone());
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.userData.type = 'Sphere';
+      m.userData.baseColor = 0xff6b6b;
+      scene.add(m);
+      interactiveObjects.push(m);
+      return m;
+    }
+
+    function addTorus(x, y, z) {
+      const g = new THREE.TorusGeometry(0.6, 0.25, 16, 40);
+      const m = new THREE.Mesh(g, torusMat.clone());
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.userData.type = 'Torus';
+      m.userData.baseColor = 0xffe66d;
+      scene.add(m);
+      interactiveObjects.push(m);
+      return m;
+    }
+
+    // initial scatter
+    const positions = [
+      [-4, 0.6, -3], [4, 0.75, -3], [0, 0.6, -5],
+      [-6, 0.6, 2],  [6, 0.6, 2],   [-3, 0.75, 5],
+      [3, 0.75, 5],  [0, 0.6, 3],
+    ];
+    positions.forEach(([x, y, z], i) => {
+      if (i % 3 === 0) addCube(x, y, z);
+      else if (i % 3 === 1) addSphere(x, y, z);
+      else addTorus(x, y, z);
+    });
+
+    // ── Controls ──────────────────────────────────────────────────────────────
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    orbit.enableDamping = true;
+    orbit.dampingFactor = 0.07;
+    orbit.target.set(0, 1, 0);
+
+    const transform = new TransformControls(camera, renderer.domElement);
+    transform.setSize(0.8);
+    scene.add(transform);
+
+    let mode = 'orbit'; // 'orbit' | 'translate'
+
+    transform.addEventListener('dragging-changed', e => {
+      orbit.enabled = !e.value;
+      mode = e.value ? 'translate' : 'orbit';
+      document.getElementById('mode').textContent = e.value ? 'Translate / Drag' : 'Orbit (default)';
+    });
+
+    // ── Raycaster & State ─────────────────────────────────────────────────────
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const mouseWorld = new THREE.Vector3();
+    let hovered = null;
+    let selected = null;
+    let outlineMesh = null;
+    let dragPlane = null;
+    let dragOffset = new THREE.Vector3();
+    let isDragging = false;
+    let spawnPreview = null;
+
+    // outline ring helper
+    function createOutline(obj) {
+      const g = obj.geometry.clone();
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x5cf, side: THREE.BackSide, transparent: true, opacity: 0.35 }));
+      m.scale.setScalar(1.12);
+      obj.add(m);
+      return m;
+    }
+
+    function removeOutline(obj) {
+      if (!obj) return;
+      const kids = obj.children;
+      for (let i = kids.length - 1; i >= 0; i--) {
+        if (kids[i].isMesh && kids[i].material.side === THREE.BackSide) {
+          obj.remove(kids[i]);
+          kids[i].material.dispose();
+        }
+      }
+    }
+
+    function setHover(obj) {
+      if (obj === hovered) return;
+      if (hovered && hovered !== selected) {
+        removeOutline(hovered);
+        if (!originalMats.has(hovered.uuid)) return;
+        hovered.material.color.set(originalMats.get(hovered.uuid));
+        hovered.material.emissive.set(0x000000);
+      }
+      hovered = obj;
+      if (obj && obj !== selected) {
+        originalMats.set(obj.uuid, obj.material.color.getHex());
+        obj.material.color.set(0xaaddff);
+        obj.material.emissive.set(0x113366);
+        createOutline(obj);
+      }
+    }
+
+    function setSelected(obj) {
+      if (selected) {
+        removeOutline(selected);
+        transform.detach();
+      }
+      selected = obj;
+      if (obj) {
+        originalMats.set(obj.uuid, obj.material.color.getHex());
+        obj.material.color.set(0x4488ff);
+        obj.material.emissive.set(0x112244);
+        createOutline(obj);
+        transform.attach(obj);
+        orbit.enabled = false;
+        mode = 'translate';
+        document.getElementById('mode').textContent = 'Translate / Drag';
+      } else {
+        orbit.enabled = true;
+        mode = 'orbit';
+        document.getElementById('mode').textContent = 'Orbit (default)';
+      }
+      document.getElementById('picked').textContent = obj ? `${obj.userData.type} @ (${obj.position.x.toFixed(1)}, ${obj.position.y.toFixed(1)}, ${obj.position.z.toFixed(1)})` : '—';
+    }
+
+    // ── Spawn Preview ────────────────────────────────────────────────────────
+    const spawnGeo = new THREE.SphereGeometry(0.55, 24, 24);
+    const spawnPreviewMat = new THREE.MeshBasicMaterial({ color: 0xffe66d, transparent: true, opacity: 0.35, wireframe: true });
+    spawnPreview = new THREE.Mesh(spawnGeo, spawnPreviewMat);
+    spawnPreview.visible = false;
+    scene.add(spawnPreview);
+
+    // ── Mouse Events ──────────────────────────────────────────────────────────
+    const tooltip = document.getElementById('tooltip');
+    const ndcEl = document.getElementById('ndc');
+    const worldEl = document.getElementById('world');
+
+    function updateMouse(e) {
+      mouse.x =  (e.clientX / innerWidth)  * 2 - 1;
+      mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+
+      ndcEl.textContent = `x: ${mouse.x.toFixed(3)} , y: ${mouse.y.toFixed(3)}`;
+
+      raycaster.setFromCamera(mouse, camera);
+      raycaster.ray.at(6, mouseWorld);
+      worldEl.textContent = `x: ${mouseWorld.x.toFixed(2)} , y: ${mouseWorld.y.toFixed(2)} , z: ${mouseWorld.z.toFixed(2)}`;
+    }
+
+    function getIntersects(filterFn) {
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(interactiveObjects, false);
+      return filterFn ? hits.filter(h => filterFn(h.object)) : hits;
+    }
+
+    renderer.domElement.addEventListener('mousemove', e => {
+      updateMouse(e);
+
+      if (isDragging && selected) {
+        // continue drag
+        raycaster.setFromCamera(mouse, camera);
+        const hits = raycaster.intersectObject(ground);
+        if (hits.length > 0) {
+          selected.position.copy(hits[0].point).add(dragOffset);
+          selected.position.y = Math.max(selected.position.y, 0.01);
+        }
+        return;
+      }
+
+      // hover highlight
+      const hits = getIntersects();
+      const top = hits.length > 0 ? hits[0] : null;
+      const topObj = top ? top.object : null;
+
+      if (topObj && !topObj.userData.isGround) {
+        setHover(topObj);
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.clientX + 14) + 'px';
+        tooltip.style.top  = (e.clientY - 10) + 'px';
+        tooltip.textContent = topObj.userData.type;
+      } else {
+        setHover(null);
+        tooltip.style.display = 'none';
+      }
+
+      // spawn preview (shift key held)
+      if (e.shiftKey) {
+        raycaster.setFromCamera(mouse, camera);
+        const gHits = raycaster.intersectObject(ground);
+        if (gHits.length > 0) {
+          spawnPreview.visible = true;
+          spawnPreview.position.copy(gHits[0].point);
+          spawnPreview.position.y = 0.55;
+        }
+      } else {
+        spawnPreview.visible = false;
+      }
+    });
+
+    renderer.domElement.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      updateMouse(e);
+
+      const hits = getIntersects();
+      if (hits.length === 0) return;
+      const obj = hits[0].object;
+      if (obj.userData.isGround) return;
+
+      if (selected && selected !== obj) {
+        setSelected(null);
+      }
+
+      if (!selected) {
+        setSelected(obj);
+        // start drag
+        isDragging = true;
+        orbit.enabled = false;
+        transform.visible = false;
+        raycaster.setFromCamera(mouse, camera);
+        const gHits = raycaster.intersectObject(ground);
+        if (gHits.length > 0) {
+          dragOffset.copy(obj.position).sub(gHits[0].point);
+        }
+      }
+    });
+
+    renderer.domElement.addEventListener('mouseup', e => {
+      if (e.button !== 0) return;
+      isDragging = false;
+      if (transform.visible === false) transform.visible = true;
+      if (selected) {
+        orbit.enabled = false;
+        transform.attach(selected);
+        mode = 'translate';
+        document.getElementById('mode').textContent = 'Translate / Drag';
+      }
+    });
+
+    // click on ground / empty to deselect
+    renderer.domElement.addEventListener('click', e => {
+      if (isDragging) return;
+      updateMouse(e);
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(interactiveObjects, false);
+      if (hits.length === 0 && !e.shiftKey) {
+        setSelected(null);
+        setHover(null);
+      }
+    });
+
+    // spawn with shift+click
+    renderer.domElement.addEventListener('click', e => {
+      if (!e.shiftKey) return;
+      raycaster.setFromFromCamera && raycaster.setFromFromCamera(mouse, camera); // noop guard
+      raycaster.setFromCamera(mouse, camera);
+      const gHits = raycaster.intersectObject(ground);
+      if (gHits.length === 0) return;
+
+      const pt = gHits[0].point;
+      const r = Math.random();
+      let obj;
+      if (r < 0.33)      obj = addCube(pt.x, 0.6, pt.z);
+      else if (r < 0.66) obj = addSphere(pt.x, 0.75, pt.z);
+      else               obj = addTorus(pt.x, 0.6, pt.z);
+
+      // flash effect
+      obj.material.color.set(0xffffff);
+      obj.material.emissive.set(0xffffff);
+      obj.material.emissiveIntensity = 1.0;
+      setTimeout(() => {
+        if (obj.material) {
+          obj.material.emissive.set(0x000000);
+          obj.material.emissiveIntensity = 0;
+          obj.material.color.set(obj.userData.baseColor);
+        }
+      }, 350);
+
+      setSelected(obj);
+    });
+
+    // deselect with Escape
+    window.addEventListener('keydown', e => {
+      if (e.key === 'Escape') setSelected(null);
+    });
+
+    // ── Window Resize ──────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // ── Animation Loop ────────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+
+      // gentle float for unselected objects
+      interactiveObjects.forEach((obj, i) => {
+        if (obj === selected) return;
+        if (obj.userData.isGround) return;
+        obj.position.y += Math.sin(t * 1.2 + i * 0.7) * 0.0008;
+        obj.rotation.y = Math.sin(t * 0.4 + i * 1.1) * 0.25;
+      });
+
+      orbit.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    document.getElementById('mode').textContent = 'Orbit (default)';
+  </script>
+</body>
+</html>

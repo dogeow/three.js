@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Particle Trails</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.4);
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      pointer-events: none;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+<div id="info">Click anywhere to burst &mdash; Drag to swirl</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ── Scene Setup ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 1);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(0, 0, 600);
+
+// ── Sim Parameters ────────────────────────────────────────────────────────────
+const params = {
+  particleCount: 6000,
+  trailLength: 0.88,
+  flowSpeed: 1.2,
+  baseColor: '#4fc3f7',
+  secondColor: '#ff4081',
+  colorMix: 0.45,
+  mouseStrength: 220,
+  particleSize: 1.4,
+  burstCount: 300,
+};
+
+// ── Simplex-like 3D noise (fast implementation) ───────────────────────────────
+function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function lerp(a, b, t) { return a + t * (b - a); }
+
+function hash(n) {
+  let x = Math.sin(n) * 43758.5453123;
+  return x - Math.floor(x);
+}
+
+function noise3(x, y, z) {
+  const p = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15].map(() => Math.floor(hash(Math.random()) * 3) - 1);
+  const X = Math.floor(x) & 3, Y = Math.floor(y) & 3, Z = Math.floor(z) & 3;
+  const xf = x - Math.floor(x), yf = y - Math.floor(y), zf = z - Math.floor(z);
+  const u = fade(xf), v = fade(yf), w = fade(zf);
+  const n = (p[X] + p[Y] + p[Z]) % 12;
+  return lerp(
+    lerp(lerp(hash(n), hash(n+1), u), lerp(hash(n+4), hash(n+5), u), v),
+    lerp(lerp(hash(n+8), hash(n+9), u), lerp(hash(n+12), hash(n+13), u), v),
+    w
+  ) * 2 - 1;
+}
+
+// ── Particle Data ─────────────────────────────────────────────────────────────
+let N = params.particleCount;
+const positions   = new Float32Array(N * 3);
+const velocities  = new Float32Array(N * 3);
+const colors     = new Float32Array(N * 3);
+const alphas     = new Float32Array(N);
+const ages       = new Float32Array(N);
+const maxAges    = new Float32Array(N);
+const trail      = new Array(N); // ring buffer of past positions
+
+function randomInSphere(r) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi   = Math.acos(2 * Math.random() - 1);
+  const r2    = r * Math.cbrt(Math.random());
+  return [r2 * Math.sin(phi) * Math.cos(theta), r2 * Math.sin(phi) * Math.sin(theta), r2 * Math.cos(phi)];
+}
+
+function initParticle(i, burst) {
+  const spread = burst ? 30 : 700;
+  const [px, py, pz] = randomInSphere(spread);
+  positions[i*3]   = px;
+  positions[i*3+1] = py;
+  positions[i*3+2] = pz;
+
+  const spd = 0.4 + Math.random() * 0.6;
+  const vt  = Math.random() * Math.PI * 2;
+  const vp  = Math.random() * Math.PI;
+  velocities[i*3]   = spd * Math.sin(vp) * Math.cos(vt);
+  velocities[i*3+1] = spd * Math.sin(vp) * Math.sin(vt);
+  velocities[i*3+2] = spd * Math.cos(vp);
+
+  const t = Math.random();
+  const c1 = new THREE.Color(params.baseColor);
+  const c2 = new THREE.Color(params.secondColor);
+  const c  = c1.clone().lerp(c2, t * params.colorMix * 2 % 1);
+  colors[i*3]   = c.r;
+  colors[i*3+1] = c.g;
+  colors[i*3+2] = c.b;
+
+  ages[i]    = 0;
+  maxAges[i] = 4 + Math.random() * 8;
+  alphas[i]  = 1.0;
+
+  trail[i] = [];
+}
+
+function initAll() {
+  N = params.particleCount;
+  for (let i = 0; i < N; i++) {
+    trail[i] = [];
+    initParticle(i, false);
+  }
+}
+
+initAll();
+
+// ── Geometry & Material ───────────────────────────────────────────────────────
+const geometry = new THREE.BufferGeometry();
+const posBuf = new Float32Array(N * 3);
+const colBuf = new Float32Array(N * 3);
+const alpBuf = new Float32Array(N);
+
+const posAttr = new THREE.BufferAttribute(posBuf, 3); posAttr.setUsage(THREE.DynamicDrawUsage);
+const colAttr = new THREE.BufferAttribute(colBuf, 3); colAttr.setUsage(THREE.DynamicDrawUsage);
+const alpAttr = new THREE.BufferAttribute(alpBuf, 1); alpAttr.setUsage(THREE.DynamicDrawUsage);
+
+geometry.setAttribute('position', posAttr);
+geometry.setAttribute('color', colAttr);
+geometry.setAttribute('alpha', alpAttr);
+
+// Custom shader material for per-particle alpha
+const vertexShader = `
+  attribute float alpha;
+  varying vec3 vColor;
+  varying float vAlpha;
+  uniform float uSize;
+  void main() {
+    vColor = color;
+    vAlpha = alpha;
+    vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = uSize * (300.0 / -mvPos.z);
+    gl_Position = projectionMatrix * mvPos;
+  }
+`;
+
+const fragmentShader = `
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    if (d > 0.5) discard;
+    float a = (1.0 - d * 2.0) * vAlpha;
+    gl_FragColor = vec4(vColor, a);
+  }
+`;
+
+const material = new THREE.ShaderMaterial({
+  vertexShader,
+  fragmentShader,
+  uniforms: {
+    uSize: { value: params.particleSize },
+  },
+  transparent: true,
+  vertexColors: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false,
+});
+
+const points = new THREE.Points(geometry, material);
+scene.add(points);
+
+// ── GUI ───────────────────────────────────────────────────────────────────────
+const gui = new GUI();
+gui.add(params, 'particleCount', 1000, 15000, 100).name('Particles').onFinishChange(() => {
+  N = params.particleCount;
+  // Rebuild arrays
+  const oldN = positions.length / 3;
+  const newPositions  = new Float32Array(N * 3);
+  const newVelocities = new Float32Array(N * 3);
+  const newColors     = new Float32Array(N * 3);
+  const newAlphas     = new Float32Array(N);
+  const newAges       = new Float32Array(N);
+  const newMaxAges    = new Float32Array(N);
+  const newTrail      = [];
+
+  const copyN = Math.min(oldN, N);
+  for (let i = 0; i < copyN; i++) {
+    newPositions[i*3]   = positions[i*3];
+    newPositions[i*3+1] = positions[i*3+1];
+    newPositions[i*3+2] = positions[i*3+2];
+    newVelocities[i*3]  = velocities[i*3];
+    newVelocities[i*3+1]= velocities[i*3+1];
+    newVelocities[i*3+2]= velocities[i*3+2];
+    newColors[i*3]      = colors[i*3];
+    newColors[i*3+1]    = colors[i*3+1];
+    newColors[i*3+2]    = colors[i*3+2];
+    newAlphas[i]        = alphas[i];
+    newAges[i]          = ages[i];
+    newMaxAges[i]       = maxAges[i];
+    newTrail[i]         = trail[i];
+  }
+  for (let i = copyN; i < N; i++) newTrail[i] = [];
+
+  positions.set(newPositions); velocities.set(newVelocities);
+  colors.set(newColors); alphas.set(newAlphas);
+  ages.set(newAges); maxAges.set(newMaxAges);
+  trail = newTrail;
+
+  posAttr.array = new Float32Array(N * 3);
+  colAttr.array = new Float32Array(N * 3);
+  alpAttr.array = new Float32Array(N);
+  posAttr.count = N; colAttr.count = N; alpAttr.count = N;
+  geometry.setAttribute('position', posAttr);
+  geometry.setAttribute('color', colAttr);
+  geometry.setAttribute('alpha', alpAttr);
+  posAttr.needsUpdate = true; colAttr.needsUpdate = true; alpAttr.needsUpdate = true;
+});
+
+gui.add(params, 'trailLength', 0.5, 0.99, 0.01).name('Trail Length');
+gui.add(params, 'flowSpeed', 0.1, 5.0, 0.1).name('Flow Speed');
+gui.add(params, 'mouseStrength', 0, 500, 10).name('Mouse Strength');
+gui.addColor(params, 'baseColor').name('Color A').onChange(() => {});
+gui.addColor(params, 'secondColor').name('Color B').onChange(() => {});
+gui.add(params, 'colorMix', 0, 1, 0.01).name('Color Mix');
+gui.add(params, 'particleSize', 0.5, 5.0, 0.1).name('Size').onChange(v => {
+  material.uniforms.uSize.value = v;
+});
+
+// ── Mouse Interaction ─────────────────────────────────────────────────────────
+const mouse = new THREE.Vector2();
+const raycaster = new THREE.Raycaster();
+const mousePlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const mouseWorld = new THREE.Vector3();
+let isMouseDown = false;
+
+window.addEventListener('mousemove', e => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(mousePlane, mouseWorld);
+});
+
+window.addEventListener('mousedown', () => { isMouseDown = true; });
+window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+window.addEventListener('click', e => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(mousePlane, mouseWorld);
+  burstAt(mouseWorld);
+});
+
+function burstAt(pos) {
+  let added = 0;
+  // Find dead or oldest particles and re-spawn at burst position
+  for (let i = 0; i < N && added < params.burstCount; i++) {
+    if (ages[i] >= maxAges[i]) {
+      positions[i*3]   = pos.x + (Math.random() - 0.5) * 20;
+      positions[i*3+1] = pos.y + (Math.random() - 0.5) * 20;
+      positions[i*3+2] = pos.z + (Math.random() - 0.5) * 20;
+      const spd = 2 + Math.random() * 4;
+      const vt  = Math.random() * Math.PI * 2;
+      const vp  = Math.random() * Math.PI;
+      velocities[i*3]   = spd * Math.sin(vp) * Math.cos(vt);
+      velocities[i*3+1] = spd * Math.sin(vp) * Math.sin(vt);
+      velocities[i*3+2] = spd * Math.cos(vp);
+      const c1 = new THREE.Color(params.baseColor);
+      const c2 = new THREE.Color(params.secondColor);
+      const c  = c1.clone().lerp(c2, Math.random());
+      colors[i*3]   = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+      ages[i] = 0; maxAges[i] = 2 + Math.random() * 4; alphas[i] = 1.0;
+      trail[i] = [];
+      added++;
+    }
+  }
+}
+
+// ── Animation Loop ────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let time = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  time += dt * params.flowSpeed;
+
+  for (let i = 0; i < N; i++) {
+    // Age & fade
+    ages[i] += dt;
+    const lifeRatio = ages[i] / maxAges[i];
+    alphas[i] = lifeRatio > 0.7
+      ? Math.max(0, 1.0 - (lifeRatio - 0.7) / 0.3) * 0.9
+      : 0.9;
+
+    // Reset dead particles
+    if (ages[i] >= maxAges[i]) {
+      // Store trail for fade effect — keep it alive briefly
+      if (trail[i].length > 0) {
+        // trail already fading handled below
+      }
+      initParticle(i, false);
+      continue;
+    }
+
+    // Record trail position before moving
+    if (trail[i].length >= 60) trail[i].shift();
+    trail[i].push(positions[i*3], positions[i*3+1], positions[i*3+2]);
+
+    // Flow field noise
+    const px = positions[i*3], py = positions[i*3+1], pz = positions[i*3+2];
+    const ns = 0.003;
+    const angle = noise3(px * ns, py * ns, time * 0.4) * Math.PI * 2;
+    const angle2 = noise3(pz * ns, py * ns, time * 0.4 + 100) * Math.PI * 2;
+    const fx = Math.cos(angle) * 0.8 + Math.sin(angle2) * 0.3;
+    const fy = Math.sin(angle) * 0.8 + Math.cos(angle2) * 0.3;
+    const fz = noise3(time * 0.3 + px * ns, py * ns, pz * ns) * 0.6;
+
+    velocities[i*3]   = (velocities[i*3]   + fx * dt * 60) * 0.96;
+    velocities[i*3+1] = (velocities[i*3+1] + fy * dt * 60) * 0.96;
+    velocities[i*3+2] = (velocities[i*3+2] + fz * dt * 60) * 0.96;
+
+    // Mouse influence
+    if (isMouseDown) {
+      const dx = mouseWorld.x - px;
+      const dy = mouseWorld.y - py;
+      const dz = mouseWorld.z - pz;
+      const dist2 = dx*dx + dy*dy + dz*dz;
+      if (dist2 > 1 && dist2 < params.mouseStrength * params.mouseStrength) {
+        const dist = Math.sqrt(dist2);
+        const force = 80 / (dist + 10);
+        velocities[i*3]   += dx / dist * force * dt;
+        velocities[i*3+1] += dy / dist * force * dt;
+        velocities[i*3+2] += dz / dist * force * dt;
+      }
+    }
+
+    positions[i*3]   += velocities[i*3]   * dt * 30;
+    positions[i*3+1] += velocities[i*3+1] * dt * 30;
+    positions[i*3+2] += velocities[i*3+2] * dt * 30;
+
+    // Wrap in box
+    const bound = 700;
+    if (positions[i*3]   > bound) positions[i*3]   -= bound * 2;
+    if (positions[i*3]   < -bound) positions[i*3]  += bound * 2;
+    if (positions[i*3+1] > bound) positions[i*3+1] -= bound * 2;
+    if (positions[i*3+1] < -bound) positions[i*3+1]+= bound * 2;
+    if (positions[i*3+2] > bound) positions[i*3+2] -= bound * 2;
+    if (positions[i*3+2] < -bound) positions[i*3+2]+= bound * 2;
+  }
+
+  // Build render buffer — mix current + trail positions
+  // To achieve persistent trails we blend current particles with stored trail positions
+  // at lower alpha. We simulate this by writing all trail positions as particles too.
+  let idx = 0;
+  const maxTrailSamples = Math.floor((1 - params.trailLength) * 60) + 1;
+  const writeBuf = idx < N * 3 ? posBuf : null;
+
+  // Particle positions
+  for (let i = 0; i < N; i++) {
+    posBuf[i*3]   = positions[i*3];
+    posBuf[i*3+1] = positions[i*3+1];
+    posBuf[i*3+2] = positions[i*3+2];
+    colBuf[i*3]   = colors[i*3];
+    colBuf[i*3+1] = colors[i*3+1];
+    colBuf[i*3+2] = colors[i*3+2];
+    alpBuf[i]     = alphas[i] * 0.95;
+  }
+
+  // Blend in trail positions at diminishing alpha
+  const c1 = new THREE.Color(params.baseColor);
+  const c2 = new THREE.Color(params.secondColor);
+  let trailOffset = N;
+  for (let t = 1; t <= maxTrailSamples && trailOffset < N * 0.4; t++) {
+    const trailAlpha = alphas[0] * (1 - t / (maxTrailSamples + 1)) * 0.4;
+    for (let i = 0; i < N && trailOffset < N * 0.4; i++) {
+      if (trail[i] && trail[i].length >= t * 3) {
+        const ti = trail[i].length - t * 3;
+        posBuf[trailOffset*3]   = trail[i][ti];
+        posBuf[trailOffset*3+1] = trail[i][ti+1];
+        posBuf[trailOffset*3+2] = trail[i][ti+2];
+        const mixedColor = c1.clone().lerp(c2, (trailOffset % 1000) / 1000);
+        colBuf[trailOffset*3]   = mixedColor.r;
+        colBuf[trailOffset*3+1] = mixedColor.g;
+        colBuf[trailOffset*3+2] = mixedColor.b;
+        alpBuf[trailOffset]     = Math.max(0, trailAlpha);
+        trailOffset++;
+      }
+    }
+  }
+
+  posAttr.needsUpdate = true;
+  colAttr.needsUpdate = true;
+  alpAttr.needsUpdate = true;
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

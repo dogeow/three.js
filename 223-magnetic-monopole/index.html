@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magnetic Monopole Visualization | Theoretical Physics</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #0a0a12;
+            font-family: 'Georgia', serif;
+        }
+        canvas {
+            display: block;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #c8d4e8;
+            font-size: 14px;
+            line-height: 1.7;
+            max-width: 380px;
+            pointer-events: none;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+        #info h1 {
+            font-size: 18px;
+            font-weight: normal;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #7aa2f7;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #2a3a5a;
+            padding-bottom: 8px;
+        }
+        #info .formula {
+            font-family: 'Times New Roman', serif;
+            font-style: italic;
+            color: #bb9af7;
+            font-size: 15px;
+        }
+        #info .caption {
+            font-size: 12px;
+            color: #6b7a9a;
+            margin-top: 10px;
+        }
+        #legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #8899bb;
+            font-size: 12px;
+            pointer-events: none;
+        }
+        #legend .arrow-north {
+            color: #ff6b6b;
+        }
+        #legend .arrow-south {
+            color: #4dabf7;
+        }
+    </style>
+
+    <!--
+    ============================================================================
+     MAGNETIC MONOPOLE VISUALIZATION
+    ============================================================================
+
+     PHYSICS BACKGROUND:
+     --------------------
+     A magnetic monopole is a hypothetical particle that has only a magnetic
+     north pole or south pole, unlike normal magnets which always have both
+     poles. In classical electromagnetism, magnetic charges (monopoles) would
+     satisfy the dual symmetry of Maxwell's equations:
+
+        ∇ · E  = ρₑ/ε₀        ∇ · B  = ρₘ/μ₀
+        ∇ × E  = -∂B/∂t       ∇ × B  = μ₀Jₑ + μ₀ε₀∂E/∂t
+
+     The magnetic field of a monopole is analogous to the electric field
+     of a point charge:
+
+        B = (μ₀/4π) · (g · r̂) / r²
+
+     where g is the magnetic charge (monopole strength).
+
+     HISTORICAL NOTES:
+     - Paul Dirac showed in 1931 that monopoles could explain charge
+       quantization (e = √(2ħε₀)·n·g)
+     - Ongoing searches at LHC and other facilities
+     - No confirmed detection as of 2026
+
+     FIELD LINE PROPERTIES:
+     - Radiate outward (north monopole) or inward (south monopole)
+     - Density ∝ 1/r² (inverse square law)
+     - Never form closed loops (unlike dipoles)
+     - Direction indicates field orientation
+
+    ============================================================================
+    -->
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <h1>Magnetic Monopole</h1>
+        <p>
+            Theoretical particle with isolated magnetic charge.<br>
+            Field magnitude: <span class="formula">|B| = g / r²</span>
+        </p>
+        <p class="caption">
+            Drag to orbit &bull; Scroll to zoom<br>
+            A monopole would have field lines radiating<br>
+            exclusively from (N) or into (S) the particle.
+        </p>
+    </div>
+    <div id="legend">
+        <span class="arrow-north">&#9658;</span> N-pole field lines (outward)<br>
+        <span class="arrow-south">&#9658;</span> S-pole field lines (inward)
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { Line2 } from 'three/addons/lines/Line2.js';
+        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+        import GUI from 'three/addons/libs/lil-gui.module.min.js';
+
+        // ================================================================
+        // SCENE SETUP
+        // ================================================================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a12);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(8, 5, 10);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.body.appendChild(renderer.domElement);
+
+        // ================================================================
+        // POST-PROCESSING (BLOOM)
+        // ================================================================
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.5,   // strength
+            0.4,   // radius
+            0.2    // threshold
+        );
+        composer.addPass(bloomPass);
+
+        // ================================================================
+        // CONTROLS
+        // ================================================================
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 3;
+        controls.maxDistance = 30;
+
+        // ================================================================
+        // PARAMETERS
+        // ================================================================
+        const params = {
+            fieldLineCount: 24,      // Number of field lines
+            monopoleStrength: 1.0,   // Magnetic charge g
+            animationSpeed: 1.0,    // Flow animation speed
+            colorScheme: 'Classic', // 'Classic', 'Plasma', 'Aurora'
+            showNorth: true,         // Show N-pole (positive charge)
+            showSouth: false,        // Show S-pole (negative charge)
+            bloomStrength: 1.5,
+            bloomRadius: 0.4,
+            bloomThreshold: 0.2
+        };
+
+        // ================================================================
+        // COLOR SCHEMES
+        // ================================================================
+        const colorSchemes = {
+            'Classic': {
+                north: new THREE.Color(0xff6b6b),
+                south: new THREE.Color(0x4dabf7),
+                background: new THREE.Color(0x0a0a12),
+                text: '#c8d4e8'
+            },
+            'Plasma': {
+                north: new THREE.Color(0xff9f43),
+                south: new THREE.Color(0xa29bfe),
+                background: new THREE.Color(0x0d0d1a),
+                text: '#d4c8e8'
+            },
+            'Aurora': {
+                north: new THREE.Color(0x00d9ff),
+                south: new THREE.Color(0xff6b9d),
+                background: new THREE.Color(0x050510),
+                text: '#c8e8d4'
+            }
+        };
+
+        // ================================================================
+        // GUI
+        // ================================================================
+        const gui = new GUI({ title: 'Monopole Controls' });
+
+        const fieldFolder = gui.addFolder('Field Lines');
+        fieldFolder.add(params, 'fieldLineCount', 4, 60, 1).name('Line Density');
+        fieldFolder.add(params, 'animationSpeed', 0, 3, 0.1).name('Flow Speed');
+
+        const poleFolder = gui.addFolder('Poles');
+        poleFolder.add(params, 'showNorth').name('Show N-Pole (+g)');
+        poleFolder.add(params, 'showSouth').name('Show S-Pole (-g)');
+        poleFolder.add(params, 'monopoleStrength', 0.1, 3, 0.1).name('Strength |g|');
+
+        const visFolder = gui.addFolder('Appearance');
+        visFolder.add(params, 'colorScheme', Object.keys(colorSchemes)).name('Color Scheme')
+            .onChange(updateColors);
+        visFolder.add(params, 'bloomStrength', 0, 3, 0.1).name('Bloom Strength')
+            .onChange(v => bloomPass.strength = v);
+        visFolder.add(params, 'bloomRadius', 0, 1, 0.05).name('Bloom Radius')
+            .onChange(v => bloomPass.radius = v);
+        visFolder.add(params, 'bloomThreshold', 0, 1, 0.05).name('Bloom Threshold')
+            .onChange(v => bloomPass.threshold = v);
+
+        // ================================================================
+        // MONOPOLE SPHERES
+        // ================================================================
+        const sphereGeometry = new THREE.SphereGeometry(0.35, 64, 64);
+
+        const northMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff6b6b,
+            emissive: 0xff3333,
+            emissiveIntensity: 2,
+            metalness: 0.3,
+            roughness: 0.2
+        });
+
+        const southMaterial = new THREE.MeshStandardMaterial({
+            color: 0x4dabf7,
+            emissive: 0x3399ff,
+            emissiveIntensity: 2,
+            metalness: 0.3,
+            roughness: 0.2
+        });
+
+        const northSphere = new THREE.Mesh(sphereGeometry, northMaterial);
+        northSphere.position.set(-2, 0, 0);
+        northSphere.visible = params.showNorth;
+
+        const southSphere = new THREE.Mesh(sphereGeometry, southMaterial);
+        southSphere.position.set(2, 0, 0);
+        southSphere.visible = params.showSouth;
+
+        scene.add(northSphere);
+        scene.add(southSphere);
+
+        // ================================================================
+        // FIELD LINES
+        // ================================================================
+        const fieldLines = [];
+        const arrowCones = [];
+        const lineGroup = new THREE.Group();
+        const arrowGroup = new THREE.Group();
+        scene.add(lineGroup);
+        scene.add(arrowGroup);
+
+        // Cone geometry for arrows
+        const coneGeometry = new THREE.ConeGeometry(0.04, 0.12, 8);
+
+        function createFieldLine(startPos, direction, isNorth, length = 8, segments = 40) {
+            const points = [];
+            const pos = startPos.clone();
+
+            for (let i = 0; i <= segments; i++) {
+                points.push(pos.clone());
+                // Inverse square field: B = g*r̂/r²
+                const r = pos.length();
+                if (r < 0.5) break;
+
+                const fieldDir = direction.clone().normalize();
+                const stepSize = 0.2 * (r / length);
+                pos.add(fieldDir.multiplyScalar(stepSize));
+
+                // Bend slightly toward center for visual appeal
+                const toCenter = pos.clone().negate().normalize().multiplyScalar(0.01);
+                pos.add(toCenter);
+            }
+
+            return points;
+        }
+
+        function createLine2(points, color) {
+            const geometry = new LineGeometry();
+            const vertices = [];
+            for (const p of points) {
+                vertices.push(p.x, p.y, p.z);
+            }
+            geometry.setPositions(vertices);
+
+            const material = new LineMaterial({
+                color: color,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.85,
+                resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+            });
+
+            const line = new Line2(geometry, material);
+            line.computeLineDistances();
+            return line;
+        }
+
+        function createArrowCone(position, direction, color) {
+            const material = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.9 });
+            const cone = new THREE.Mesh(coneGeometry, material);
+            cone.position.copy(position);
+
+            // Orient cone along direction
+            const axis = new THREE.Vector3(0, 1, 0);
+            const quaternion = new THREE.Quaternion().setFromUnitVectors(axis, direction.normalize());
+            cone.setRotationFromQuaternion(quaternion);
+
+            return cone;
+        }
+
+        function generateFieldLines() {
+            // Clear existing
+            while (lineGroup.children.length) lineGroup.remove(lineGroup.children[0]);
+            while (arrowGroup.children.length) arrowGroup.remove(arrowGroup.children[0]);
+            fieldLines.length = 0;
+            arrowCones.length = 0;
+
+            const scheme = colorSchemes[params.colorScheme];
+            const count = params.fieldLineCount;
+
+            // North pole field lines (radiate outward)
+            if (params.showNorth) {
+                for (let i = 0; i < count; i++) {
+                    const phi = (i / count) * Math.PI * 2;
+                    const theta = Math.PI * 0.1 + (Math.random() * 0.8);
+
+                    const dir = new THREE.Vector3(
+                        Math.sin(theta) * Math.cos(phi),
+                        Math.cos(theta),
+                        Math.sin(theta) * Math.sin(phi)
+                    );
+
+                    const startPos = northSphere.position.clone().add(dir.clone().multiplyScalar(0.5));
+                    const points = createFieldLine(startPos, dir, true);
+
+                    if (points.length > 2) {
+                        const line = createLine2(points, scheme.north);
+                        lineGroup.add(line);
+                        fieldLines.push({ line, points, dir, isNorth: true });
+
+                        // Add arrows along the line
+                        const arrowCount = Math.max(2, Math.floor(points.length / 8));
+                        for (let j = 1; j <= arrowCount; j++) {
+                            const idx = Math.floor((j / (arrowCount + 1)) * (points.length - 1));
+                            const arrowPos = points[idx];
+                            const arrow = createArrowCone(arrowPos, dir, scheme.north);
+                            arrowGroup.add(arrow);
+                            arrowCones.push({ mesh: arrow, isNorth: true });
+                        }
+                    }
+                }
+            }
+
+            // South pole field lines (radiate inward - show as incoming)
+            if (params.showSouth) {
+                for (let i = 0; i < count; i++) {
+                    const phi = (i / count) * Math.PI * 2;
+                    const theta = Math.PI * 0.1 + (Math.random() * 0.8);
+
+                    // For south pole, field lines point INWARD
+                    const dir = new THREE.Vector3(
+                        -Math.sin(theta) * Math.cos(phi),
+                        -Math.cos(theta),
+                        -Math.sin(theta) * Math.sin(phi)
+                    );
+
+                    const startPos = southSphere.position.clone().add(dir.clone().multiplyScalar(0.5));
+                    const points = createFieldLine(startPos, dir, false);
+
+                    if (points.length > 2) {
+                        const line = createLine2(points, scheme.south);
+                        lineGroup.add(line);
+                        fieldLines.push({ line, points, dir, isNorth: false });
+
+                        // Add arrows (pointing inward for south)
+                        const arrowCount = Math.max(2, Math.floor(points.length / 8));
+                        for (let j = 1; j <= arrowCount; j++) {
+                            const idx = Math.floor((j / (arrowCount + 1)) * (points.length - 1));
+                            const arrowPos = points[idx];
+                            const arrow = createArrowCone(arrowPos, dir, scheme.south);
+                            arrowGroup.add(arrow);
+                            arrowCones.push({ mesh: arrow, isNorth: false });
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateColors() {
+            const scheme = colorSchemes[params.colorScheme];
+            scene.background = scheme.background;
+            renderer.setClearColor(scheme.background);
+
+            northMaterial.color.copy(colorSchemes[params.colorScheme].north);
+            northMaterial.emissive.copy(colorSchemes[params.colorScheme].north);
+            southMaterial.color.copy(colorSchemes[params.colorScheme].south);
+            southMaterial.emissive.copy(colorSchemes[params.colorScheme].south);
+
+            generateFieldLines();
+        }
+
+        // ================================================================
+        // PARTICLE EFFECTS (ambient floating particles)
+        // ================================================================
+        const particleCount = 200;
+        const particleGeometry = new THREE.BufferGeometry();
+        const particlePositions = new Float32Array(particleCount * 3);
+        const particleSizes = new Float32Array(particleCount);
+
+        for (let i = 0; i < particleCount; i++) {
+            const r = 3 + Math.random() * 8;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+
+            particlePositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+            particlePositions[i * 3 + 1] = r * Math.cos(phi);
+            particlePositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+            particleSizes[i] = Math.random() * 2 + 0.5;
+        }
+
+        particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        particleGeometry.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+
+        const particleMaterial = new THREE.PointsMaterial({
+            color: 0x6677aa,
+            size: 0.05,
+            transparent: true,
+            opacity: 0.6,
+            sizeAttenuation: true
+        });
+
+        const particles = new THREE.Points(particleGeometry, particleMaterial);
+        scene.add(particles);
+
+        // ================================================================
+        // AMBIENT LIGHTING
+        // ================================================================
+        const ambientLight = new THREE.AmbientLight(0x222244, 0.5);
+        scene.add(ambientLight);
+
+        const pointLight1 = new THREE.PointLight(0xff6b6b, 2, 20);
+        pointLight1.position.copy(northSphere.position);
+        scene.add(pointLight1);
+
+        const pointLight2 = new THREE.PointLight(0x4dabf7, 2, 20);
+        pointLight2.position.copy(southSphere.position);
+        scene.add(pointLight2);
+
+        // ================================================================
+        // GRID / REFERENCE PLANE
+        // ================================================================
+        const gridHelper = new THREE.GridHelper(20, 20, 0x1a2a4a, 0x0a1a2a);
+        gridHelper.position.y = -4;
+        scene.add(gridHelper);
+
+        // ================================================================
+        // ANIMATION
+        // ================================================================
+        let time = 0;
+
+        // Watch for parameter changes
+        gui.onChange(event => {
+            if (event.property === 'fieldLineCount' || event.property === 'showNorth' ||
+                event.property === 'showSouth' || event.property === 'monopoleStrength') {
+                generateFieldLines();
+            }
+
+            northSphere.visible = params.showNorth;
+            southSphere.visible = params.showSouth;
+            pointLight1.visible = params.showNorth;
+            pointLight2.visible = params.showSouth;
+        });
+
+        generateFieldLines();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = 0.016; // ~60fps
+            time += delta * params.animationSpeed;
+
+            // Rotate particles slowly
+            particles.rotation.y += 0.0003 * params.animationSpeed;
+            particles.rotation.x += 0.0001 * params.animationSpeed;
+
+            // Pulse the monopole spheres
+            const pulse = 1 + Math.sin(time * 3) * 0.08;
+            northSphere.scale.setScalar(pulse);
+            southSphere.scale.setScalar(pulse);
+
+            // Pulse emissive intensity
+            northMaterial.emissiveIntensity = 1.5 + Math.sin(time * 4) * 0.5;
+            southMaterial.emissiveIntensity = 1.5 + Math.sin(time * 4 + Math.PI) * 0.5;
+
+            // Animate arrows along field lines (subtle oscillation)
+            arrowCones.forEach((arrow, i) => {
+                const offset = i * 0.3;
+                const wobble = Math.sin(time * 2 + offset) * 0.02;
+                arrow.mesh.position.x += wobble;
+                arrow.mesh.rotation.z += wobble * 0.5;
+            });
+
+            controls.update();
+            composer.render();
+        }
+
+        animate();
+
+        // ================================================================
+        // RESIZE HANDLER
+        // ================================================================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+
+            // Update line material resolutions
+            lineGroup.children.forEach(line => {
+                if (line.material) line.material.resolution.set(window.innerWidth, window.innerHeight);
+            });
+        });
+    </script>
+</body>
+</html>

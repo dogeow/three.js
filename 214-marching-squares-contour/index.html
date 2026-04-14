@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marching Squares Contour Map</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a12;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+    }
+    canvas { display: block; }
+    #overlay {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      color: rgba(180, 200, 255, 0.7);
+      font-size: 12px;
+      line-height: 1.6;
+      pointer-events: none;
+      text-shadow: 0 0 8px rgba(80, 120, 255, 0.5);
+    }
+    #overlay h1 {
+      font-size: 15px;
+      font-weight: normal;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+      color: rgba(200, 220, 255, 0.9);
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="overlay">
+    <h1>Marching Squares Contour Map</h1>
+    <div>Click to add noise sources &bull; Drag to move</div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+    // ─── Scene Setup ───────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 1;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // ─── Noise Utilities ──────────────────────────────────────────────────────
+
+    // Value noise helpers
+    function hash(n) {
+      let x = Math.sin(n) * 43758.5453123;
+      return x - Math.floor(x);
+    }
+
+    function valueNoise2D(x, y) {
+      const ix = Math.floor(x), iy = Math.floor(y);
+      const fx = x - ix, fy = y - iy;
+      const ux = fx * fx * (3 - 2 * fx);
+      const uy = fy * fy * (3 - 2 * fy);
+      const a = hash(ix + iy * 57.0);
+      const b = hash(ix + 1 + iy * 57.0);
+      const c = hash(ix + (iy + 1) * 57.0);
+      const d = hash(ix + 1 + (iy + 1) * 57.0);
+      return a + (b - a) * ux + (c - a) * uy + (d - b - c + a) * ux * uy;
+    }
+
+    function fbm(x, y, octaves = 4) {
+      let v = 0, amp = 0.5, freq = 1.0;
+      for (let i = 0; i < octaves; i++) {
+        v += amp * valueNoise2D(x * freq, y * freq);
+        amp *= 0.5;
+        freq *= 2.0;
+      }
+      return v;
+    }
+
+    // ─── Noise Sources (clickable points) ─────────────────────────────────────
+
+    class NoiseSource {
+      constructor(x, y, radius, strength) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.strength = strength;
+      }
+
+      influence(nx, ny) {
+        const dx = nx - this.x, dy = ny - this.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d >= this.radius) return 0;
+        return this.strength * Math.cos((d / this.radius) * Math.PI * 0.5);
+      }
+    }
+
+    const noiseSources = [
+      new NoiseSource(0.2, 0.3, 0.25, 1.2),
+      new NoiseSource(0.7, 0.6, 0.2, -0.8),
+      new NoiseSource(0.4, 0.8, 0.15, 0.6),
+    ];
+
+    // ─── Parameters ────────────────────────────────────────────────────────────
+
+    const params = {
+      thresholds: [0.3, 0.45, 0.55, 0.7, 0.85],
+      gridResolution: 64,
+      noiseScale: 4.0,
+      colorScheme: 'topo',
+      backgroundIntensity: 0.15,
+      contourWidth: 1.5,
+      showGrid: true,
+      autoRotate: false,
+    };
+
+    const colorSchemes = {
+      topo: ['#1a237e', '#3949ab', '#5c6bc0', '#7986cb', '#9fa8da', '#c5cae9', '#e8eaf6',
+             '#f3e5f5', '#ce93d8', '#ab47bc', '#8e24aa', '#6a1b9a', '#4a148c'],
+      thermal: ['#0d0471', '#1a237e', '#311b92', '#4a148c', '#6a1b9a', '#8e24aa',
+                '#ad1457', '#c2185b', '#d81b60', '#e91e63', '#f06292', '#f48fb1'],
+      ocean: ['#0a2a3a', '#0d4f61', '#15657a', '#1e8cb4', '#29b6f6', '#4fc3f7',
+              '#81d4fa', '#b3e5fc', '#e1f5fe', '#e0f7fa', '#b2ebf2', '#80deea'],
+      plasma: ['#0d0887', '#3b049a', '#7201a8', '#9c179e', '#bd3786', '#ed7953',
+               '#fca636', '#f0f921', '#f5f921', '#f0f921', '#ed7953', '#9c179e'],
+    };
+
+    // ─── Scalar Field Grid ─────────────────────────────────────────────────────
+
+    const FIELD_W = 1.0, FIELD_H = 1.0;
+
+    function sampleField(nx, ny) {
+      let v = fbm(nx * params.noiseScale, ny * params.noiseScale, 4);
+      for (const src of noiseSources) {
+        v += src.influence(nx, ny);
+      }
+      return Math.max(0, Math.min(1, v));
+    }
+
+    // ─── Background Grid Mesh ──────────────────────────────────────────────────
+
+    const gridRes = params.gridResolution;
+    const gridGeo = new THREE.BufferGeometry();
+    const gridPositions = new Float32Array(gridRes * gridRes * 3);
+    const gridColors = new Float32Array(gridRes * gridRes * 3);
+
+    function buildGrid() {
+      const scheme = colorSchemes[params.colorScheme];
+      for (let j = 0; j < gridRes; j++) {
+        for (let i = 0; i < gridRes; i++) {
+          const nx = i / (gridRes - 1);
+          const ny = j / (gridRes - 1);
+          const idx = (j * gridRes + i);
+          const val = sampleField(nx, ny);
+          const colorIdx = Math.min(Math.floor(val * scheme.length), scheme.length - 1);
+          const c = new THREE.Color(scheme[colorIdx]);
+          gridPositions[idx * 3] = nx * 2 - 1;
+          gridPositions[idx * 3 + 1] = ny * 2 - 1;
+          gridPositions[idx * 3 + 2] = 0;
+          gridColors[idx * 3] = c.r * (params.backgroundIntensity + val * (1 - params.backgroundIntensity));
+          gridColors[idx * 3 + 1] = c.g * (params.backgroundIntensity + val * (1 - params.backgroundIntensity));
+          gridColors[idx * 3 + 2] = c.b * (params.backgroundIntensity + val * (1 - params.backgroundIntensity));
+        }
+      }
+
+      // Create quads
+      const indices = [];
+      for (let j = 0; j < gridRes - 1; j++) {
+        for (let i = 0; i < gridRes - 1; i++) {
+          const a = j * gridRes + i;
+          const b = j * gridRes + i + 1;
+          const c = (j + 1) * gridRes + i + 1;
+          const d = (j + 1) * gridRes + i;
+          indices.push(a, b, c, a, c, d);
+        }
+      }
+
+      gridGeo.setAttribute('position', new THREE.BufferAttribute(gridPositions, 3));
+      gridGeo.setAttribute('color', new THREE.BufferAttribute(gridColors, 3));
+      gridGeo.setIndex(indices);
+      gridGeo.computeVertexNormals();
+    }
+
+    buildGrid();
+
+    const gridMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const gridMesh = new THREE.Mesh(gridGeo, gridMat);
+    scene.add(gridMesh);
+
+    // ─── Marching Squares ──────────────────────────────────────────────────────
+
+    // Lookup table for marching squares cases
+    // Cell layout (v00 bot-left, v10 bot-right, v11 top-right, v01 top-left):
+    //  bit index: v00*8 + v10*4 + v11*2 + v01
+    // Each segment: [x1, y1, x2, y2] in cell-local UV (0..1)
+    // Edges: bottom(0-1: y=0), right(1-2: x=1), top(2-3: y=1), left(3-0: x=0)
+    const MS_LOOKUP = [
+      [], // 0: 0000 all below
+      [[0.5, 0.0, 1.0, 0.5]],          // 1: 0001 bottom-right edge
+      [[0.0, 0.5, 0.5, 1.0]],          // 2: 0010 left edge
+      [[0.0, 0.5, 1.0, 0.5]],          // 3: 0011 bottom cut (interp)
+      [[0.5, 1.0, 1.0, 0.5]],          // 4: 0100 right edge
+      [[0.5, 0.0, 0.5, 1.0]],          // 5: 0101 saddle: bot-mid to top-mid
+      [[0.5, 0.0, 1.0, 0.5]],          // 6: 0110 right-bottom cut
+      [[0.0, 0.5, 0.5, 0.0]],          // 7: 0111 left-bottom cut
+      [[0.5, 1.0, 0.0, 0.5]],          // 8: 1000 left edge (mirror of case 2)
+      [[0.5, 1.0, 1.0, 0.5]],          // 9: 1001 top-right cut
+      [[0.5, 1.0, 0.5, 0.0]],          // 10: 1010 saddle: top-mid to bot-mid
+      [[0.5, 1.0, 0.0, 0.5]],          // 11: 1011 right-top cut
+      [[0.0, 0.5, 0.5, 1.0]],          // 12: 1100 top cut
+      [[0.5, 0.0, 0.0, 0.5]],          // 13: 1101 bottom-left cut
+      [[0.5, 0.0, 1.0, 0.5]],          // 14: 1110 left-top cut
+      [], // 15: 1111 all above
+    ];
+
+    function marchingSquares(res, threshold) {
+      const segs = [];
+      const step = 1 / res;
+      const half = step / 2;
+
+      for (let j = 0; j < res; j++) {
+        for (let i = 0; i < res; i++) {
+          const x0 = i * step, y0 = j * step;
+          const x1 = x0 + step, y1 = y0 + step;
+
+          const v00 = sampleField(x0, y0) >= threshold ? 1 : 0;
+          const v10 = sampleField(x1, y0) >= threshold ? 1 : 0;
+          const v11 = sampleField(x1, y1) >= threshold ? 1 : 0;
+          const v01 = sampleField(x0, y1) >= threshold ? 1 : 0;
+
+          const caseIdx = v00 * 8 + v10 * 4 + v11 * 2 + v01;
+          const segments = MS_LOOKUP[caseIdx];
+
+          for (const [lx1, ly1, lx2, ly2] of segments) {
+            segs.push(
+              x0 + lx1 * step, y0 + ly1 * step,
+              x0 + lx2 * step, y0 + ly2 * step
+            );
+          }
+        }
+      }
+      return segs;
+    }
+
+    // ─── Contour Lines ────────────────────────────────────────────────────────
+
+    const CONTOUR_GROUPS = [];
+    const CONTOUR_COLORS = [
+      new THREE.Color('#00e5ff'),
+      new THREE.Color('#69ff47'),
+      new THREE.Color('#ffea00'),
+      new THREE.Color('#ff6d00'),
+      new THREE.Color('#d500f9'),
+    ];
+
+    function buildContours() {
+      // Remove old
+      for (const g of CONTOUR_GROUPS) scene.remove(g);
+      CONTOUR_GROUPS.length = 0;
+
+      params.thresholds.forEach((thresh, ti) => {
+        const segs = marchingSquares(params.gridResolution, thresh);
+        if (segs.length === 0) return;
+
+        // Convert to world coords (-1 to 1)
+        const worldSegs = new Float32Array(segs.length);
+        for (let i = 0; i < segs.length; i += 2) {
+          worldSegs[i] = segs[i] * 2 - 1;
+          worldSegs[i + 1] = segs[i + 1] * 2 - 1;
+        }
+
+        const positions = new Float32Array(segs.length * 3 / 2 * 2);
+        for (let i = 0; i < segs.length / 2; i++) {
+          positions[i * 6 + 0] = worldSegs[i * 4 + 0];
+          positions[i * 6 + 1] = worldSegs[i * 4 + 1];
+          positions[i * 6 + 2] = 0;
+          positions[i * 6 + 3] = worldSegs[i * 4 + 2];
+          positions[i * 6 + 4] = worldSegs[i * 4 + 3];
+          positions[i * 6 + 5] = 0;
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const color = CONTOUR_COLORS[ti % CONTOUR_COLORS.length];
+        const mat = new THREE.LineBasicMaterial({ color, linewidth: params.contourWidth });
+        const lines = new THREE.LineSegments(geo, mat);
+        lines.position.z = 0.01 * (ti + 1);
+
+        const group = new THREE.Group();
+        group.add(lines);
+        scene.add(group);
+        CONTOUR_GROUPS.push(group);
+      });
+    }
+
+    buildContours();
+
+    // ─── Noise Source Markers ─────────────────────────────────────────────────
+
+    const markerGroup = new THREE.Group();
+    scene.add(markerGroup);
+
+    function buildMarkers() {
+      while (markerGroup.children.length) markerGroup.remove(markerGroup.children[0]);
+
+      noiseSources.forEach((src, idx) => {
+        const geo = new THREE.CircleGeometry(0.012, 32);
+        const mat = new THREE.MeshBasicMaterial({ color: src.strength > 0 ? '#00e676' : '#ff1744' });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(src.x * 2 - 1, src.y * 2 - 1, 0.05);
+        mesh.userData.srcIdx = idx;
+        markerGroup.add(mesh);
+
+        // Ring
+        const ringGeo = new THREE.RingGeometry(0.014, 0.018, 32);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.set(src.x * 2 - 1, src.y * 2 - 1, 0.06);
+        ring.userData.srcIdx = idx;
+        markerGroup.add(ring);
+      });
+    }
+
+    buildMarkers();
+
+    // ─── Raycaster / Interaction ──────────────────────────────────────────────
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let dragging = null;
+
+    function screenToField(clientX, clientY) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const px = (clientX - rect.left) / rect.width * 2 - 1;
+      const py = -(clientY - rect.top) / rect.height * 2 + 1;
+      return { x: (px + 1) / 2, y: (py + 1) / 2 };
+    }
+
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      const { x, y } = screenToField(e.clientX, e.clientY);
+      pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+      raycaster.setFromCamera(pointer, camera);
+
+      const hits = raycaster.intersectObjects(markerGroup.children);
+      if (hits.length > 0) {
+        dragging = hits[0].object.userData.srcIdx;
+      } else {
+        noiseSources.push(new NoiseSource(x, y, 0.18, (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.6)));
+        buildMarkers();
+        rebuild();
+      }
+    });
+
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      if (dragging === null) return;
+      const { x, y } = screenToField(e.clientX, e.clientY);
+      noiseSources[dragging].x = x;
+      noiseSources[dragging].y = y;
+      buildMarkers();
+      rebuild();
+    });
+
+    renderer.domElement.addEventListener('pointerup', () => { dragging = null; });
+
+    // ─── Rebuild Trigger ───────────────────────────────────────────────────────
+
+    let rebuildTimer = null;
+    function rebuild() {
+      if (rebuildTimer) clearTimeout(rebuildTimer);
+      rebuildTimer = setTimeout(() => {
+        buildGrid();
+        buildContours();
+      }, 16);
+    }
+
+    // ─── GUI ───────────────────────────────────────────────────────────────────
+
+    const gui = new GUI({ title: 'Contour Controls' });
+
+    const folderThresh = gui.addFolder('Thresholds');
+    params.thresholds.forEach((t, i) => {
+      folderThresh.add(params.thresholds, i, 0, 1, 0.01).name(`Level ${i + 1}`).onChange(rebuild);
+    });
+    folderThresh.open();
+
+    const folderVis = gui.addFolder('Visualization');
+    folderVis.add(params, 'gridResolution', 16, 128, 1).name('Grid Resolution').onChange(() => {
+      buildGrid();
+      buildContours();
+    });
+    folderVis.add(params, 'noiseScale', 1, 12, 0.1).name('Noise Scale').onChange(rebuild);
+    folderVis.add(params, 'backgroundIntensity', 0, 0.5, 0.01).name('BG Intensity').onChange(rebuild);
+    folderVis.add(params, 'contourWidth', 0.5, 4, 0.1).name('Line Width').onChange(rebuild);
+    folderVis.add(params, 'colorScheme', Object.keys(colorSchemes)).name('Color Scheme').onChange(() => {
+      buildGrid();
+      buildContours();
+    });
+    folderVis.open();
+
+    // ─── Resize ────────────────────────────────────────────────────────────────
+
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ─── Animation Loop ────────────────────────────────────────────────────────
+
+    let frame = 0;
+    function animate() {
+      requestAnimationFrame(animate);
+      frame++;
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ─── Debug Globals ────────────────────────────────────────────────────────
+
+    window.THREE = THREE;
+    window.scene = scene;
+    window.camera = camera;
+    window.renderer = renderer;
+    window.noiseSources = noiseSources;
+    window.params = params;
+    window.rebuild = rebuild;
+    window.buildContours = buildContours;
+    window.buildGrid = buildGrid;
+
+    console.log('Marching Squares Contour Map ready.');
+    console.log('Click canvas to add noise sources. Drag markers to move them.');
+    console.log('Debug: window.noiseSources, window.params, window.rebuild()');
+  </script>
+</body>
+</html>

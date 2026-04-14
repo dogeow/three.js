@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 纹理贴图示例 - Texture Mapping</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: #1a1a2e; 
+            color: #eee; 
+            overflow-x: hidden;
+        }
+        h1 { 
+            text-align: center; 
+            padding: 20px; 
+            background: linear-gradient(135deg, #16213e, #0f3460);
+            border-bottom: 2px solid #e94560;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px;
+        }
+        .demo-box {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .demo-box h3 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #e94560;
+        }
+        canvas { 
+            display: block; 
+            border-radius: 8px;
+        }
+        .controls {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .control-row label {
+            width: 80px;
+            font-size: 12px;
+        }
+        .control-row input[type="range"] {
+            flex: 1;
+        }
+        .control-row span {
+            width: 40px;
+            font-size: 12px;
+            text-align: right;
+        }
+        .info {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #16213e;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .info h2 { color: #e94560; margin-bottom: 10px; }
+        .info p { line-height: 1.8; color: #ccc; }
+        .info code { 
+            background: #0f3460; 
+            padding: 2px 6px; 
+            border-radius: 4px;
+            color: #00d9ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎨 Three.js 纹理贴图（Texture Mapping）示例</h1>
+
+    <div class="info">
+        <h2>📚 UV 坐标说明</h2>
+        <p>
+            <strong>UV 坐标</strong>是 2D 纹理上的位置映射到 3D 物体表面的桥梁。
+            U 代表水平方向（0-1），V 代表垂直方向（0-1）。
+            <br><br>
+            <code>texture.offset</code> - 纹理偏移量，控制纹理的起始位置<br>
+            <code>texture.repeat</code> - 纹理重复次数，控制纹理的平铺密度<br>
+            <code>texture.rotation</code> - 纹理旋转角度（弧度）<br>
+            <code>texture.wrapS / wrapT</code> - 纹理包裹模式（重复、截断等）
+        </p>
+    </div>
+
+    <div class="container">
+        <!-- 1. 基础纹理贴图 - 立方体 -->
+        <div class="demo-box">
+            <h3>🧊 立方体纹理贴图</h3>
+            <canvas id="cubeCanvas" width="300" height="200"></canvas>
+            <div class="controls">
+                <div class="control-row">
+                    <label>旋转 X:</label>
+                    <input type="range" id="cubeRotX" min="0" max="6.28" step="0.01" value="0.5">
+                    <span id="cubeRotXVal">0.5</span>
+                </div>
+                <div class="control-row">
+                    <label>旋转 Y:</label>
+                    <input type="range" id="cubeRotY" min="0" max="6.28" step="0.01" value="0.5">
+                    <span id="cubeRotYVal">0.5</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 平面纹理贴图 -->
+        <div class="demo-box">
+            <h3>📄 平面纹理贴图</h3>
+            <canvas id="planeCanvas" width="300" height="200"></canvas>
+            <div class="controls">
+                <div class="control-row">
+                    <label>Repeat X:</label>
+                    <input type="range" id="planeRepX" min="1" max="10" step="0.5" value="2">
+                    <span id="planeRepXVal">2</span>
+                </div>
+                <div class="control-row">
+                    <label>Repeat Y:</label>
+                    <input type="range" id="planeRepY" min="1" max="10" step="0.5" value="2">
+                    <span id="planeRepYVal">2</span>
+                </div>
+                <div class="control-row">
+                    <label>Offset X:</label>
+                    <input type="range" id="planeOffX" min="0" max="1" step="0.01" value="0">
+                    <span id="planeOffXVal">0</span>
+                </div>
+                <div class="control-row">
+                    <label>Offset Y:</label>
+                    <input type="range" id="planeOffY" min="0" max="1" step="0.01" value="0">
+                    <span id="planeOffYVal">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 球体纹理贴图 -->
+        <div class="demo-box">
+            <h3>🌍 球体纹理贴图</h3>
+            <canvas id="sphereCanvas" width="300" height="200"></canvas>
+            <div class="controls">
+                <div class="control-row">
+                    <label>旋转:</label>
+                    <input type="range" id="sphereRot" min="0" max="6.28" step="0.01" value="0">
+                    <span id="sphereRotVal">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. UV 坐标可视化 -->
+        <div class="demo-box">
+            <h3>🗺️ UV 坐标可视化</h3>
+            <canvas id="uvCanvas" width="300" height="200"></canvas>
+            <div class="controls">
+                <div class="control-row">
+                    <label>U 方向:</label>
+                    <input type="range" id="uvU" min="0" max="1" step="0.01" value="0.5">
+                    <span id="uvUVal">0.5</span>
+                </div>
+                <div class="control-row">
+                    <label>V 方向:</label>
+                    <input type="range" id="uvV" min="0" max="1" step="0.01" value="0.5">
+                    <span id="uvVVal">0.5</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. 纹理包裹模式 -->
+        <div class="demo-box">
+            <h3>🔄 纹理重复与旋转</h3>
+            <canvas id="wrapCanvas" width="300" height="200"></canvas>
+            <div class="controls">
+                <div class="control-row">
+                    <label>Repeat:</label>
+                    <input type="range" id="wrapRep" min="1" max="8" step="0.5" value="3">
+                    <span id="wrapRepVal">3</span>
+                </div>
+                <div class="control-row">
+                    <label>Rotation:</label>
+                    <input type="range" id="wrapRot" min="0" max="3.14" step="0.01" value="0">
+                    <span id="wrapRotVal">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. 多纹理混合 -->
+        <div class="demo-box">
+            <h3>🎭 纹理动画</h3>
+            <canvas id="animCanvas" width="300" height="200"></canvas>
+            <div class="controls">
+                <button id="toggleAnim" style="padding: 8px 16px; background: #e94560; border: none; border-radius: 6px; color: white; cursor: pointer;">暂停动画</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Three.js CDN 引入 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // ============================================================
+        // 创建棋盘格纹理（用于演示的占位符纹理）
+        // ============================================================
+        function createCheckerTexture(size = 256, squares = 8) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            const squareSize = size / squares;
+            const colors = ['#ff6b6b', '#4ecdc4']; // 红色和青色
+            
+            for (let row = 0; row < squares; row++) {
+                for (let col = 0; col < squares; col++) {
+                    ctx.fillStyle = colors[(row + col) % 2];
+                    ctx.fillRect(col * squareSize, row * squareSize, squareSize, squareSize);
+                }
+            }
+            
+            // 添加网格线和UV标记
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= squares; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * squareSize, 0);
+                ctx.lineTo(i * squareSize, size);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i * squareSize);
+                ctx.lineTo(size, i * squareSize);
+                ctx.stroke();
+            }
+            
+            // 在角落标注 UV 坐标
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText('(0,1)', 5, 20);
+            ctx.fillText('(1,1)', size - 40, 20);
+            ctx.fillText('(0,0)', 5, size - 5);
+            ctx.fillText('(1,0)', size - 40, size - 5);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            return texture;
+        }
+
+        // 创建渐变纹理
+        function createGradientTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            const gradient = ctx.createLinearGradient(0, 0, 256, 256);
+            gradient.addColorStop(0, '#ff6b6b');
+            gradient.addColorStop(0.5, '#4ecdc4');
+            gradient.addColorStop(1, '#45b7d1');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 256, 256);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            return texture;
+        }
+
+        // ============================================================
+        // 示例 1: 立方体纹理贴图
+        // ============================================================
+        function initCubeDemo() {
+            const canvas = document.getElementById('cubeCanvas');
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(300, 200);
+            
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            
+            const camera = new THREE.PerspectiveCamera(50, 300/200, 0.1, 100);
+            camera.position.z = 3;
+            
+            // 创建带纹理的立方体材质
+            const texture = createCheckerTexture(256, 8);
+            const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+            const material = new THREE.MeshBasicMaterial({ map: texture });
+            
+            const cube = new THREE.Mesh(geometry, material);
+            scene.add(cube);
+            
+            // 添加光照指示线
+            const gridHelper = new THREE.GridHelper(4, 10, 0x444, 0x222);
+            gridHelper.position.y = -1.2;
+            scene.add(gridHelper);
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                // 从控件获取旋转值
+                const rotX = parseFloat(document.getElementById('cubeRotX').value);
+                const rotY = parseFloat(document.getElementById('cubeRotY').value);
+                cube.rotation.x = rotX;
+                cube.rotation.y = rotY;
+                
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            // 控件事件
+            ['cubeRotX', 'cubeRotY'].forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    document.getElementById(id + 'Val').textContent = e.target.value;
+                });
+            });
+        }
+
+        // ============================================================
+        // 示例 2: 平面纹理贴图 - 展示 repeat 和 offset
+        // ============================================================
+        function initPlaneDemo() {
+            const canvas = document.getElementById('planeCanvas');
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(300, 200);
+            
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            
+            const camera = new THREE.PerspectiveCamera(50, 300/200, 0.1, 100);
+            camera.position.z = 3;
+            
+            // 创建纹理，设置包裹模式为重复
+            const texture = createCheckerTexture(256, 8);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+            
+            const plane = new THREE.Mesh(geometry, material);
+            scene.add(plane);
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                const repX = parseFloat(document.getElementById('planeRepX').value);
+                const repY = parseFloat(document.getElementById('planeRepY').value);
+                const offX = parseFloat(document.getElementById('planeOffX').value);
+                const offY = parseFloat(document.getElementById('planeOffY').value);
+                
+                // 更新纹理属性
+                texture.repeat.set(repX, repY);
+                texture.offset.set(offX, offY);
+                texture.needsUpdate = true;
+                
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            // 控件事件
+            ['planeRepX', 'planeRepY', 'planeOffX', 'planeOffY'].forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    document.getElementById(id + 'Val').textContent = e.target.value;
+                });
+            });
+        }
+
+        // ============================================================
+        // 示例 3: 球体纹理贴图 - 展示球面映射
+        // ============================================================
+        function initSphereDemo() {
+            const canvas = document.getElementById('sphereCanvas');
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(300, 200);
+            
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            
+            const camera = new THREE.PerspectiveCamera(50, 300/200, 0.1, 100);
+            camera.position.z = 3;
+            
+            // 使用渐变纹理
+            const texture = createGradientTexture();
+            const geometry = new THREE.SphereGeometry(1.2, 32, 32);
+            const material = new THREE.MeshBasicMaterial({ map: texture });
+            
+            const sphere = new THREE.Mesh(geometry, material);
+            scene.add(sphere);
+            
+            // 添加坐标轴
+            const axesHelper = new THREE.AxesHelper(2);
+            scene.add(axesHelper);
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                const rot = parseFloat(document.getElementById('sphereRot').value);
+                sphere.rotation.y = rot;
+                
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            document.getElementById('sphereRot').addEventListener('input', (e) => {
+                document.getElementById('sphereRotVal').textContent = e.target.value;
+            });
+        }
+
+        // ============================================================
+        // 示例 4: UV 坐标可视化
+        // ============================================================
+        function initUVDemo() {
+            const canvas = document.getElementById('uvCanvas');
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(300, 200);
+            
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            
+            const camera = new THREE.PerspectiveCamera(50, 300/200, 0.1, 100);
+            camera.position.z = 3;
+            
+            // 创建带 UV 标记的纹理
+            const canvas2d = document.createElement('canvas');
+            canvas2d.width = 512;
+            canvas2d.height = 512;
+            const ctx = canvas2d.getContext('2d');
+            
+            // 绘制棋盘格
+            const squareSize = 64;
+            const colors = ['#2d3436', '#636e72'];
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    ctx.fillStyle = colors[(row + col) % 2];
+                    ctx.fillRect(col * squareSize, row * squareSize, squareSize, squareSize);
+                }
+            }
+            
+            // 绘制UV网格
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            for (let i = 0; i <= 8; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * squareSize, 0);
+                ctx.lineTo(i * squareSize, 512);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i * squareSize);
+                ctx.lineTo(512, i * squareSize);
+                ctx.stroke();
+            }
+            
+            // 标注 UV 值
+            ctx.fillStyle = 'yellow';
+            ctx.font = 'bold 20px Arial';
+            for (let u = 0; u <= 8; u++) {
+                for (let v = 0; v <= 8; v++) {
+                    if (u % 2 === 0 && v % 2 === 0) {
+                        ctx.fillText(`(${u/8},${1-v/8})`, u * squareSize + 2, v * squareSize + 18);
+                    }
+                }
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas2d);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(1, 1);
+            
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+            
+            const plane = new THREE.Mesh(geometry, material);
+            scene.add(plane);
+            
+            // 创建指示器 - 显示当前 UV 位置
+            const indicatorGeom = new THREE.SphereGeometry(0.08, 16, 16);
+            const indicatorMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const indicator = new THREE.Mesh(indicatorGeom, indicatorMat);
+            scene.add(indicator);
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                const u = parseFloat(document.getElementById('uvU').value);
+                const v = parseFloat(document.getElementById('uvV').value);
+                
+                // 将 UV 坐标转换为 3D 位置
+                // U: 0-1 -> X: -1 to 1
+                // V: 0-1 -> Y: 1 to -1 (V向上，Y向上，所以需要反转)
+                indicator.position.x = u * 2 - 1;
+                indicator.position.y = (1 - v) * 2 - 1;
+                indicator.position.z = 0.1;
+                
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            ['uvU', 'uvV'].forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    document.getElementById(id + 'Val').textContent = e.target.value;
+                });
+            });
+        }
+
+        // ============================================================
+        // 示例 5: 纹理重复与旋转
+        // ============================================================
+        function initWrapDemo() {
+            const canvas = document.getElementById('wrapCanvas');
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(300, 200);
+            
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            
+            const camera = new THREE.PerspectiveCamera(50, 300/200, 0.1, 100);
+            camera.position.z = 3;
+            
+            const texture = createCheckerTexture(256, 8);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            
+            const geometry = new THREE.PlaneGeometry(2.5, 2.5);
+            const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+            
+            const plane = new THREE.Mesh(geometry, material);
+            scene.add(plane);
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                const rep = parseFloat(document.getElementById('wrapRep').value);
+                const rot = parseFloat(document.getElementById('wrapRot').value);
+                
+                texture.repeat.set(rep, rep);
+                texture.rotation = rot;
+                // 旋转中心默认是纹理中心 (0.5, 0.5)
+                texture.center.set(0.5, 0.5);
+                texture.needsUpdate = true;
+                
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            ['wrapRep', 'wrapRot'].forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    document.getElementById(id + 'Val').textContent = e.target.value;
+                });
+            });
+        }
+
+        // ============================================================
+        // 示例 6: 纹理动画 - UV 滚动效果
+        // ============================================================
+        function initAnimDemo() {
+            const canvas = document.getElementById('animCanvas');
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(300, 200);
+            
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            
+            const camera = new THREE.PerspectiveCamera(50, 300/200, 0.1, 100);
+            camera.position.z = 3;
+            
+            const texture = createCheckerTexture(256, 8);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(4, 4);
+            
+            const geometry = new THREE.TorusGeometry(0.8, 0.3, 16, 100);
+            const material = new THREE.MeshBasicMaterial({ map: texture });
+            
+            const torus = new THREE.Mesh(geometry, material);
+            scene.add(torus);
+            
+            let animating = true;
+            let offset = 0;
+            
+            document.getElementById('toggleAnim').addEventListener('click', function() {
+                animating = !animating;
+                this.textContent = animating ? '暂停动画' : '继续动画';
+            });
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                if (animating) {
+                    // UV 滚动动画 - 模拟物体移动
+                    offset += 0.005;
+                    texture.offset.x = offset;
+                    texture.offset.y = offset * 0.5;
+                    texture.needsUpdate = true;
+                    
+                    torus.rotation.x += 0.01;
+                    torus.rotation.y += 0.02;
+                }
+                
+                renderer.render(scene, camera);
+            }
+            animate();
+        }
+
+        // ============================================================
+        // 初始化所有示例
+        // ============================================================
+        initCubeDemo();
+        initPlaneDemo();
+        initSphereDemo();
+        initUVDemo();
+        initWrapDemo();
+        initAnimDemo();
+    </script>
+</body>
+</html>

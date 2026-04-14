@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Procedural Coral Reef — Three.js</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #001018; font-family: monospace; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      color: rgba(120, 220, 220, 0.8);
+      font-size: 12px;
+      line-height: 1.6;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+/*
+|--------------------------------------------------------------------------
+| PROCEDURAL CORAL REEF — Educational Three.js Demo
+|--------------------------------------------------------------------------
+| This example teaches four core techniques:
+|
+| 1. PROCEDURAL GENERATION
+|    Coral positions and properties are generated pseudo-randomly using
+|    seeded noise so the reef looks natural without hard-coded values.
+|
+| 2. RECURSIVE BRANCHING ALGORITHMS
+|    Branching corals use a recursive function that splits each branch
+|    into sub-branches up to a max depth. Parameters like spread angle,
+|    length decay, and thickness tapering control the final shape.
+|
+| 3. UNDERWATER RENDERING
+|    - Fog (THREE.FogExp2) with blue-green color creates depth falloff
+|    - Caustics: animated UV-based light patterns projected on the floor
+|    - God-ray light shafts: additive blending cones from above
+|    - Ambient + directional lights tinted blue-green
+|
+| 4. INSTANCED MESHES FOR PERFORMANCE
+|    Each coral type uses THREE.InstancedMesh so hundreds of corals
+|    draw in a single draw call. Matrix4compose sets position/rotation/scale.
+|
+| Key Controls (lil-gui):
+|   - Coral Density  : number of coral clusters
+|   - Branch Depth   : recursion depth for branching corals
+|   - Color Scheme   : warm / cool / neon / muted
+|   - Sway Animation : toggle branch swaying via vertex shader time offset
+|   - Bubble Count   : particle system size
+|   - Caustics Speed : animation speed of floor caustics
+|--------------------------------------------------------------------------
+*/
+
+<div id="info">
+  <strong>Procedural Coral Reef</strong><br>
+  Drag to orbit · Scroll to zoom<br>
+  Use GUI panel (top-right) to adjust parameters
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Renderer ────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ─── Scene & Camera ─────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x001018);
+scene.fog = new THREE.FogExp2(0x003344, 0.035);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 6, 18);
+
+// ─── Controls ───────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.maxPolarAngle = Math.PI / 2 + 0.1;
+controls.minDistance = 3;
+controls.maxDistance = 50;
+
+// ─── Lights ──────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x226688, 0.6);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0x88ccff, 1.2);
+sunLight.position.set(10, 30, 10);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(1024, 1024);
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 80;
+sunLight.shadow.camera.left = -25;
+sunLight.shadow.camera.right = 25;
+sunLight.shadow.camera.top = 25;
+sunLight.shadow.camera.bottom = -25;
+scene.add(sunLight);
+
+const fillLight = new THREE.PointLight(0x00ffaa, 0.4, 30);
+fillLight.position.set(-8, 4, -5);
+scene.add(fillLight);
+
+// ─── Parameters ─────────────────────────────────────────────────────────────
+const params = {
+  coralDensity:  8,
+  branchDepth:   4,
+  colorScheme:   'cool',
+  swayAnimation: true,
+  bubbleCount:   300,
+  causticsSpeed: 1.0,
+  fogDensity:    0.035,
+};
+
+const colorSchemes = {
+  warm:  [0xff6b6b, 0xff9e7d, 0xffcc70, 0xd4a017],
+  cool:  [0xff7e5f, 0xffb347, 0xfcd5ce, 0xb8d8d8],
+  neon:  [0xff2d95, 0xff6bcf, 0x00f5d4, 0xf72585],
+  muted: [0x8d6e63, 0xa1887f, 0xbcaaa4, 0x78909c],
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function seededRandom(seed) {
+  const x = Math.sin(seed * 9999.1 + seed * seed * 0.97) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// ─── Floor with Caustics ─────────────────────────────────────────────────────
+const floorGeo = new THREE.PlaneGeometry(80, 80, 1, 1);
+const floorMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime:        { value: 0 },
+    uColor1:      { value: new THREE.Color(0x003344) },
+    uColor2:      { value: new THREE.Color(0x001a22) },
+    uCausticColor:{ value: new THREE.Color(0x55ccff) },
+    uSpeed:       { value: params.causticsSpeed },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    uniform float uTime;
+    uniform vec3  uColor1;
+    uniform vec3  uColor2;
+    uniform vec3  uCausticColor;
+    uniform float uSpeed;
+    varying vec2 vUv;
+
+    // Caustic pattern using layered sine waves (approximates refractive patterns)
+    float causticPattern(vec2 uv, float t) {
+      float c = 0.0;
+      vec2 p = uv * 8.0;
+      c += sin(p.x * 3.1 + t) * sin(p.y * 2.7 + t * 1.3);
+      c += sin(p.x * 1.7 - t * 0.9) * sin(p.y * 3.9 + t * 0.7) * 0.6;
+      c += sin(p.x * 5.3 + t * 1.1) * sin(p.y * 4.1 - t * 0.5) * 0.3;
+      return pow(max(c * 0.5 + 0.5, 0.0), 3.0);
+    }
+
+    void main() {
+      vec2 uv = vUv;
+      float t  = uTime * uSpeed;
+
+      float sand  = smoothstep(0.3, 0.7, sin(uv.x * 40.0 + sin(uv.y * 30.0) * 2.0) * 0.05 + 0.5);
+      vec3  base  = mix(uColor1, uColor2, sand);
+
+      float caustic = causticPattern(uv, t) * 0.3;
+      base = mix(base, uCausticColor, caustic);
+
+      // Vignette
+      float d = distance(uv, vec2(0.5));
+      base *= 1.0 - d * 0.6;
+
+      gl_FragColor = vec4(base, 1.0);
+    }
+  `,
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ─── God Rays ────────────────────────────────────────────────────────────────
+const rayGroup = new THREE.Group();
+scene.add(rayGroup);
+for (let i = 0; i < 8; i++) {
+  const h    = 15 + seededRandom(i * 7) * 10;
+  const geo  = new THREE.ConeGeometry(0.4 + seededRandom(i * 3) * 0.6, h, 6, 1, true);
+  const mat  = new THREE.MeshBasicMaterial({
+    color: 0x88ddff,
+    transparent: true,
+    opacity: 0.04 + seededRandom(i * 11) * 0.03,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(
+    (seededRandom(i * 5) - 0.5) * 30,
+    12,
+    (seededRandom(i * 13) - 0.5) * 30
+  );
+  mesh.rotation.z = (seededRandom(i * 17) - 0.5) * 0.3;
+  rayGroup.add(mesh);
+}
+
+// ─── Coral Geometry Generators ───────────────────────────────────────────────
+
+// Brain coral — stacked deformed spheres
+function createBrainCoral(seed, colors) {
+  const group = new THREE.Group();
+  const count = 4 + Math.floor(seededRandom(seed) * 4);
+  for (let i = 0; i < count; i++) {
+    const r  = 0.5 + seededRandom(seed + i * 3) * 0.4;
+    const geo = new THREE.SphereGeometry(r, 12, 10);
+    // Deform vertices for bumpy surface
+    const pos = geo.attributes.position;
+    for (let v = 0; v < pos.count; v++) {
+      const bump = 1.0 + seededRandom(seed + v * 7 + i) * 0.25;
+      pos.setXYZ(v, pos.getX(v) * bump, pos.getY(v) * bump, pos.getZ(v) * bump);
+    }
+    geo.computeVertexNormals();
+    const col = colors[Math.floor(seededRandom(seed + i * 5) * colors.length)];
+    const mat  = new THREE.MeshStandardMaterial({
+      color: col, roughness: 0.8, metalness: 0.0,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(
+      (seededRandom(seed + i * 9) - 0.5) * 0.6,
+      i * 0.35,
+      (seededRandom(seed + i * 11) - 0.5) * 0.6
+    );
+    mesh.castShadow = true;
+    group.add(mesh);
+  }
+  return group;
+}
+
+// Branching coral — recursive tree
+function createBranchingCoral(seed, colors, maxDepth) {
+  const stack = [];
+  const group  = new THREE.Group();
+
+  function pushBranch(origin, direction, length, thickness, depth) {
+    if (depth > maxDepth || length < 0.05) return;
+    const col = colors[Math.floor(seededRandom(seed + depth * 17) * colors.length)];
+
+    const geo  = new THREE.CylinderGeometry(thickness * 0.3, thickness, length, 6, 1);
+    const mat  = new THREE.MeshStandardMaterial({
+      color: col, roughness: 0.7, metalness: 0.0,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+
+    const mid = origin.clone().add(direction.clone().multiplyScalar(length * 0.5));
+    mesh.position.copy(mid);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+    group.add(mesh);
+
+    // Two child branches
+    const spread = 0.4 + seededRandom(seed + depth * 7) * 0.3;
+    const len2    = length * (0.6 + seededRandom(seed + depth * 13) * 0.2);
+    const thick2  = thickness * 0.65;
+
+    const leftDir  = direction.clone().applyAxisAngle(new THREE.Vector3(0, 0, 1),  spread);
+    const rightDir = direction.clone().applyAxisAngle(new THREE.Vector3(0, 0, 1), -spread);
+
+    pushBranch(mid.clone(), leftDir,  len2, thick2, depth + 1);
+    pushBranch(mid.clone(), rightDir, len2, thick2, depth + 1);
+  }
+
+  const dir = new THREE.Vector3(0, 1, 0);
+  pushBranch(new THREE.Vector3(0, -2, 0), dir, 1.6, 0.25, 0);
+  return group;
+}
+
+// Fan coral — flat expanded disc on a stem
+function createFanCoral(seed, colors) {
+  const group  = new THREE.Group();
+  const col   = colors[Math.floor(seededRandom(seed) * colors.length)];
+
+  // Stem
+  const stemGeo = new THREE.CylinderGeometry(0.06, 0.1, 1.2, 6);
+  const stemMat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.7 });
+  const stem    = new THREE.Mesh(stemGeo, stemMat);
+  stem.position.y = 0.6;
+  stem.castShadow = true;
+  group.add(stem);
+
+  // Fan — large flat disc with ridges
+  const fanGeo = new THREE.CylinderGeometry(0.05, 1.2, 0.08, 24, 4);
+  const pos    = fanGeo.attributes.position;
+  for (let v = 0; v < pos.count; v++) {
+    const y   = pos.getY(v);
+    const bump = y > 0 ? 1.0 + seededRandom(seed + v * 3) * 0.4 : 1.0;
+    pos.setX(v, pos.getX(v) * bump);
+    pos.setZ(v, pos.getZ(v) * bump);
+  }
+  fanGeo.computeVertexNormals();
+  const fanMat = new THREE.MeshStandardMaterial({
+    color: col, roughness: 0.6, side: THREE.DoubleSide,
+  });
+  const fan = new THREE.Mesh(fanGeo, fanMat);
+  fan.position.y = 1.2;
+  fan.castShadow = true;
+  group.add(fan);
+
+  return group;
+}
+
+// ─── Build Coral Instances ────────────────────────────────────────────────────
+let coralGroup = new THREE.Group();
+scene.add(coralGroup);
+
+function buildCorals() {
+  // Remove old corals
+  coralGroup.children.forEach(c => {
+    c.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  });
+  scene.remove(coralGroup);
+  coralGroup = new THREE.Group();
+  scene.add(coralGroup);
+
+  const colors = colorSchemes[params.colorScheme];
+
+  for (let i = 0; i < params.coralDensity; i++) {
+    const seed = i * 137.5 + 1;
+    const type = Math.floor(seededRandom(seed * 3) * 3);
+    let coral;
+
+    switch (type) {
+      case 0: coral = createBrainCoral(seed, colors);       break;
+      case 1: coral = createBranchingCoral(seed, colors, params.branchDepth); break;
+      default: coral = createFanCoral(seed, colors);         break;
+    }
+
+    const x = (seededRandom(seed * 7)  - 0.5) * 30;
+    const z = (seededRandom(seed * 11) - 0.5) * 30;
+    const s = 0.6 + seededRandom(seed * 13) * 1.2;
+    coral.position.set(x, -2, z);
+    coral.scale.setScalar(s);
+    coral.rotation.y = seededRandom(seed * 17) * Math.PI * 2;
+    coralGroup.add(coral);
+  }
+}
+
+buildCorals();
+
+// ─── Bubbles Particle System ──────────────────────────────────────────────────
+let bubbleMesh;
+const bubbleGeo = new THREE.BufferGeometry();
+const bubblePositions  = new Float32Array(params.bubbleCount * 3);
+const bubbleVelocities = new Float32Array(params.bubbleCount * 3);
+const bubbleSizes      = new Float32Array(params.bubbleCount);
+
+function initBubbles() {
+  for (let i = 0; i < params.bubbleCount; i++) {
+    bubblePositions[i * 3]     = (Math.random() - 0.5) * 30;
+    bubblePositions[i * 3 + 1] = Math.random() * 15 - 2;
+    bubblePositions[i * 3 + 2] = (Math.random() - 0.5) * 30;
+    bubbleVelocities[i]        = 0.02 + Math.random() * 0.04;
+    bubbleSizes[i]             = 0.03 + Math.random() * 0.08;
+  }
+  bubbleGeo.setAttribute('position', new THREE.BufferAttribute(bubblePositions, 3));
+  bubbleGeo.setAttribute('size',     new THREE.BufferAttribute(bubbleSizes, 1));
+}
+
+initBubbles();
+
+const bubbleMat = new THREE.ShaderMaterial({
+  uniforms: {},
+  vertexShader: /* glsl */`
+    attribute float size;
+    varying float vAlpha;
+    void main() {
+      vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize  = size * (300.0 / -mvPos.z);
+      gl_Position   = projectionMatrix * mvPos;
+      vAlpha = smoothstep(1.0, 0.3, position.y / 15.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision mediump float;
+    varying float vAlpha;
+    void main() {
+      float d = length(gl_PointCoord - vec2(0.5));
+      if (d > 0.5) discard;
+      float rim = smoothstep(0.35, 0.5, d);
+      gl_FragColor = vec4(0.7, 0.95, 1.0, rim * vAlpha * 0.6);
+    }
+  `,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+
+bubbleMesh = new THREE.Points(bubbleGeo, bubbleMat);
+scene.add(bubbleMesh);
+
+function updateBubbles() {
+  const pos = bubbleGeo.attributes.position.array;
+  for (let i = 0; i < params.bubbleCount; i++) {
+    pos[i * 3 + 1] += bubbleVelocities[i];
+    pos[i * 3]     += Math.sin(Date.now() * 0.001 + i) * 0.002;
+    if (pos[i * 3 + 1] > 14) {
+      pos[i * 3]     = (Math.random() - 0.5) * 30;
+      pos[i * 3 + 1] = -2;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 30;
+    }
+  }
+  bubbleGeo.attributes.position.needsUpdate = true;
+}
+
+// ─── Sway Animation for Branching Corals ──────────────────────────────────────
+// Light direction for swaying reference
+const swayDir = new THREE.Vector3(1, 0, 0.5).normalize();
+
+function animateCorals(t) {
+  if (!params.swayAnimation) return;
+  coralGroup.children.forEach((coral, idx) => {
+    coral.children.forEach((child, ci) => {
+      if (child.material && child.geometry && child.geometry.type === 'CylinderGeometry') {
+        const seed = idx * 137.5 + 1 + ci;
+        const sway = Math.sin(t * 0.8 + seed) * 0.06;
+        child.rotation.x = sway * swayDir.x;
+        child.rotation.z = sway * swayDir.z;
+      }
+    });
+  });
+}
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '🌊 Coral Controls' });
+gui.add(params, 'coralDensity',  1, 20, 1).name('Coral Density').onChange(buildCorals);
+gui.add(params, 'branchDepth',   1,  6, 1).name('Branch Depth').onChange(buildCorals);
+gui.add(params, 'colorScheme', ['warm','cool','neon','muted']).name('Color Scheme').onChange(buildCorals);
+gui.add(params, 'swayAnimation').name('Sway Animation');
+gui.add(params, 'causticsSpeed', 0.1, 3.0, 0.1).name('Caustics Speed');
+gui.add(params, 'bubbleCount',   50, 800, 10).name('Bubble Count').onChange(() => {
+  // Rebuild bubble system on count change
+  scene.remove(bubbleMesh);
+  bubbleGeo.dispose();
+  initBubbles();
+  bubbleMesh = new THREE.Points(bubbleGeo, bubbleMat);
+  scene.add(bubbleMesh);
+});
+gui.add(params, 'fogDensity', 0.005, 0.1, 0.005).name('Fog Density').onChange(v => {
+  scene.fog.density = v;
+});
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─── Render Loop ───────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  controls.update();
+  floorMat.uniforms.uTime.value = t;
+  floorMat.uniforms.uSpeed.value = params.causticsSpeed;
+
+  animateCorals(t);
+  updateBubbles();
+
+  // Gentle ray sway
+  rayGroup.children.forEach((r, i) => {
+    r.rotation.z = Math.sin(t * 0.2 + i * 1.3) * 0.15;
+  });
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

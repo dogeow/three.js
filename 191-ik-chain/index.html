@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>191 - Inverse Kinematics (IK) 2-Bone Chain — FABRIK Algorithm</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #111; font-family: sans-serif; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      color: rgba(255,255,255,0.75);
+      font-size: 13px;
+      pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+      line-height: 1.6;
+    }
+    #info b { color: #fff; }
+  </style>
+
+  <!--
+    ╔══════════════════════════════════════════════════════════════╗
+    ║  Inverse Kinematics — FABRIK Algorithm                       ║
+    ╠══════════════════════════════════════════════════════════════╣
+    ║  FABRIK = Forward And Backward Reaching Inverse Kinematics  ║
+    ║                                                              ║
+    ║  How it works:                                               ║
+    ║  1. Start from the end effector (hand) and pull it toward   ║
+    ║     the target — this is the "backward" pass.                ║
+    ║  2. Re-project each joint along its constrained segment     ║
+    ║     length toward the root — this is the "forward" pass.    ║
+    ║  3. Repeat for N iterations until the chain converges       ║
+    ║     (end effector is close enough to target) or max reach.  ║
+    ║                                                              ║
+    ║  Unlike analytical 2-bone solutions (law of cosines),       ║
+    ║  FABRIK generalises to N joints and is easy to extend.       ║
+    ╚══════════════════════════════════════════════════════════════╝
+  -->
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="info">
+    <b>191 — Inverse Kinematics: FABRIK 2-Bone Chain</b><br>
+    Move your mouse to steer the hand · OrbitControls enabled
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+    // ─── Scene Setup ───────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111827);
+    scene.fog = new THREE.Fog(0x111827, 30, 60);
+
+    const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
+    camera.position.set(0, 6, 14);
+    camera.lookAt(0, 3, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 3, 0);
+    controls.update();
+
+    // ─── Lighting ───────────────────────────────────────────────────
+    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambient);
+
+    const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
+    sun.position.set(8, 12, 6);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 40;
+    sun.shadow.camera.left  = -14;
+    sun.shadow.camera.right =  14;
+    sun.shadow.camera.top   =  14;
+    sun.shadow.camera.bottom = -14;
+    sun.shadow.bias = -0.001;
+    scene.add(sun);
+
+    const fill = new THREE.DirectionalLight(0x4488ff, 0.6);
+    fill.position.set(-6, 4, -8);
+    scene.add(fill);
+
+    // ─── Ground Plane ───────────────────────────────────────────────
+    const groundGeo = new THREE.PlaneGeometry(30, 30);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x1a2332,
+      roughness: 0.9,
+      metalness: 0.1,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // grid helper
+    const grid = new THREE.GridHelper(30, 30, 0x2a3a50, 0x1e2a3a);
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    // ─── IK Chain Parameters ────────────────────────────────────────
+    const params = {
+      seg1Length: 3.0,   // upper arm
+      seg2Length: 2.5,   // forearm
+      seg3Length: 1.5,   // hand
+      iterations: 12,
+      baseX: 0,
+      baseY: 0,
+      baseZ: 0,
+    };
+
+    // Root of the chain
+    const rootPos = new THREE.Vector3(params.baseX, params.baseY, params.baseZ);
+
+    // Joint positions (4 points: root, j1, j2, endEffector)
+    const joints = [
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, params.seg1Length, 0),
+      new THREE.Vector3(0, params.seg1Length + params.seg2Length, 0),
+      new THREE.Vector3(0, params.seg1Length + params.seg2Length + params.seg3Length, 0),
+    ];
+
+    // Segment lengths array
+    function getSegLengths() {
+      return [params.seg1Length, params.seg2Length, params.seg3Length];
+    }
+
+    // ─── Cylinder Meshes ───────────────────────────────────────────
+    function makeSegMesh(color) {
+      const geo = new THREE.CylinderGeometry(0.18, 0.22, 1, 16);
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.3 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      return mesh;
+    }
+
+    const seg1Mesh = makeSegMesh(0xe05533); // orange-red  — upper arm
+    const seg2Mesh = makeSegMesh(0x33bb77); // green        — forearm
+    const seg3Mesh = makeSegMesh(0x4488ff); // blue         — hand
+    scene.add(seg1Mesh, seg2Mesh, seg3Mesh);
+
+    // Joint spheres
+    function makeJointSphere(color) {
+      const geo = new THREE.SphereGeometry(0.2, 16, 16);
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.4 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      return mesh;
+    }
+    const jointMeshes = [
+      makeJointSphere(0xffcc00), // root
+      makeJointSphere(0xffcc00),
+      makeJointSphere(0xffcc00),
+      makeJointSphere(0xff6666), // end effector
+    ];
+    jointMeshes.forEach(m => scene.add(m));
+
+    // ─── Target Indicator ───────────────────────────────────────────
+    // Outer ring
+    const ringGeo  = new THREE.TorusGeometry(0.4, 0.06, 12, 40);
+    const ringMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.6, roughness: 0.3 });
+    const targetRing = new THREE.Mesh(ringGeo, ringMat);
+    scene.add(targetRing);
+
+    // Inner dot
+    const dotGeo  = new THREE.SphereGeometry(0.12, 16, 16);
+    const dotMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.0 });
+    const targetDot = new THREE.Mesh(dotGeo, dotMat);
+    scene.add(targetDot);
+
+    // ─── FABRIK Solver ──────────────────────────────────────────────
+    /**
+     * FABRIK — Forward And Backward Reaching Inverse Kinematics
+     *
+     * @param {THREE.Vector3[]} joints   — current joint positions (will be modified in-place)
+     * @param {THREE.Vector3}   target   — desired end-effector position
+     * @param {number[]}        lengths  — segment lengths [seg0, seg1, seg2]
+     * @param {number}          iter     — max iterations
+     * @param {number}          tol      — convergence tolerance
+     */
+    function fabrik(joints, target, lengths, iter, tol = 0.01) {
+      const n = joints.length; // includes root + joints + endEffector
+
+      // Total reach
+      const totalLength = lengths.reduce((a, b) => a + b, 0);
+      const distToRoot  = joints[0].distanceTo(target);
+
+      if (distToRoot >= totalLength) {
+        // Target is beyond reach — fully stretch
+        const dir = target.clone().sub(joints[0]).normalize();
+        for (let i = 1; i < n; i++) {
+          joints[i].copy(joints[i - 1]).addScaledVector(dir, lengths[i - 1]);
+        }
+        return;
+      }
+
+      for (let i = 0; i < iter; i++) {
+        // ── Backward pass: pull end effector to target ──
+        joints[n - 1].copy(target);
+
+        for (let j = n - 2; j >= 0; j--) {
+          const r = joints[j + 1].distanceTo(joints[j]);
+          const lambda = lengths[j] / r;
+          joints[j].lerpVectors(joints[j + 1], joints[j], lambda);
+        }
+
+        // ── Forward pass: re-anchor root to original position ──
+        joints[0].copy(joints[0]); // root stays fixed (already there)
+
+        for (let j = 1; j < n; j++) {
+          const r = joints[j].distanceTo(joints[j - 1]);
+          const lambda = lengths[j - 1] / r;
+          joints[j].lerpVectors(joints[j - 1], joints[j], lambda);
+        }
+
+        // Check convergence
+        if (joints[n - 1].distanceTo(target) < tol) break;
+      }
+    }
+
+    // ─── Mouse / Touch Tracking ─────────────────────────────────────
+    const mouse     = new THREE.Vector2();
+    const raycaster = new THREE.Raycaster();
+    const plane     = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // horizontal plane at y=0
+    const targetPos = new THREE.Vector3(3, 0, 3);
+
+    let pointerDown = false;
+
+    function updateTarget(clientX, clientY) {
+      mouse.x =  (clientX / innerWidth)  * 2 - 1;
+      mouse.y = -(clientY / innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      // Project onto horizontal plane at y = rootPos.y
+      plane.constant = -rootPos.y;
+      raycaster.ray.intersectPlane(plane, targetPos);
+      // Clamp target within reach
+      const maxReach = params.seg1Length + params.seg2Length + params.seg3Length - 0.1;
+      if (targetPos.length() > maxReach) targetPos.normalize().multiplyScalar(maxReach);
+      targetPos.y = rootPos.y;
+    }
+
+    window.addEventListener('mousemove', e => updateTarget(e.clientX, e.clientY));
+    window.addEventListener('touchmove', e => {
+      e.preventDefault();
+      updateTarget(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+
+    // ─── Update Chain Geometry ───────────────────────────────────────
+    /**
+     * Position and orient a cylinder mesh between two 3D points.
+     */
+    function updateCylinder(mesh, p1, p2) {
+      const dir = new THREE.Vector3().subVectors(p2, p1);
+      const len = dir.length();
+      mesh.position.copy(p1).add(p2).multiplyScalar(0.5);
+      mesh.scale.set(1, len, 1);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    }
+
+    // ─── GUI ────────────────────────────────────────────────────────
+    const gui = new GUI();
+    gui.add(params, 'seg1Length', 0.5, 6.0, 0.1).name('Upper Arm');
+    gui.add(params, 'seg2Length', 0.5, 6.0, 0.1).name('Forearm');
+    gui.add(params, 'seg3Length', 0.5, 6.0, 0.1).name('Hand');
+    gui.add(params, 'iterations', 1, 30, 1).name('IK Iterations');
+    gui.close();
+
+    // ─── Animation Loop ──────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+
+      // Gentle idle sway when mouse hasn't moved
+      if (!pointerDown) {
+        const swayX = Math.sin(t * 0.4) * 1.5;
+        const swayZ = Math.cos(t * 0.3) * 1.5;
+        targetPos.x = rootPos.x + swayX;
+        targetPos.z = rootPos.z + swayZ;
+      }
+
+      // Reset joints to root
+      joints[0].copy(rootPos);
+      let acc = 0;
+      for (let i = 0; i < 3; i++) acc += [params.seg1Length, params.seg2Length, params.seg3Length][i];
+
+      // Run FABRIK
+      fabrik(joints, targetPos, getSegLengths(), params.iterations);
+
+      // Update cylinder meshes
+      updateCylinder(seg1Mesh, joints[0], joints[1]);
+      updateCylinder(seg2Mesh, joints[1], joints[2]);
+      updateCylinder(seg3Mesh, joints[2], joints[3]);
+
+      // Update joint spheres
+      jointMeshes.forEach((m, i) => m.position.copy(joints[i]));
+
+      // Animate end effector sphere scale
+      const pulse = 1 + 0.15 * Math.sin(t * 5);
+      jointMeshes[3].scale.setScalar(pulse);
+
+      // Target indicator
+      targetRing.position.copy(targetPos);
+      targetDot.position.copy(targetPos);
+      targetRing.rotation.y = t * 0.8;
+      targetRing.rotation.x = Math.sin(t * 0.5) * 0.4;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ─── Resize ─────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>

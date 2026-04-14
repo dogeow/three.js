@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Procedural Architecture Generator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: monospace; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      color: #aaa;
+      font-size: 12px;
+      pointer-events: none;
+      text-shadow: 1px 1px 2px #000;
+      line-height: 1.6;
+    }
+  </style>
+
+  <!--
+  技术点 / Technical Points:
+  ───────────────────────────────────────────────────────────────
+  1. Procedural Generation (程序化生成)
+     - Seeded randomness for reproducible building dimensions (height, width, depth)
+     - Style selection (modern/brutalist/traditional) drives material and geometry choices
+     - Window layout computed from building bounds with random lit/unlit states
+
+  2. InstancedMesh (实例化网格)
+     - One draw call per feature type: windows, balconies, roof details
+     - Matrix4 per instance encodes position, rotation, scale
+     - Per-instance color via setColorAt for lit/unlit window states
+     - Emissive intensity toggled globally for day/night without rebuilding
+
+  3. Architectural Variety (建筑多样性)
+     - Modern: glass curtain walls, horizontal window strips, flat roof, balconies
+     - Brutalist: raw concrete, deep window reveals, heavy massing, rooftop tanks
+     - Traditional: brick facade, pitched hip roof, vertical window rhythm
+     - Each style has distinct material palette and detail geometry
+
+  4. City Block Layout (城市街区布局)
+     - Grid of city blocks with streets between them
+     - Multiple buildings per block with random placement and size
+     - Ground plane with street grid overlay
+
+  5. Day/Night Toggle (昼夜切换)
+     - Window emissiveIntensity animated: 0.0 (day) → 0.85 (night)
+     - Ambient + directional light adjusted for each mode
+     - Smooth lerp transition over 800ms
+  ───────────────────────────────────────────────────────────────
+  -->
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="info">
+    Procedural Architecture Generator — Three.js 0.160.0<br/>
+    Drag to orbit | Scroll to zoom
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scene Setup
+    // ─────────────────────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    scene.fog = new THREE.Fog(0x1a1a2e, 150, 450);
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
+    camera.position.set(100, 80, 100);
+    camera.lookAt(0, 15, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2.1;
+    controls.target.set(0, 12, 0);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Lighting
+    // ─────────────────────────────────────────────────────────────────────────
+    const ambientLight = new THREE.AmbientLight(0x404060, 0.5);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.4);
+    sunLight.position.set(80, 120, 60);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 400;
+    sunLight.shadow.camera.left = -150;
+    sunLight.shadow.camera.right = 150;
+    sunLight.shadow.camera.top = 150;
+    sunLight.shadow.camera.bottom = -150;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+
+    const moonLight = new THREE.DirectionalLight(0x8090c0, 0.0);
+    moonLight.position.set(-60, 80, -80);
+    scene.add(moonLight);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Materials
+    // ─────────────────────────────────────────────────────────────────────────
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x2a2a35,
+      roughness: 0.9,
+      metalness: 0.1,
+    });
+
+    const streetMat = new THREE.MeshStandardMaterial({
+      color: 0x383845,
+      roughness: 0.95,
+      metalness: 0.0,
+    });
+
+    const concreteMat = new THREE.MeshStandardMaterial({
+      color: 0x7a8088,
+      roughness: 0.85,
+      metalness: 0.05,
+    });
+
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x7a9ab8,
+      roughness: 0.08,
+      metalness: 0.85,
+    });
+
+    const brickMat = new THREE.MeshStandardMaterial({
+      color: 0x8b5a45,
+      roughness: 0.92,
+      metalness: 0.0,
+    });
+
+    const roofMat = new THREE.MeshStandardMaterial({
+      color: 0x4a4a58,
+      roughness: 0.8,
+      metalness: 0.2,
+    });
+
+    // Window base material (emissiveIntensity animated for day/night)
+    const windowBaseMat = new THREE.MeshStandardMaterial({
+      color: 0xfffbe0,
+      emissive: 0xffcc44,
+      emissiveIntensity: 0.0,
+      roughness: 0.2,
+      metalness: 0.3,
+    });
+
+    const windowUnlitMat = new THREE.MeshStandardMaterial({
+      color: 0x1a2233,
+      roughness: 0.3,
+      metalness: 0.5,
+    });
+
+    const balconyMat = new THREE.MeshStandardMaterial({
+      color: 0x9a9aaa,
+      roughness: 0.55,
+      metalness: 0.45,
+    });
+
+    const roofDetailMat = new THREE.MeshStandardMaterial({
+      color: 0x606070,
+      roughness: 0.7,
+      metalness: 0.35,
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Geometry Templates
+    // ─────────────────────────────────────────────────────────────────────────
+    const windowGeo = new THREE.BoxGeometry(1, 1.4, 0.12);
+    const balconyFloorGeo = new THREE.BoxGeometry(1.6, 0.12, 0.7);
+    const balconyRailGeo = new THREE.BoxGeometry(1.6, 0.7, 0.07);
+    const roofTankGeo = new THREE.CylinderGeometry(0.9, 0.9, 2.2, 8);
+    const roofHatchGeo = new THREE.BoxGeometry(1.2, 0.3, 1.2);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // InstancedMesh pools
+    // ─────────────────────────────────────────────────────────────────────────
+    const MAX_WINDOWS = 30000;
+    const MAX_BALCONIES = 6000;
+    const MAX_ROOF_DETAILS = 3000;
+
+    let windowInstancedMesh = null;
+    let balconyInstancedMesh = null;
+    let roofDetailInstancedMesh = null;
+
+    // Track lit state per instance index
+    const windowLitFlags = [];
+
+    function createInstancedPools() {
+      windowInstancedMesh = new THREE.InstancedMesh(windowGeo, windowBaseMat, MAX_WINDOWS);
+      windowInstancedMesh.count = 0;
+      windowInstancedMesh.castShadow = false;
+      windowInstancedMesh.receiveShadow = false;
+      windowInstancedMesh.frustumCulled = false;
+      scene.add(windowInstancedMesh);
+
+      balconyInstancedMesh = new THREE.InstancedMesh(balconyFloorGeo, balconyMat, MAX_BALCONIES);
+      balconyInstancedMesh.count = 0;
+      balconyInstancedMesh.castShadow = true;
+      balconyInstancedMesh.receiveShadow = false;
+      balconyInstancedMesh.frustumCulled = false;
+      scene.add(balconyInstancedMesh);
+
+      roofDetailInstancedMesh = new THREE.InstancedMesh(roofTankGeo, roofDetailMat, MAX_ROOF_DETAILS);
+      roofDetailInstancedMesh.count = 0;
+      roofDetailInstancedMesh.castShadow = true;
+      roofDetailInstancedMesh.frustumCulled = false;
+      scene.add(roofDetailInstancedMesh);
+    }
+
+    function resetPools() {
+      windowInstancedMesh.count = 0;
+      balconyInstancedMesh.count = 0;
+      roofDetailInstancedMesh.count = 0;
+      windowLitFlags.length = 0;
+    }
+
+    const _dummy = new THREE.Object3D();
+    const _color = new THREE.Color();
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Building Style Definitions
+    // ─────────────────────────────────────────────────────────────────────────
+    const STYLES = {
+      modern: {
+        wallMat: glassMat,
+        roofMat: roofMat,
+        hasHorizontalStrip: true,
+        hasDeepReveal: false,
+        hasPitchedRoof: false,
+        balconyChance: 0.45,
+        roofDetailChance: 0.25,
+        windowSpacingY: 3.2,
+      },
+      brutalist: {
+        wallMat: concreteMat,
+        roofMat: roofMat,
+        hasHorizontalStrip: false,
+        hasDeepReveal: true,
+        hasPitchedRoof: false,
+        balconyChance: 0.1,
+        roofDetailChance: 0.75,
+        windowSpacingY: 4.0,
+      },
+      traditional: {
+        wallMat: brickMat,
+        roofMat: roofMat,
+        hasHorizontalStrip: false,
+        hasDeepReveal: false,
+        hasPitchedRoof: true,
+        balconyChance: 0.05,
+        roofDetailChance: 0.35,
+        windowSpacingY: 3.5,
+      },
+    };
+    const STYLE_KEYS = Object.keys(STYLES);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Seeded RNG
+    // ─────────────────────────────────────────────────────────────────────────
+    let seed = 12345;
+    function rng() {
+      seed++;
+      const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+      return x - Math.floor(x);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // City Generation
+    // ─────────────────────────────────────────────────────────────────────────
+    const buildingMeshes = []; // all building body meshes for cleanup
+
+    function buildCity(params) {
+      resetPools();
+
+      // Remove old building meshes
+      for (const m of buildingMeshes) {
+        scene.remove(m);
+        m.geometry.dispose();
+      }
+      buildingMeshes.length = 0;
+
+      // Remove old ground/streets
+      const toRemove = [];
+      scene.traverse(obj => {
+        if (obj.userData.isCityElement) toRemove.push(obj);
+      });
+      for (const obj of toRemove) {
+        scene.remove(obj);
+        if (obj.geometry) obj.geometry.dispose();
+      }
+
+      const { cols, rows, blockSize, streetWidth, density, maxHeight } = params;
+      const totalSize = cols * (blockSize + streetWidth) + streetWidth + 20;
+      const halfSize = totalSize / 2;
+
+      // Ground plane
+      const groundGeo = new THREE.PlaneGeometry(totalSize, totalSize);
+      const ground = new THREE.Mesh(groundGeo, groundMat.clone());
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -0.01;
+      ground.receiveShadow = true;
+      ground.userData.isCityElement = true;
+      scene.add(ground);
+
+      // Street strips — horizontal
+      for (let j = 0; j <= rows; j++) {
+        const zPos = streetWidth / 2 + j * (blockSize + streetWidth) - halfSize;
+        const sGeo = new THREE.PlaneGeometry(totalSize, streetWidth);
+        const s = new THREE.Mesh(sGeo, streetMat.clone());
+        s.rotation.x = -Math.PI / 2;
+        s.position.set(0, 0.01, zPos);
+        s.receiveShadow = true;
+        s.userData.isCityElement = true;
+        scene.add(s);
+      }
+      // Street strips — vertical
+      for (let i = 0; i <= cols; i++) {
+        const xPos = streetWidth / 2 + i * (blockSize + streetWidth) - halfSize;
+        const sGeo = new THREE.PlaneGeometry(streetWidth, totalSize);
+        const s = new THREE.Mesh(sGeo, streetMat.clone());
+        s.rotation.x = -Math.PI / 2;
+        s.position.set(xPos, 0.01, 0);
+        s.receiveShadow = true;
+        s.userData.isCityElement = true;
+        scene.add(s);
+      }
+
+      let winIdx = 0;
+      let balIdx = 0;
+      let roofIdx = 0;
+
+      // Generate blocks
+      for (let bx = 0; bx < cols; bx++) {
+        for (let bz = 0; bz < rows; bz++) {
+          const blockOriginX = streetWidth + bx * (blockSize + streetWidth) - halfSize;
+          const blockOriginZ = streetWidth + bz * (blockSize + streetWidth) - halfSize;
+
+          const numBuildings = Math.floor(1 + rng() * 3 * density);
+
+          for (let bi = 0; bi < numBuildings; bi++) {
+            const bw = 4 + rng() * (blockSize * 0.45);
+            const bd = 4 + rng() * (blockSize * 0.45);
+            const bh = 10 + rng() * (maxHeight - 10);
+
+            const styleKey = STYLE_KEYS[Math.floor(rng() * STYLE_KEYS.length)];
+            const st = STYLES[styleKey];
+
+            const spaceX = Math.max(1, blockSize - bw);
+            const spaceZ = Math.max(1, blockSize - bd);
+            const px = blockOriginX + rng() * spaceX + bw / 2;
+            const pz = blockOriginZ + rng() * spaceZ + bd / 2;
+
+            // ── Building body ──
+            const bodyGeo = new THREE.BoxGeometry(bw, bh, bd);
+            const bodyMesh = new THREE.Mesh(bodyGeo, st.wallMat.clone());
+            bodyMesh.position.set(px, bh / 2, pz);
+            bodyMesh.castShadow = true;
+            bodyMesh.receiveShadow = true;
+            scene.add(bodyMesh);
+            buildingMeshes.push(bodyMesh);
+
+            // ── Roof ──
+            if (st.hasPitchedRoof) {
+              const roofR = Math.max(bw, bd) * 0.6;
+              const roofH = roofR * 0.45;
+              const roofGeo = new THREE.ConeGeometry(roofR, roofH, 4);
+              const roofMesh = new THREE.Mesh(roofGeo, st.roofMat.clone());
+              roofMesh.position.set(px, bh + roofH * 0.5, pz);
+              roofMesh.rotation.y = Math.PI / 4;
+              roofMesh.castShadow = true;
+              roofMesh.userData.isCityElement = true;
+              scene.add(roofMesh);
+            } else {
+              const roofGeo = new THREE.BoxGeometry(bw + 0.6, 0.45, bd + 0.6);
+              const roofMesh = new THREE.Mesh(roofGeo, st.roofMat.clone());
+              roofMesh.position.set(px, bh + 0.22, pz);
+              roofMesh.castShadow = true;
+              roofMesh.userData.isCityElement = true;
+              scene.add(roofMesh);
+
+              // Roof details (tanks, hatches)
+              if (rng() < st.roofDetailChance) {
+                if (roofIdx < MAX_ROOF_DETAILS) {
+                  _dummy.position.set(
+                    px + (rng() - 0.5) * bw * 0.5,
+                    bh + 1.2,
+                    pz + (rng() - 0.5) * bd * 0.5
+                  );
+                  _dummy.rotation.set(0, rng() * Math.PI, 0);
+                  _dummy.scale.set(1, 0.8 + rng() * 0.8, 1);
+                  _dummy.updateMatrix();
+                  roofDetailInstancedMesh.setMatrixAt(roofIdx, _dummy.matrix);
+                  roofIdx++;
+                }
+                if (rng() > 0.4 && roofIdx < MAX_ROOF_DETAILS) {
+                  _dummy.position.set(
+                    px + (rng() - 0.5) * bw * 0.4,
+                    bh + 0.2,
+                    pz + (rng() - 0.5) * bd * 0.4
+                  );
+                  _dummy.rotation.set(0, rng() * Math.PI, 0);
+                  _dummy.scale.set(1.2, 1, 1.2);
+                  _dummy.updateMatrix();
+                  // Switch to hatch geo
+                  roofDetailInstancedMesh.setMatrixAt(roofIdx, _dummy.matrix);
+                  roofIdx++;
+                }
+              }
+            }
+
+            // ── Windows ──
+            const winSpacingX = 2.6;
+            const winSpacingY = st.windowSpacingY;
+            const windowsX = Math.max(1, Math.floor((bw - 2) / winSpacingX));
+            const windowsY = Math.max(1, Math.floor((bh - 4) / winSpacingY));
+            const winStartX = px - bw / 2 + 1.5;
+            const winStartY = 2.0;
+            const winH = st.hasHorizontalStrip ? 0.75 : (1.3 + rng() * 0.3);
+            const revealD = st.hasDeepReveal ? 0.3 : 0.0;
+
+            for (let wx = 0; wx < windowsX; wx++) {
+              for (let wy = 0; wy < windowsY; wy++) {
+                const wxPos = winStartX + wx * winSpacingX;
+                const wyPos = winStartY + wy * winSpacingY;
+
+                // Front face
+                if (winIdx < MAX_WINDOWS) {
+                  const lit = rng() > 0.35;
+                  windowLitFlags.push(lit);
+
+                  _dummy.position.set(wxPos, wyPos, pz + bd / 2 + 0.08 + revealD);
+                  _dummy.rotation.set(0, 0, 0);
+                  _dummy.scale.set(1.0, winH / 1.4, 1);
+                  _dummy.updateMatrix();
+                  windowInstancedMesh.setMatrixAt(winIdx, _dummy.matrix);
+                  _color.setHex(lit ? 0xfffbe0 : 0x1a2233);
+                  windowInstancedMesh.setColorAt(winIdx, _color);
+                  winIdx++;
+                }
+
+                // Back face
+                if (winIdx < MAX_WINDOWS) {
+                  const lit = rng() > 0.35;
+                  windowLitFlags.push(lit);
+
+                  _dummy.position.set(wxPos, wyPos, pz - bd / 2 - 0.08 - revealD);
+                  _dummy.rotation.set(0, Math.PI, 0);
+                  _dummy.scale.set(1.0, winH / 1.4, 1);
+                  _dummy.updateMatrix();
+                  windowInstancedMesh.setMatrixAt(winIdx, _dummy.matrix);
+                  _color.setHex(lit ? 0xfffbe0 : 0x1a2233);
+                  windowInstancedMesh.setColorAt(winIdx, _color);
+                  winIdx++;
+                }
+
+                // Side faces (only on first/last column to reduce count)
+                if (wx === 0 || wx === windowsX - 1) {
+                  if (winIdx < MAX_WINDOWS) {
+                    const lit = rng() > 0.35;
+                    windowLitFlags.push(lit);
+
+                    _dummy.position.set(px + bw / 2 + 0.08 + revealD, wyPos, pz);
+                    _dummy.rotation.set(0, Math.PI / 2, 0);
+                    _dummy.scale.set(1.0, winH / 1.4, 1);
+                    _dummy.updateMatrix();
+                    windowInstancedMesh.setMatrixAt(winIdx, _dummy.matrix);
+                    _color.setHex(lit ? 0xfffbe0 : 0x1a2233);
+                    windowInstancedMesh.setColorAt(winIdx, _color);
+                    winIdx++;
+                  }
+                  if (winIdx < MAX_WINDOWS) {
+                    const lit = rng() > 0.35;
+                    windowLitFlags.push(lit);
+
+                    _dummy.position.set(px - bw / 2 - 0.08 - revealD, wyPos, pz);
+                    _dummy.rotation.set(0, -Math.PI / 2, 0);
+                    _dummy.scale.set(1.0, winH / 1.4, 1);
+                    _dummy.updateMatrix();
+                    windowInstancedMesh.setMatrixAt(winIdx, _dummy.matrix);
+                    _color.setHex(lit ? 0xfffbe0 : 0x1a2233);
+                    windowInstancedMesh.setColorAt(winIdx, _color);
+                    winIdx++;
+                  }
+                }
+              }
+            }
+
+            // ── Balconies (modern style) ──
+            if (rng() < st.balconyChance) {
+              const numBalc = Math.floor(2 + rng() * 5);
+              for (let b = 0; b < numBalc; b++) {
+                const bY = winStartY + b * (bh / numBalc) + 1.5;
+                const bX = px + (rng() - 0.5) * (bw - 3);
+                const bZ = pz + bd / 2 + 0.35;
+
+                if (balIdx < MAX_BALCONIES) {
+                  _dummy.position.set(bX, bY, bZ);
+                  _dummy.rotation.set(0, 0, 0);
+                  _dummy.scale.set(1.6, 1, 1);
+                  _dummy.updateMatrix();
+                  balconyInstancedMesh.setMatrixAt(balIdx, _dummy.matrix);
+                  balIdx++;
+                }
+
+                // Rail post
+                if (balIdx < MAX_BALCONIES) {
+                  _dummy.position.set(bX, bY + 0.45, bZ + 0.32);
+                  _dummy.rotation.set(0, 0, 0);
+                  _dummy.scale.set(1.6, 1, 1);
+                  _dummy.updateMatrix();
+                  balconyInstancedMesh.setMatrixAt(balIdx, _dummy.matrix);
+                  balIdx++;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      windowInstancedMesh.count = winIdx;
+      balconyInstancedMesh.count = balIdx;
+      roofDetailInstancedMesh.count = roofIdx;
+
+      windowInstancedMesh.instanceMatrix.needsUpdate = true;
+      balconyInstancedMesh.instanceMatrix.needsUpdate = true;
+      roofDetailInstancedMesh.instanceMatrix.needsUpdate = true;
+      if (windowInstancedMesh.instanceColor) {
+        windowInstancedMesh.instanceColor.needsUpdate = true;
+      }
+
+      console.log(
+        `City: ${cols * rows} blocks, ~${numBuildings} buildings, ` +
+        `${winIdx} windows, ${balIdx} balconies, ${roofIdx} roof details`
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Parameters & GUI
+    // ─────────────────────────────────────────────────────────────────────────
+    const params = {
+      cols: 5,
+      rows: 5,
+      blockSize: 22,
+      streetWidth: 7,
+      density: 1.0,
+      maxHeight: 60,
+      nightMode: false,
+    };
+
+    createInstancedPools();
+    buildCity(params);
+
+    const gui = new GUI({ title: '🏙️ City Controls' });
+
+    const cityF = gui.addFolder('City Layout');
+    cityF.add(params, 'cols', 2, 10, 1).name('Blocks X').onChange(rebuild);
+    cityF.add(params, 'rows', 2, 10, 1).name('Blocks Z').onChange(rebuild);
+    cityF.add(params, 'blockSize', 10, 40, 1).name('Block Size').onChange(rebuild);
+    cityF.add(params, 'streetWidth', 2, 16, 0.5).name('Street Width').onChange(rebuild);
+    cityF.add(params, 'density', 0.3, 2.0, 0.1).name('Density').onChange(rebuild);
+
+    const buildF = gui.addFolder('Buildings');
+    buildF.add(params, 'maxHeight', 15, 100, 1).name('Max Height').onChange(rebuild);
+
+    const visF = gui.addFolder('Visual');
+    visF.add(params, 'nightMode').name('🌙 Night Mode').onChange(applyDayNight);
+
+    function rebuild() {
+      seed = 42;
+      buildCity(params);
+    }
+
+    function applyDayNight(isNight) {
+      const targetEmissive = isNight ? 0.85 : 0.0;
+      const targetExposure = isNight ? 0.55 : 1.0;
+      const targetSunInt = isNight ? 0.08 : 1.4;
+      const targetMoonInt = isNight ? 0.5 : 0.0;
+      const targetAmbInt = isNight ? 0.06 : 0.5;
+
+      const startEmissive = windowBaseMat.emissiveIntensity;
+      const startExposure = renderer.toneMappingExposure;
+      const startSun = sunLight.intensity;
+      const startMoon = moonLight.intensity;
+      const startAmb = ambientLight.intensity;
+
+      const t0 = performance.now();
+      const duration = 900;
+
+      function step() {
+        const t = Math.min((performance.now() - t0) / duration, 1);
+        const e = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+        windowBaseMat.emissiveIntensity = THREE.MathUtils.lerp(startEmissive, targetEmissive, e);
+        renderer.toneMappingExposure = THREE.MathUtils.lerp(startExposure, targetExposure, e);
+        sunLight.intensity = THREE.MathUtils.lerp(startSun, targetSunInt, e);
+        moonLight.intensity = THREE.MathUtils.lerp(startMoon, targetMoonInt, e);
+        ambientLight.intensity = THREE.MathUtils.lerp(startAmb, targetAmbInt, e);
+
+        const bgDay = new THREE.Color(0x1a1a2e);
+        const bgNight = new THREE.Color(0x050510);
+        scene.background.lerpColors(bgDay, bgNight, e);
+        scene.fog.color.lerpColors(bgDay, bgNight, e);
+
+        if (t < 1) requestAnimationFrame(step);
+      }
+      step();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Loop
+    // ─────────────────────────────────────────────────────────────────────────
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Resize
+    // ─────────────────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>

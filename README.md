@@ -318,7 +318,7 @@ animate()
 
 | # | 章节 | 技术点 |
 |---|------|-------|
-| [162](./162-wave-collapse/index.html) | **波函数塌缩 WFC ★** | 程序化地牢生成，WFC 算法逐步塌缩，可视化熵降低过程 |
+| [162](./162-wave-collapse/index.html) | **波函数坍缩 ★** | 约束传播算法，相邻砖块边匹配，实时3D可视化 |
 | [163](./163-volumetric-cloud/index.html) | **体积云 Raymarching ★** | GLSL 体积密度采样，48 步光线累积，动态云层流动 |
 | [164](./164-physics-pendulum/index.html) | **双摆混沌物理 ★** | Lagrangian 方程 RK4 积分，混沌敏感度，轨迹保留动画 |
 | [165](./165-interactive-piano/index.html) | **交互钢琴 ★** | Web Audio 多谐波合成，ADSR 包络，3D 白键/黑键，点击/键盘触发 |
@@ -537,3 +537,80 @@ animate()
 | [183](./183-procedural-city/index.html) | **程序化城市 ★** | 程序化城市建模，建筑生成，道路网络，日夜切换 |
 | [184](./184-crowd-simulation/index.html) | **群体模拟 ★** | Boids 群体行为模拟，分离/聚集/对齐，拥挤人群渲染 |
 | [185](./185-quantum-viz/index.html) | **量子计算可视化 ★** | 量子比特门操作可视化，叠加态与纠缠态演示 |
+
+
+## 二十八、更新示例（186~193）
+
+| [186](./186-sss-skin/index.html) | **次表面散射皮肤 ★** | MeshPhysicalMaterial 次表面散射、透射厚度、散射色彩 |
+| [187](./187-cloth-physics/index.html) | **布料物理模拟 ★** | Verlet积分布料、弹簧约束、风力、重力 |
+| [188](./188-node-material/index.html) | **程序化材质编辑器 ★** | GLSL程序化图案、棋盘格/同心圆/砖块着色器 |
+| [189](./189-gpu-particles-webgl/index.html) | **GPU粒子银河 ★** | 顶点着色器驱动10万粒子、螺旋星系、鼠标吸引交互 |
+| [190](./190-procedural-planet/index.html) | **程序化行星生成 ★** | 程序化地形、噪声驱动高度图、多层材质、大气层渲染 |
+| [191](./191-ik-chain/index.html) | **反向动力学链条 ★** | FABRIK IK算法、2骨骼链、鼠标跟随末端执行器 |
+| [192](./192-audio-visualizer-webgl/index.html) | **Web Audio 3D频谱 ★** | Web Audio API频谱分析、3D柱图、文件加载音频可视化 |
+| [193](./193-atmospheric-scattering/index.html) | **大气散射天空 ★** | Rayleigh/Mie散射着色器、太阳位置驱动、天空渐变 |
+
+## 二十九、高级特效（196~）
+
+| # | 章节 | 技术点 |
+|---|------|-------|
+| [194](./194-particle-trails/index.html) | **粒子轨迹系统 ★** | 流场驱动粒子、环形缓冲拖尾、点击爆发、附加混合发光 |
+| [195](./195-lightning-effect/index.html) | **闪电特效 ★** | 递归细分闪电、分支闪电、UnrealBloom发光、Web Audio雷鸣合成 |
+| [196](./196-heatmap-visualization/index.html) | **热力图可视化 ★** | Gaussian热力图、ShaderMaterial渐变、Raycaster悬停/点击注入 |
+| [197](./197-procedural-fire/index.html) | **程序化火焰特效 ★** | 三层GPU粒子、顶点着色器上升+风力、热度闪烁后期处理、点击冲击 |
+| [198](./198-snowflake-generator/index.html) | **雪花生成器 ★** | 六重对称分形、CatmullRomCurve3晶体管、点击随机生成 |
+| [199](./199-sand-simulation/index.html) | **沙子物理模拟 ★** | 网格粒子、角度安息角、InstancedMesh 25万粒子、点击/拖动倾倒 |
+| [200](./200-graph-layout/index.html) | **力导向图布局 ★** | Barabási–Albert无标度网络、Verlet物理、Coulomb排斥+弹簧吸引、拖拽交互 |
+| [201](./201-voronoi-diagram/index.html) | **Voronoi 图可视化 ★** | Fortune算法3D Voronoi细胞、点击添加点、边缘着色、动态更新 |
+| [202](./202-dna-helix/index.html) | **DNA 双螺旋可视化 ★** | 双螺旋骨架、碱基对rungs、5'/3'端点标签、MeshStandardMaterial金属质感 |
+| [203](./203-fractal-mandelbrot/index.html) | **Mandelbrot 分形可视化 ★** | GLSL Mandelbrot迭代计算、顶点着色器Z轴位移、三套平滑配色方案 |
+| [204](./204-puzzle-3d-slab/index.html) | **3D 滑块拼图 ★** | 4×4滑块谜题、点击滑动、胜利检测、洗牌动画 |
+| [205](./205-solar-system-3d/index.html) | **太阳系 3D ★** | 八大行星、艺术比例、土星环、木卫四、地球月亮、5000星场 |
+| [206](./206-spline-editor/index.html) | **CatmullRom样条编辑器 ★** | 拖拽控制点、实时曲线更新、TubeGeometry管道、沿曲线运动体 |
+| [207](./207-ping-pong-physics/index.html) | **3D乒乓球游戏 ★** | 球拍物理、AI对战、旋转效果、Web Audio音效、粒子爆发 |
+| [208](./208-procedural-crystal/index.html) | **程序化水晶生成器 ★** | MeshPhysicalMaterial折射、IOR 2.4、彩虹棱晶色、PMREM环境映射、UnrealBloom |
+| [209](./209-wave-function-collapse-3d/index.html) | **3D波函数坍缩 ★** | WFC熵选择+约束传播、InstancedMesh体素渲染、三种瓷砖类型、生成耗时显示 |
+| [210](./210-tesseract-hypercube/index.html) | **四维超立方体 ★** | 4D tesseract投影、旋转动画、投影矩阵可视化 |
+| [211](./211-packing-spheres/index.html) | **球体最密堆积 ★** | FCC晶格排列、空间填充算法、Raycaster交互 |
+| [212](./212-shader-graph-visualizer/index.html) | **着色器函数图像 ★** | GLSL动态编译、实时函数可视化、ShaderMaterial |
+| [213](./213-diffusion-limited-aggregation/index.html) | **DLA分形生长 ★** | 随机游走粒子聚集、分形树生长、InstancedMesh |
+| [214](./214-marching-squares-contour/index.html) | **等值线图 Marching Squares ★** | 标量场等值线、噪声高度场、交互式场编辑 |
+| [215](./215-planck-scale-universe/index.html) | **普朗克尺度宇宙 ★** | 微观粒子层级缩放、宇宙宏观尺度模拟、指数级缩放动画 |
+| [216](./216-music-visualizer-3d/index.html) | **3D音乐可视化器 ★** | Web Audio API频谱、3D波形渲染、粒子节拍响应 |
+| [217](./217-topological-data-analysis/index.html) | **拓扑数据分析可视化 ★** | 持续同调、零点分析、条形码可视化、数据拓扑分析 |
+| [218](./218-quantum-entanglement/index.html) | **量子纠缠可视化 ★** | 量子纠缠态、Bell态、粒子对关联、纠缠度量 |
+| [219](./219-plasma-physics/index.html) | **等离子体物理模拟 ★** | 等离子体粒子模拟、电磁场渲染、Lorentz力、粒子轨迹 |
+| [220](./220-procedural-coral/index.html) | **程序化珊瑚礁 ★** | 程序化珊瑚生成、递归分支算法、水下焦散、气泡粒子 |
+| [221](./221-crystal-lattice/index.html) | **晶体晶格振动 ★** | FCC晶格、晶格振动波传播、顶点着色器、声子概念 |
+| [222](./222-perlin-flowmap/index.html) | **Perlin噪声流场 ★** | FBM噪声流场、粒子丝带轨迹、流向颜色编码、环形包裹 |
+| [223](./223-magnetic-monopole/index.html) | **磁单极子可视化 ★** | 磁场线可视化、Line2场线箭头、UnrealBloom发光、Dirac磁单极子理论 |
+| [224](./224-string-theory/index.html) | **弦理论可视化 ★** | 卡拉比-丘流形、额外维度、弦振动模式、弦论物理 |
+| [225](./225-black-hole-lensing/index.html) | **黑洞引力透镜 ★** | 引力透镜后期着色器、吸积盘多普勒频移、事件视界、光子球 |
+
+## 三十、科学与物理特效（226~232）
+
+| # | 章节 | 技术点 |
+|---|------|-------|
+| [226](./226-webxr-vr/index.html) | **WebXR VR体验 ★** | WebXR API、VR控制器、沉浸式虚拟现实、三维空间交互 |
+| [227](./227-sdf-garden/index.html) | **SDF 虚拟花园 ★** | SDF渲染、程序化植物生长、距离场着色、虚拟自然场景 |
+| [228](./228-ecosystem-sim/index.html) | **生态系统模拟 ★** | 生态仿真、生物种群动态、捕食者-猎物模型、生态平衡 |
+| [229](./229-weather-system/index.html) | **天气系统模拟 ★** | 体积云渲染、雨粒子系统、闪电效果、天气状态切换 |
+| [230](./230-procedural-architecture/index.html) | **程序化建筑学 ★** | 程序化建筑生成、Algorithmic AIA、规则驱动设计、结构优化 |
+| [231](./231-reaction-diffusion/index.html) | **反应扩散系统 ★** | Gray-Scott模型、化学反应扩散、图灵斑图、Pattern生成 |
+| [232](./232-particle-sandglider/index.html) | **粒子沙盒滑块 ★** | 3D网格空间哈希、粒子碰撞、InstancedMesh渲染、24万粒子 |
+| [233](./233-spline-railroad/index.html) | **铁路过山车 ★** | CatmullRomCurve3铁轨生成、火车车厢跟随、Matrix4轨道铺设、预设轨道形状 |
+
+---
+
+## 附录：基础示例集（examples/）
+
+| 文件 | 内容 |
+|------|------|
+| [animation.html](./examples/animation.html) | 骨骼动画混合、关键帧插值 |
+| [camera-basics.html](./examples/camera-basics.html) | 相机类型、投影、视锥体 |
+| [geometry-materials.html](./examples/geometry-materials.html) | 几何体与材质对比 |
+| [lighting.html](./examples/lighting.html) | 光源类型与阴影 |
+| [mouse-interaction.html](./examples/mouse-interaction.html) | Raycaster鼠标拾取与交互 |
+| [particles.html](./examples/particles.html) | Points粒子系统 |
+| [post-processing.html](./examples/post-processing.html) | EffectComposer后期处理 |
+| [texture-mapping.html](./examples/texture-mapping.html) | 纹理加载与配置 |
