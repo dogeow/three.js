@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>16 · MorphTargets 形变动画</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #111826; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
+    background: rgba(0,0,0,.5); padding: 8px 12px; border-radius: 6px;
+    max-width: 340px;
+  }
+  .ctrl {
+    position: fixed; bottom: 12px; left: 12px; right: 12px;
+    color: #fff; font: 13px monospace;
+    background: rgba(0,0,0,.55); padding: 12px 16px; border-radius: 8px;
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+  }
+  .ctrl label { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { width: 180px; }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：MorphTargets（形变目标 / BlendShape）</b><br>
+  · 一个 mesh 存多套顶点位置，GPU 上做插值混合<br>
+  · 面部表情、口型、肌肉收缩等效果的标准做法
+</div>
+<div class="ctrl">
+  <label>🌐 球化 <input id="sphere" type="range" min="0" max="1" step="0.01" value="0"></label>
+  <label>🦔 尖刺 <input id="spike" type="range" min="0" max="1" step="0.01" value="0"></label>
+  <label>🌀 扭曲 <input id="twist" type="range" min="0" max="1" step="0.01" value="0"></label>
+  <label><input id="auto" type="checkbox"> 自动动画</label>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x111826)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 0, 5)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// 环境光照
+const pmrem = new THREE.PMREMGenerator(renderer)
+scene.environment = pmrem.fromScene(new RoomEnvironment()).texture
+
+// ============ 基础几何体 + 形变目标 ============
+// 从一个高分段的立方体开始（分段高才有足够顶点做平滑形变）
+const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5, 32, 32, 32)
+const positionAttr = geometry.attributes.position
+const count = positionAttr.count
+
+// ⚠️ 核心：morphAttributes 存放一组或多组「替代位置」
+//    morphTargetInfluences[i] 控制第 i 个目标的混合权重 (0~1)
+// 这里我们造 3 个 morph target：球化 / 尖刺 / 扭曲
+
+const sphereTarget = new Float32Array(count * 3)
+const spikeTarget = new Float32Array(count * 3)
+const twistTarget = new Float32Array(count * 3)
+
+const v = new THREE.Vector3()
+for (let i = 0; i < count; i++) {
+  v.fromBufferAttribute(positionAttr, i)
+  const r = 1.0
+
+  // Target 1: 球化 —— 把所有顶点投影到半径 r 的球面
+  const norm = v.clone().normalize().multiplyScalar(r)
+  sphereTarget[i * 3]     = norm.x
+  sphereTarget[i * 3 + 1] = norm.y
+  sphereTarget[i * 3 + 2] = norm.z
+
+  // Target 2: 尖刺 —— 随机按顶点方向外推
+  const spikeLen = 0.3 + Math.random() * 1.2
+  const spike = v.clone().normalize().multiplyScalar(r + spikeLen)
+  spikeTarget[i * 3]     = spike.x
+  spikeTarget[i * 3 + 1] = spike.y
+  spikeTarget[i * 3 + 2] = spike.z
+
+  // Target 3: 扭曲 —— 按 y 坐标绕 Y 轴旋转 x/z
+  const angle = v.y * 2.0
+  const cos = Math.cos(angle), sin = Math.sin(angle)
+  twistTarget[i * 3]     = v.x * cos - v.z * sin
+  twistTarget[i * 3 + 1] = v.y
+  twistTarget[i * 3 + 2] = v.x * sin + v.z * cos
+}
+
+geometry.morphAttributes.position = [
+  new THREE.BufferAttribute(sphereTarget, 3),
+  new THREE.BufferAttribute(spikeTarget, 3),
+  new THREE.BufferAttribute(twistTarget, 3)
+]
+
+// 形变时法线也会变 —— 直接让 Three 每帧重算法线，否则光照会错
+// 性能敏感场景可以预计算多套法线 morph target，这里简单处理
+
+const material = new THREE.MeshStandardMaterial({
+  color: 0xff6699,
+  metalness: 0.4,
+  roughness: 0.25,
+  morphTargets: true // 旧版 API；新版自动识别
+})
+
+const mesh = new THREE.Mesh(geometry, material)
+// 三个初始权重，一一对应上面的 morphAttributes 数组
+mesh.morphTargetInfluences = [0, 0, 0]
+scene.add(mesh)
+
+// ============ UI ============
+const $sphere = document.getElementById('sphere')
+const $spike = document.getElementById('spike')
+const $twist = document.getElementById('twist')
+const $auto = document.getElementById('auto')
+
+;[$sphere, $spike, $twist].forEach((el, i) => {
+  el.addEventListener('input', () => {
+    mesh.morphTargetInfluences[i] = +el.value
+  })
+})
+
+// ============ 渲染循环 ============
+const clock = new THREE.Clock()
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  if ($auto.checked) {
+    // 三个权重按正弦错相位自动呼吸
+    const a = (Math.sin(t * 1.0) * 0.5 + 0.5)
+    const b = (Math.sin(t * 1.3 + 1) * 0.5 + 0.5)
+    const c = (Math.sin(t * 0.7 + 2) * 0.5 + 0.5)
+    mesh.morphTargetInfluences[0] = a
+    mesh.morphTargetInfluences[1] = b
+    mesh.morphTargetInfluences[2] = c
+    $sphere.value = a; $spike.value = b; $twist.value = c
+  }
+
+  mesh.rotation.y += 0.003
+
+  // 形变后如果要正确光照需要重算法线
+  geometry.computeVertexNormals()
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

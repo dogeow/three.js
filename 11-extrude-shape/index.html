@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>26 · Shape 与 ExtrudeGeometry</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #0a1020; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.65 -apple-system, sans-serif;
+    background: rgba(0, 0, 0, 0.52); padding: 10px 14px; border-radius: 8px;
+    max-width: 380px;
+  }
+  .tip label { display: block; margin-top: 10px; }
+  .tip input { width: 100%; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：Shape + ExtrudeGeometry</b><br>
+  · 先画 2D 轮廓，再沿 Z 方向挤出成立体模型<br>
+  · 适合做 Logo、图标、徽章、UI 立体字和工业轮廓件
+  <label for="depth">
+    挤出厚度
+    <input id="depth" type="range" min="0.1" max="1.2" step="0.02" value="0.45" />
+  </label>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0a1020)
+
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 4.5, 10)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.target.set(0, 1, 0)
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.45))
+const dir = new THREE.DirectionalLight(0xffffff, 1.5)
+dir.position.set(4, 8, 5)
+scene.add(dir)
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(12, 80),
+  new THREE.MeshStandardMaterial({ color: 0x10192f, roughness: 0.94 })
+)
+floor.rotation.x = -Math.PI / 2
+floor.position.y = -1.7
+scene.add(floor)
+
+function buildBadgeShape() {
+  const shape = new THREE.Shape()
+  shape.moveTo(0, 2.6)
+  shape.bezierCurveTo(1.8, 2.5, 2.8, 1.4, 2.8, 0.1)
+  shape.bezierCurveTo(2.8, -1.8, 1.3, -3.2, 0, -4.2)
+  shape.bezierCurveTo(-1.3, -3.2, -2.8, -1.8, -2.8, 0.1)
+  shape.bezierCurveTo(-2.8, 1.4, -1.8, 2.5, 0, 2.6)
+
+  const hole = new THREE.Path()
+  hole.absellipse(0, -0.25, 0.95, 1.35, 0, Math.PI * 2, false, 0)
+  shape.holes.push(hole)
+  return shape
+}
+
+const material = new THREE.MeshStandardMaterial({
+  color: 0xf97316,
+  emissive: 0x7c2d12,
+  emissiveIntensity: 0.18,
+  metalness: 0.42,
+  roughness: 0.22
+})
+
+let badgeMesh = null
+
+function rebuildBadge(depth) {
+  const nextDepth = Number(depth)
+  if (badgeMesh) {
+    scene.remove(badgeMesh)
+    badgeMesh.geometry.dispose()
+  }
+
+  const geometry = new THREE.ExtrudeGeometry(buildBadgeShape(), {
+    depth: nextDepth,
+    bevelEnabled: true,
+    bevelThickness: 0.12,
+    bevelSize: 0.08,
+    bevelSegments: 6,
+    curveSegments: 32
+  })
+  geometry.center()
+
+  badgeMesh = new THREE.Mesh(geometry, material)
+  badgeMesh.rotation.x = -0.18
+  badgeMesh.position.y = 0.9
+  scene.add(badgeMesh)
+}
+
+const depthInput = document.querySelector('#depth')
+rebuildBadge(depthInput.value)
+depthInput.addEventListener('input', (event) => {
+  rebuildBadge(event.target.value)
+})
+
+const clock = new THREE.Clock()
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+  if (badgeMesh) {
+    badgeMesh.rotation.y = t * 0.7
+    badgeMesh.position.y = 0.85 + Math.sin(t * 1.8) * 0.12
+  }
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+})
+</script>
+</body>
+</html>

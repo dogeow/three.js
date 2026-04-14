@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>09 · LoadingManager 加载管理器</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #111; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
+    background: rgba(0,0,0,.4); padding: 8px 12px; border-radius: 6px;
+    max-width: 340px;
+  }
+  /* 加载进度条 */
+  #loading-overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #0a0a0a;
+    z-index: 999;
+    transition: opacity 0.6s ease;
+  }
+  #loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+  #loading-label {
+    color: #aaa; font: 15px/1.6 -apple-system, sans-serif;
+    margin-bottom: 20px; letter-spacing: 0.05em;
+  }
+  #progress-track {
+    width: 280px; height: 6px;
+    background: #2a2a2a; border-radius: 3px;
+    overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #4fc3f7, #81d4fa);
+    border-radius: 3px;
+    transition: width 0.15s ease;
+  }
+  #progress-text {
+    color: #555; font: 12px/1.6 monospace;
+    margin-top: 12px; letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+
+<!-- 加载进度覆盖层 -->
+<div id="loading-overlay">
+  <div id="loading-label">资源加载中...</div>
+  <div id="progress-track"><div id="progress-bar"></div></div>
+  <div id="progress-text">0%</div>
+</div>
+
+<div class="tip">
+  <b>LoadingManager 加载管理器</b><br>
+  统一管理所有资源（模型、纹理等）的加载进度、成功率与失败处理。<br>
+  本例同时加载 GLTF 模型和一个 Canvas 程序化纹理，<br>
+  加载完成后显示在场景中。鼠标拖拽旋转、滚轮缩放。
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+
+// ============ 创建 LoadingManager ============
+// LoadingManager 可以监听所有 loader 的 onStart / onProgress / onLoad / onError
+// 适合做统一的加载 UI（如进度条、百分比提示）
+
+const progressBar   = document.getElementById('progress-bar')
+const progressText  = document.getElementById('progress-text')
+const loadingLabel  = document.getElementById('loading-label')
+const overlay       = document.getElementById('loading-overlay')
+
+const manager = new THREE.LoadingManager()
+
+// 已加载资源计数
+let loadedCount = 0
+let totalCount  = 0
+
+manager.onStart = (url, loaded, total) => {
+  totalCount = total
+  loadedCount = 0
+  loadingLabel.textContent = '开始加载...'
+}
+
+manager.onProgress = (url, loaded, total) => {
+  const pct = total > 0 ? Math.round((loaded / total) * 100) : 0
+  progressBar.style.width  = pct + '%'
+  progressText.textContent = pct + '%  ·  ' + url.split('/').pop()
+}
+
+manager.onLoad = () => {
+  loadingLabel.textContent = '✅ 全部加载完成'
+  progressBar.style.width  = '100%'
+  progressText.textContent = '100%'
+  // 短暂停留后淡出覆盖层
+  setTimeout(() => overlay.classList.add('hidden'), 600)
+}
+
+manager.onError = (url) => {
+  console.error('加载失败：' + url)
+  progressText.textContent = '❌ 失败：' + url.split('/').pop()
+}
+
+// ============ 场景基础 ============
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x111111)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000)
+camera.position.set(0, 1.2, 3.5)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+renderer.shadowMap.enabled = true
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.08
+
+// ============ 灯光 ============
+scene.add(new THREE.AmbientLight(0xffffff, 0.5))
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5)
+dirLight.position.set(5, 8, 5)
+dirLight.castShadow = true
+scene.add(dirLight)
+
+const fillLight = new THREE.DirectionalLight(0x88aaff, 0.4)
+fillLight.position.set(-4, 2, -3)
+scene.add(fillLight)
+
+// ============ Canvas 程序化纹理（备用资源） ============
+// 用 Canvas 画一张彩色渐变纹理，作为备用或辅助贴图
+function makeCanvasTexture() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 512
+  const ctx = c.getContext('2d')
+  const grad = ctx.createLinearGradient(0, 0, 512, 512)
+  grad.addColorStop(0,   '#4fc3f7')
+  grad.addColorStop(0.5, '#7e57c2')
+  grad.addColorStop(1,   '#f06292')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, 512, 512)
+  // 画一些条纹增加细节
+  ctx.fillStyle = 'rgba(255,255,255,0.15)'
+  for (let i = 0; i < 512; i += 24) {
+    ctx.fillRect(i, 0, 12, 512)
+  }
+  return new THREE.CanvasTexture(c)
+}
+
+// ============ GLTFLoader 实例（绑定 manager） ============
+const gltfLoader = new GLTFLoader(manager)
+
+// 官方示例模型：破损头盔
+const MODEL_URL = 'https://threejs.org/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf'
+
+gltfLoader.load(MODEL_URL, (gltf) => {
+  const model = gltf.scene
+
+  // 给模型应用 Canvas 纹理作为环境贴图影响
+  const canvasTex = makeCanvasTexture()
+  canvasTex.mapping = THREE.EquirectangularReflectionMapping
+  model.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true
+      child.receiveShadow = true
+    }
+  })
+
+  // 头盔适当缩放并居中
+  const box = new THREE.Box3().setFromObject(model)
+  const center = box.getCenter(new THREE.Vector3())
+  model.position.sub(center)
+  model.scale.set(1.2, 1.2, 1.2)
+
+  scene.add(model)
+  window.helmet = model
+}, undefined, (err) => {
+  console.error('GLTF 模型加载失败：', err)
+})
+
+// ============ 同时用 manager 加载一张额外纹理（演示多资源并行） ============
+// 这里使用 TextureLoader，并注入同一个 manager
+const texLoader = new THREE.TextureLoader(manager)
+texLoader.load(
+  'https://threejs.org/examples/textures/uv_grid_opengl.jpg',
+  (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+    tex.repeat.set(4, 4)
+    // 纹理可作为后续使用，此处仅展示 manager 能追踪它
+    window.extraTex = tex
+  },
+  undefined,
+  (err) => {
+    console.error('纹理加载失败：', err)
+  }
+)
+
+// ============ 渲染循环 ============
+function animate() {
+  requestAnimationFrame(animate)
+  controls.update()
+  if (window.helmet) {
+    window.helmet.rotation.y += 0.003
+  }
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

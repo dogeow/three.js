@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>01 · VideoTexture 动态纹理</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #030311; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
+    background: rgba(0,0,0,.5); padding: 8px 12px; border-radius: 6px;
+    max-width: 380px;
+  }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>VideoTexture 动态纹理：</b><br>
+  · 将 video 元素（HTMLVideoElement）作为 THREE.VideoTexture 的来源<br>
+  · 每帧自动更新，无需手动调用 texture.needsUpdate<br>
+  · 替代方案：CanvasTexture + requestAnimationFrame 也能实现相同效果<br>
+  · 本例使用 Canvas 绘制动态画面注入 video，再挂到 VideoTexture 上
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x030311)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 1, 8)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.06
+
+// ============ 动态画面源：Canvas + Video ============
+// 用 Canvas 绘制动态画面，再注入到 video 元素中
+// 这样可以像操作真实视频一样使用 VideoTexture
+const canvas = document.createElement('canvas')
+canvas.width = 640
+canvas.height = 360
+const ctx = canvas.getContext('2d')
+
+// 隐藏的 video 元素，用于 VideoTexture
+const video = document.createElement('video')
+video.muted = true
+video.loop = true
+video.playsInline = true
+video.srcObject = null
+
+// 等待 canvas 绘制到 video（通过 drawImage）
+let videoReady = false
+function pumpVideo() {
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+}
+
+// 用 setInterval 把 canvas 实时画到 video captureStream
+// 更好的方案：用 captureStream() 获取视频流
+let stream = null
+try {
+  stream = canvas.captureStream(30)
+  video.srcObject = stream
+  video.play().catch(() => {})
+} catch (e) {
+  // captureStream 不支持时直接用 canvas 作为纹理源
+}
+
+// ============ 场景灯光 ============
+scene.add(new THREE.AmbientLight(0xffffff, 0.3))
+
+const ptLight1 = new THREE.PointLight(0x00d4ff, 2, 20)
+ptLight1.position.set(-4, 3, 2)
+scene.add(ptLight1)
+
+const ptLight2 = new THREE.PointLight(0xff006e, 2, 20)
+ptLight2.position.set(4, -2, 3)
+scene.add(ptLight2)
+
+const ptLight3 = new THREE.PointLight(0xffd60a, 1.5, 15)
+ptLight3.position.set(0, 4, -3)
+scene.add(ptLight3)
+
+// ============ 创建 VideoTexture ============
+let videoTexture
+if (stream) {
+  videoTexture = new THREE.VideoTexture(video)
+  videoTexture.minFilter = THREE.LinearFilter
+  videoTexture.magFilter = THREE.LinearFilter
+  videoTexture.format = THREE.RGBAFormat
+} else {
+  // 降级：直接用 CanvasTexture
+  videoTexture = new THREE.CanvasTexture(canvas)
+}
+
+// ============ 纹理着色器：带扫描线效果 ============
+const mat1 = new THREE.MeshStandardMaterial({
+  map: videoTexture,
+  emissiveMap: videoTexture,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.3,
+  metalness: 0.1,
+  roughness: 0.4,
+})
+
+const mat2 = new THREE.MeshStandardMaterial({
+  map: videoTexture,
+  emissiveMap: videoTexture,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.2,
+  metalness: 0.6,
+  roughness: 0.1,
+})
+
+const mat3 = new THREE.MeshStandardMaterial({
+  map: videoTexture,
+  emissiveMap: videoTexture,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.25,
+  metalness: 0.3,
+  roughness: 0.3,
+  side: THREE.DoubleSide,
+})
+
+// ============ 三个物体展示同一动态纹理 ============
+const sphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1.1, 64, 64),
+  mat1
+)
+sphere.position.x = -3
+
+const torusKnot = new THREE.Mesh(
+  new THREE.TorusKnotGeometry(0.75, 0.25, 200, 32),
+  mat2
+)
+torusKnot.position.x = 0
+
+const box = new THREE.Mesh(
+  new THREE.BoxGeometry(1.6, 1.6, 1.6),
+  mat3
+)
+box.position.x = 3
+
+scene.add(sphere, torusKnot, box)
+
+// 地面网格
+const grid = new THREE.GridHelper(20, 20, 0x1a1a4a, 0x0d0d33)
+grid.position.y = -2.2
+scene.add(grid)
+
+// ============ 动态画面绘制函数（替代真实视频） ============
+// 在 canvas 上绘制类似视频的动态画面：波浪 + 噪声 + 扫描线
+const particles = []
+for (let i = 0; i < 80; i++) {
+  particles.push({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: Math.random() * 3 + 1,
+    vx: (Math.random() - 0.5) * 2,
+    vy: (Math.random() - 0.5) * 2,
+    hue: Math.random()
+  })
+}
+
+function drawFrame(time) {
+  const w = canvas.width
+  const h = canvas.height
+  const t = time * 0.001
+
+  // 深色背景 + 径向渐变
+  const grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w * 0.7)
+  grad.addColorStop(0, `hsl(${(t * 20) % 360}, 80%, 8%)`)
+  grad.addColorStop(0.5, `hsl(${(t * 30 + 120) % 360}, 60%, 4%)`)
+  grad.addColorStop(1, `hsl(${(t * 25 + 240) % 360}, 40%, 2%)`)
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, w, h)
+
+  // 动态波浪网格
+  ctx.strokeStyle = 'rgba(100, 200, 255, 0.08)'
+  ctx.lineWidth = 1
+  const rows = 12
+  const cols = 20
+  for (let r = 0; r <= rows; r++) {
+    ctx.beginPath()
+    for (let c = 0; c <= cols; c++) {
+      const x = (c / cols) * w
+      const y = (r / rows) * h + Math.sin(c * 0.5 + t * 1.5) * 8 + Math.cos(r * 0.5 + t * 1.2) * 6
+      if (c === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+  }
+
+  // 竖线
+  for (let c = 0; c <= cols; c++) {
+    ctx.beginPath()
+    for (let r = 0; r <= rows; r++) {
+      const x = (c / cols) * w + Math.sin(r * 0.5 + t * 1.8) * 8
+      const y = (r / rows) * h
+      if (r === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+  }
+
+  // 彩色粒子
+  particles.forEach(p => {
+    p.x += p.vx
+    p.y += p.vy
+    if (p.x < 0) p.x = w
+    if (p.x > w) p.x = 0
+    if (p.y < 0) p.y = h
+    if (p.y > h) p.y = 0
+
+    const hue = (p.hue * 360 + t * 40) % 360
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+    ctx.fillStyle = `hsla(${hue}, 90%, 60%, 0.7)`
+    ctx.fill()
+
+    // 粒子拖尾光晕
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 4)
+    glow.addColorStop(0, `hsla(${hue}, 90%, 70%, 0.3)`)
+    glow.addColorStop(1, 'transparent')
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, p.r * 4, 0, Math.PI * 2)
+    ctx.fillStyle = glow
+    ctx.fill()
+  })
+
+  // 扫描线效果（CRT 感）
+  for (let y = 0; y < h; y += 4) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.06)'
+    ctx.fillRect(0, y, w, 1)
+  }
+
+  // 中心光晕
+  const cx = w / 2 + Math.sin(t) * 30
+  const cy = h / 2 + Math.cos(t * 0.7) * 20
+  const centerGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120)
+  const hue2 = (t * 60) % 360
+  centerGlow.addColorStop(0, `hsla(${hue2}, 100%, 70%, 0.4)`)
+  centerGlow.addColorStop(0.5, `hsla(${(hue2 + 60) % 360}, 80%, 50%, 0.15)`)
+  centerGlow.addColorStop(1, 'transparent')
+  ctx.fillStyle = centerGlow
+  ctx.fillRect(0, 0, w, h)
+
+  // 噪点层
+  const imgData = ctx.getImageData(0, 0, w, h)
+  const data = imgData.data
+  for (let i = 0; i < data.length; i += 16) {
+    const noise = (Math.random() - 0.5) * 12
+    data[i]     = Math.max(0, Math.min(255, data[i]     + noise))
+    data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise))
+    data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise))
+  }
+  ctx.putImageData(imgData, 0, 0)
+
+  // 如果有 video 流，每帧把 canvas 推送到视频流
+  if (stream && video.readyState >= 2) {
+    try {
+      const track = stream.getVideoTracks()[0]
+      if (track && track.applyConstraints) {
+        // stream 已激活，无需额外操作
+      }
+    } catch (_) {}
+  }
+}
+
+// ============ 渲染循环 ============
+const clock = new THREE.Clock()
+function animate() {
+  requestAnimationFrame(animate)
+
+  const t = clock.getElapsedTime()
+
+  // 每帧绘制动态画面到 canvas
+  drawFrame(t * 1000)
+
+  // 如果用 CanvasTexture，需要手动标记 needsUpdate
+  // VideoTexture 会自动更新（但需要 video 元素有内容）
+  if (!stream) {
+    videoTexture.needsUpdate = true
+  }
+
+  // 物体自转
+  sphere.rotation.y += 0.008
+  sphere.rotation.x += 0.003
+
+  torusKnot.rotation.x += 0.01
+  torusKnot.rotation.y += 0.015
+  torusKnot.rotation.z += 0.005
+
+  box.rotation.y += 0.007
+  box.rotation.x += 0.004
+
+  // 灯光移动
+  ptLight1.position.x = Math.sin(t * 0.5) * 5
+  ptLight1.position.z = Math.cos(t * 0.5) * 5
+  ptLight2.position.x = Math.sin(t * 0.7 + 2) * 5
+  ptLight2.position.z = Math.cos(t * 0.7 + 2) * 5
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>13 · 顶点动画</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000010; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
+    background: rgba(0,0,0,.4); padding: 8px 12px; border-radius: 6px;
+    max-width: 360px;
+  }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：顶点动画</b><br>
+  · 左侧：正弦波顶点位移，横向传递的波峰<br>
+  · 右侧：顶点颜色呼吸，球体各顶点随时间红蓝交替<br>
+  · 通过 ShaderMaterial + BufferAttribute + uTime uniform 驱动
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x000010)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 3, 9)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// ================================================================
+// 效果一：正弦波横向传递（左侧）
+// Vertex Shader：让平面顶点沿 Y 轴随时间和 X 位置做正弦起伏
+// Fragment Shader：根据顶点高度做颜色渐变
+// ================================================================
+const waveVertexShader = /* glsl */`
+  uniform float uTime;
+  varying float vHeight;
+
+  void main() {
+    vec3 p = position;
+
+    // 沿 X 方向传递的横向波，带轻微 Z 方向干涉
+    float wave = sin(p.x * 2.5 + uTime * 2.0) * 0.4
+               + sin(p.z * 1.8 + uTime * 1.2) * 0.15;
+    p.y += wave;
+    vHeight = wave;
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`
+
+const waveFragmentShader = /* glsl */`
+  uniform float uTime;
+  varying float vHeight;
+
+  void main() {
+    // 按波高从深紫渐变到亮青
+    vec3 low  = vec3(0.3, 0.0, 0.6);
+    vec3 mid  = vec3(0.0, 0.6, 0.9);
+    vec3 high = vec3(0.9, 1.0, 1.0);
+
+    float t = smoothstep(-0.5, 0.5, vHeight);
+    vec3 color = mix(low, mid, smoothstep(0.0, 0.3, t));
+    color = mix(color, high, smoothstep(0.3, 1.0, t));
+
+    // 叠加细小网格纹理
+    float grid = step(0.95, fract(vHeight * 5.0 + uTime * 0.5));
+    color += grid * 0.15;
+
+    gl_FragColor = vec4(color, 1.0);
+  }
+`
+
+const waveGeometry = new THREE.PlaneGeometry(5, 5, 80, 80)
+waveGeometry.rotateX(-Math.PI / 2)
+
+const waveMaterial = new THREE.ShaderMaterial({
+  vertexShader: waveVertexShader,
+  fragmentShader: waveFragmentShader,
+  uniforms: {
+    uTime: { value: 0 }
+  },
+  side: THREE.DoubleSide
+})
+
+const waveMesh = new THREE.Mesh(waveGeometry, waveMaterial)
+waveMesh.position.x = -3.5
+scene.add(waveMesh)
+
+// ================================================================
+// 效果二：顶点颜色呼吸（右侧）
+// 通过 BufferAttribute 存储每顶点颜色，在 CPU 端每帧更新颜色数据
+// ================================================================
+const sphereRadius = 1.8
+const sphereSegs = 48
+const sphereGeometry = new THREE.SphereGeometry(sphereRadius, sphereSegs, sphereSegs)
+
+// 为每个顶点创建颜色属性（三个浮点数代表 RGB）
+const positionAttr = sphereGeometry.getAttribute('position')
+const vertexCount = positionAttr.count
+const colors = new Float32Array(vertexCount * 3)
+const colorAttr = new THREE.BufferAttribute(colors, 3)
+sphereGeometry.setAttribute('color', colorAttr)
+
+// 初始化各顶点颜色（基于 Y 轴位置：顶部偏红，底部偏蓝）
+for (let i = 0; i < vertexCount; i++) {
+  const y = positionAttr.getY(i) / sphereRadius  // 归一化到 [-1, 1]
+  // 初始色：底部蓝，顶部红，中间过渡
+  colorAttr.setXYZ(i, 0.5 + y * 0.5, 0.0, 0.5 - y * 0.5)
+}
+colorAttr.needsUpdate = true
+
+// 使用 MeshBasicMaterial 以 vertexcolors 模式显示逐顶点颜色
+const sphereMaterial = new THREE.MeshBasicMaterial({
+  vertexColors: true,
+  side: THREE.DoubleSide
+})
+
+const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial)
+sphereMesh.position.x = 3.5
+scene.add(sphereMesh)
+
+// ================================================================
+// 辅助线：帮助看清球体结构
+// ================================================================
+const wireMaterial = new THREE.MeshBasicMaterial({
+  color: 0x334466,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.15
+})
+const wireSphere = new THREE.Mesh(sphereGeometry, wireMaterial)
+wireSphere.position.x = 3.5
+wireSphere.scale.setScalar(1.001)
+scene.add(wireSphere)
+
+// 轴辅助（缩小）
+scene.add(new THREE.AxesHelper(1.5))
+
+// ================================================================
+// 渲染循环
+// ================================================================
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+
+  const t = clock.getElapsedTime()
+
+  // 效果一：更新 wave uniform
+  waveMaterial.uniforms.uTime.value = t
+
+  // 效果二：顶点颜色呼吸
+  // 顶点颜色随时间基于原始 Y 位置做正弦脉动
+  // 红蓝通道此消彼长：Y 高→红强蓝弱，Y 低→红弱蓝强
+  const pos = sphereGeometry.getAttribute('position')
+  const col = sphereGeometry.getAttribute('color')
+
+  for (let i = 0; i < vertexCount; i++) {
+    const y = pos.getY(i) / sphereRadius  // [-1, 1]
+    // 呼吸频率用 sin(t * 2) 产生脉冲感
+    const pulse = Math.sin(t * 2.0) * 0.5 + 0.5  // [0, 1]
+    const r = 0.3 + (y * 0.5 + 0.5) * 0.7 * (0.5 + pulse * 0.5)
+    const b = 0.3 + (0.5 - y * 0.5) * 0.7 * (0.5 + (1.0 - pulse) * 0.5)
+    col.setXYZ(i, r, 0.05, b)
+  }
+  col.needsUpdate = true
+
+  // 球体缓慢自转
+  sphereMesh.rotation.y = t * 0.3
+  wireSphere.rotation.y = t * 0.3
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>
