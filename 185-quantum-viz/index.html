@@ -3,7 +3,7 @@
  * ============================================================
  * QUANTUM BLOCH SPHERE VISUALIZER
  * ============================================================
- * Title:       Interactive Quantum Bloch Sphere
+ * Title:       Interactive 量子布洛赫球
  * Description: An educational 3D visualization of a qubit's Bloch sphere
  *              with interactive rotation and Pauli gate animations.
  * Technical:   Three.js r160, lil-gui, importmap (no bundler),
@@ -17,7 +17,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quantum Bloch Sphere</title>
+  <title>量子布洛赫球</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Space+Grotesk:wght@300;400;600&display=swap');
 
@@ -167,14 +167,14 @@
 <body>
 
 <div id="info">
-  <h1>⚛ Bloch Sphere</h1>
-  <p>Drag to rotate the sphere.<br/>Set qubit state or apply<br/>Pauli gates via the panel.</p>
+  <h1>⚛ 布洛赫球</h1>
+  <p>Drag to rotate the sphere.<br/>Set qubit state or apply<br/>通过面板控制 Pauli 门操作。</p>
   <div id="state-label">|ψ⟩ = α|0⟩ + β|1⟩</div>
   <div id="angle-display">θ=0.00 rad  φ=0.00 rad</div>
 </div>
 
 <div id="probs">
-  <h2>Probability Amplitudes</h2>
+  <h2>概率振幅</h2>
   <div class="prob-row">
     <div class="prob-label"><span class="lbl">|0⟩</span></div>
     <div class="bar-track"><div class="bar-fill st-0" id="bar-0" style="width:100%"></div></div>
@@ -190,11 +190,11 @@
 <div id="gate-label">X</div>
 
 <div id="legend">
-  <div class="leg-row"><div class="leg-dot" style="background:#ff4d6a"></div> +X axis (X gate)</div>
-  <div class="leg-row"><div class="leg-dot" style="background:#4dff91"></div> +Y axis (Y gate)</div>
-  <div class="leg-row"><div class="leg-dot" style="background:#4db8ff"></div> +Z axis (Z gate)</div>
-  <div class="leg-row"><div class="leg-dot" style="background:#a55fff"></div> |1⟩ state</div>
-  <div class="leg-row"><div class="leg-dot" style="background:#ff9f43"></div> |0⟩ state</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#ff4d6a"></div> +X 轴 (X 门)</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#4dff91"></div> +Y 轴 (Y 门)</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#4db8ff"></div> +Z 轴 (Z 门)</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#a55fff"></div> |1⟩ 态</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#ff9f43"></div> |0⟩ 态</div>
 </div>
 
 <script type="importmap">
@@ -433,7 +433,7 @@ sphereGroup.add(glowZ);
 //  QUANTUM STATE MATH
 // ============================================================
 // Bloch coordinates: theta [0, PI] = polar from +Z, phi [0, 2PI] = azimuthal
-let theta = 0;    // |0⟩ state
+let theta = 0;    // |0⟩ 态
 let phi   = 0;
 
 function stateToCartesian(t, p) {

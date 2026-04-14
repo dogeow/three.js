@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>184 - Crowd Simulation (Boids)</title>
+  <title>184 - 群体模拟 (Boids)</title>
   <!--
     ============================================================
     CROWD SIMULATION — Boids Algorithm
@@ -46,7 +46,7 @@
   <div id="info">
     CROWD SIM — Boids Algorithm<br/>
     Separation · Alignment · Cohesion<br/>
-    <span id="fps">FPS: —</span> &nbsp; <span id="count">Agents: 0</span>
+    <span id="fps">帧率: —</span> &nbsp; <span id="count">个体数: 0</span>
   </div>
 
   <script type="importmap">
@@ -68,7 +68,7 @@
     const PREDATOR_COUNT = 4;
 
     const params = {
-      numAgents:    200,
+      num个体数:    200,
       separation:   1.5,
       alignment:    1.0,
       cohesion:     1.0,
@@ -429,7 +429,7 @@
       frameCount++;
       const now = performance.now();
       if (now - lastTime >= 1000) {
-        fpsEl.textContent = `FPS: ${frameCount}`;
+        fpsEl.textContent = `帧率: ${frameCount}`;
         frameCount = 0;
         lastTime = now;
       }
@@ -438,7 +438,7 @@
     // ─── Boot ──────────────────────────────────────────────────────────────────
     createMeshes();
     initAgents();
-    countEl.textContent = `Agents: ${agents.length}`;
+    countEl.textContent = `个体数: ${agents.length}`;
 
     // ─── Render Loop ───────────────────────────────────────────────────────────
     function animate() {
