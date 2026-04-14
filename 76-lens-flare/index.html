@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>76 · 镜头眩光 Lens Flare</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #tip {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.65);
+      color: #e0e0e0;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.8;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+      white-space: nowrap;
+    }
+    #tip span {
+      color: #ffd700;
+      margin: 0 4px;
+    }
+  </style>
+</head>
+<body>
+<div id="tip">
+  屏幕空间眩光叠加<span>|</span>六边形散景圆<span>|</span>鬼影重影<span>|</span>变形宽银幕光斑
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js'
+import GUI from 'three/addons/libs/lil-gui.module.min.js'
+
+// ── Renderer ────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.0
+document.body.appendChild(renderer.domElement)
+
+// ── Scene / Camera ──────────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.fog = new THREE.FogExp2(0x0a0a14, 0.004)
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.5, 2000)
+camera.position.set(0, 20, 120)
+
+// ── Controls ───────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.05
+controls.maxPolarAngle = Math.PI * 0.6
+controls.minPolarAngle = Math.PI * 0.05
+controls.minDistance = 30
+controls.maxDistance = 400
+controls.target.set(0, 20, 0)
+
+// ── Procedural Flare Textures ──────────────────────────────────────────────
+function createCircleTex(size, color = '#fff', innerAlpha = 1.0) {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const cx = size / 2, r = size / 2
+  const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, r)
+  g.addColorStop(0, color.replace(')', `, ${innerAlpha})`).replace('rgb', 'rgba'))
+  g.addColorStop(0.3, color.replace(')', ', 0.6)').replace('rgb', 'rgba'))
+  g.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, size, size)
+  return new THREE.CanvasTexture(canvas)
+}
+
+function createHexTex(size, color = 'rgb(255,255,255)') {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const cx = size / 2
+  ctx.save()
+  ctx.translate(cx, cx)
+  ctx.beginPath()
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 6
+    const x = Math.cos(a) * cx * 0.88
+    const y = Math.sin(a) * cx * 0.88
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+  }
+  ctx.closePath()
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, cx * 0.88)
+  g.addColorStop(0, color.replace(')', ', 0.9)').replace('rgb', 'rgba'))
+  g.addColorStop(0.5, color.replace(')', ', 0.3)').replace('rgb', 'rgba'))
+  g.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = g
+  ctx.fill()
+  ctx.restore()
+  return new THREE.CanvasTexture(canvas)
+}
+
+function createRingTex(size, color = 'rgb(255,200,100)') {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const cx = size / 2, r = size / 2
+  const g = ctx.createRadialGradient(cx, cx, r * 0.55, cx, cx, r)
+  g.addColorStop(0, 'rgba(0,0,0,0)')
+  g.addColorStop(0.4, color.replace(')', ', 0.5)').replace('rgb', 'rgba'))
+  g.addColorStop(0.6, color.replace(')', ', 0.2)').replace('rgb', 'rgba'))
+  g.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, size, size)
+  return new THREE.CanvasTexture(canvas)
+}
+
+function createStreakTex(width, height, color = 'rgb(255,240,180)') {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  const cx = width / 2
+  const g = ctx.createLinearGradient(0, 0, width, 0)
+  g.addColorStop(0, 'rgba(0,0,0,0)')
+  g.addColorStop(0.3, color.replace(')', ', 0.1)').replace('rgb', 'rgba'))
+  g.addColorStop(0.45, color.replace(')', ', 0.5)').replace('rgb', 'rgba'))
+  g.addColorStop(0.5, color.replace(')', ', 1.0)').replace('rgb', 'rgba'))
+  g.addColorStop(0.55, color.replace(')', ', 0.5)').replace('rgb', 'rgba'))
+  g.addColorStop(0.7, color.replace(')', ', 0.1)').replace('rgb', 'rgba'))
+  g.addColorStop(1, 'rgba(0,0,0,0)')
+  const vg = ctx.createLinearGradient(0, 0, 0, height)
+  vg.addColorStop(0, 'rgba(0,0,0,0)')
+  vg.addColorStop(0.4, 'rgba(0,0,0,0)')
+  vg.addColorStop(0.5, 'rgba(255,255,255,1)')
+  vg.addColorStop(0.6, 'rgba(0,0,0,0)')
+  vg.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, width, height)
+  ctx.globalCompositeOperation = 'destination-in'
+  ctx.fillStyle = vg
+  ctx.fillRect(0, 0, width, height)
+  return new THREE.CanvasTexture(canvas)
+}
+
+// ── Sky ─────────────────────────────────────────────────────────────────────
+function buildSky() {
+  const skyGeo = new THREE.SphereGeometry(800, 32, 16)
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      uTopColor: { value: new THREE.Color(0x000510) },
+      uMidColor: { value: new THREE.Color(0x0a0520) },
+      uHorizonColor: { value: new THREE.Color(0x1a0a30) },
+      uSunColor: { value: new THREE.Color(0xffcc88) },
+      uSunDir: { value: new THREE.Vector3(50, 80, -50).normalize() }
+    },
+    vertexShader: `
+      varying vec3 vWorldPos;
+      void main() {
+        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uTopColor;
+      uniform vec3 uMidColor;
+      uniform vec3 uHorizonColor;
+      uniform vec3 uSunColor;
+      uniform vec3 uSunDir;
+      varying vec3 vWorldPos;
+      void main() {
+        vec3 dir = normalize(vWorldPos);
+        float y = dir.y;
+        float t = clamp(y * 0.5 + 0.5, 0.0, 1.0);
+        vec3 sky = mix(uHorizonColor, uMidColor, smoothstep(0.0, 0.25, t));
+        sky = mix(sky, uTopColor, smoothstep(0.2, 0.8, t));
+        float sunDot = dot(dir, uSunDir);
+        float sunGlow = pow(max(0.0, sunDot), 8.0);
+        sky += uSunColor * sunGlow * 0.6;
+        float corona = pow(max(0.0, sunDot), 64.0);
+        sky += uSunColor * corona * 2.0;
+        float halo = pow(max(0.0, sunDot), 4.0) * 0.15;
+        sky += mix(uHorizonColor, uSunColor, 0.5) * halo;
+        gl_FragColor = vec4(sky, 1.0);
+      }
+    `
+  })
+  return new THREE.Mesh(skyGeo, skyMat)
+}
+scene.add(buildSky())
+
+// ── Ground / City Silhouette ────────────────────────────────────────────────
+function buildCity() {
+  const group = new THREE.Group()
+  const buildingMat = new THREE.MeshBasicMaterial({ color: 0x050510 })
+  const windowMat = new THREE.MeshBasicMaterial({ color: 0xffeeaa, transparent: true, opacity: 0.8 })
+
+  // Back row (tall buildings)
+  const buildingData = [
+    { x: -100, w: 14, h: 90, d: 12 },
+    { x: -80, w: 10, h: 120, d: 10 },
+    { x: -65, w: 8, h: 75, d: 8 },
+    { x: -50, w: 16, h: 150, d: 14 },
+    { x: -30, w: 12, h: 100, d: 12 },
+    { x: -10, w: 10, h: 130, d: 10 },
+    { x: 10, w: 14, h: 85, d: 14 },
+    { x: 30, w: 8, h: 160, d: 8 },
+    { x: 45, w: 12, h: 95, d: 12 },
+    { x: 60, w: 10, h: 140, d: 10 },
+    { x: 78, w: 16, h: 110, d: 16 },
+    { x: 100, w: 12, h: 80, d: 12 },
+    { x: 118, w: 14, h: 105, d: 14 },
+  ]
+
+  buildingData.forEach(b => {
+    const geo = new THREE.BoxGeometry(b.w, b.h, b.d)
+    const mesh = new THREE.Mesh(geo, buildingMat)
+    mesh.position.set(b.x, b.h / 2, -80)
+    group.add(mesh)
+    // Window lights
+    const wCount = Math.floor(b.h / 12) * Math.floor(b.w / 5)
+    for (let i = 0; i < Math.min(wCount, 40); i++) {
+      const wGeo = new THREE.PlaneGeometry(2, 3)
+      const wMesh = new THREE.Mesh(wGeo, windowMat.clone())
+      wMesh.material.opacity = Math.random() * 0.5 + 0.2
+      wMesh.position.set(
+        b.x + (Math.random() - 0.5) * b.w * 0.7,
+        Math.random() * b.h * 0.8 + 5,
+        -74 + Math.random() * 2
+      )
+      group.add(wMesh)
+    }
+  })
+
+  // Front buildings
+  const frontData = [
+    { x: -120, w: 20, h: 60, d: 20 },
+    { x: -95, w: 18, h: 80, d: 18 },
+    { x: -70, w: 22, h: 50, d: 22 },
+    { x: -40, w: 16, h: 70, d: 16 },
+    { x: -15, w: 24, h: 55, d: 24 },
+    { x: 15, w: 20, h: 65, d: 20 },
+    { x: 42, w: 18, h: 75, d: 18 },
+    { x: 68, w: 22, h: 45, d: 22 },
+    { x: 95, w: 16, h: 85, d: 16 },
+    { x: 120, w: 20, h: 55, d: 20 },
+  ]
+
+  frontData.forEach(b => {
+    const geo = new THREE.BoxGeometry(b.w, b.h, b.d)
+    const mesh = new THREE.Mesh(geo, buildingMat)
+    mesh.position.set(b.x, b.h / 2, -30)
+    group.add(mesh)
+  })
+
+  // Ground plane
+  const groundGeo = new THREE.PlaneGeometry(600, 200)
+  const groundMat = new THREE.MeshBasicMaterial({ color: 0x020208 })
+  const ground = new THREE.Mesh(groundGeo, groundMat)
+  ground.rotation.x = -Math.PI / 2
+  ground.position.y = -0.5
+  group.add(ground)
+
+  return group
+}
+scene.add(buildCity())
+
+// ── Atmospheric Haze Plane ───────────────────────────────────────────────────
+function buildAtmosphere() {
+  const geo = new THREE.PlaneGeometry(600, 300)
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uColor: { value: new THREE.Color(0x1a0a40) },
+      uOpacity: { value: 0.3 }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      varying vec2 vUv;
+      void main() {
+        float fade = smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.6, vUv.y);
+        gl_FragColor = vec4(uColor, fade * uOpacity);
+      }
+    `
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(0, 30, -60)
+  return mesh
+}
+scene.add(buildAtmosphere())
+
+// ── Sun Light ────────────────────────────────────────────────────────────────
+const SUN_POS = new THREE.Vector3(50, 80, -50)
+const sunLight = new THREE.PointLight(0xffcc88, 2, 1000)
+sunLight.position.copy(SUN_POS)
+scene.add(sunLight)
+
+// Ambient
+const ambient = new THREE.AmbientLight(0x101018, 0.5)
+scene.add(ambient)
+
+// ── Lens Flare System ────────────────────────────────────────────────────────
+let lensflareObj = null
+
+const params = {
+  flareIntensity: 1.0,
+  flareCount: 8,
+  flareSize: 400,
+  showStreak: true,
+  streakLength: 1.0,
+  showBokeh: true,
+  sunColor: '#ffcc88'
+}
+
+function createLensflare() {
+  if (lensflareObj) {
+    sunLight.remove(lensflareObj)
+    lensflareObj.dispose()
+  }
+
+  const lf = new Lensflare()
+  const baseColor = new THREE.Color(params.sunColor)
+
+  // Main bright flare
+  const mainTex = createCircleTex(512, 'rgb(255,240,200)', 1.0)
+  lf.addElement(new LensflareElement(mainTex, params.flareSize * 1.5, 0.0, baseColor))
+
+  // Inner glow ring
+  const ringTex = createRingTex(256, 'rgb(255,200,120)')
+  lf.addElement(new LensflareElement(ringTex, params.flareSize * 0.8, 0.0, new THREE.Color(1.0, 0.8, 0.4)))
+
+  // Hexagonal bokeh elements along flare axis
+  if (params.showBokeh) {
+    const hexColors = [
+      new THREE.Color(0.4, 0.2, 1.0),   // purple
+      new THREE.Color(0.0, 0.6, 1.0),   // cyan
+      new THREE.Color(1.0, 0.3, 0.2),   // orange
+      new THREE.Color(0.2, 1.0, 0.4),   // green
+      new THREE.Color(1.0, 0.5, 0.0),   // amber
+      new THREE.Color(0.8, 0.1, 0.5),  // magenta
+    ]
+    const count = Math.floor(params.flareCount)
+    for (let i = 0; i < count; i++) {
+      const t = (i + 1) / (count + 1)
+      const size = params.flareSize * (0.3 + Math.random() * 0.4)
+      const col = hexColors[i % hexColors.length]
+      const hexTex = createHexTex(128, `rgb(${Math.floor(col.r*255)},${Math.floor(col.g*255)},${Math.floor(col.b*255)})`)
+      lf.addElement(new LensflareElement(hexTex, size, t, col))
+    }
+  }
+
+  // Ghost reflections (on opposite side of sun)
+  const ghostColors = [
+    new THREE.Color(0.2, 0.5, 1.0),
+    new THREE.Color(1.0, 0.3, 0.5),
+    new THREE.Color(0.3, 1.0, 0.6),
+  ]
+  for (let i = 0; i < 3; i++) {
+    const t = 0.3 + i * 0.2
+    const gTex = createCircleTex(128, `rgb(${Math.floor(ghostColors[i].r*255)},${Math.floor(ghostColors[i].g*255)},${Math.floor(ghostColors[i].b*255)})`, 0.7)
+    lf.addElement(new LensflareElement(gTex, params.flareSize * 0.25, 1.0 + t, ghostColors[i]))
+  }
+
+  // Starburst rays
+  const starTex = createStarburstTex(512)
+  lf.addElement(new LensflareElement(starTex, params.flareSize * 1.2, 0.0, new THREE.Color(1.0, 0.95, 0.8)))
+
+  lf.intensity = params.flareIntensity
+  sunLight.add(lf)
+  lensflareObj = lf
+}
+
+function createStarburstTex(size) {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const cx = size / 2
+
+  // Radial gradient for core
+  const core = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx)
+  core.addColorStop(0, 'rgba(255,255,255,1)')
+  core.addColorStop(0.1, 'rgba(255,240,200,0.8)')
+  core.addColorStop(0.4, 'rgba(255,200,100,0.2)')
+  core.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = core
+  ctx.fillRect(0, 0, size, size)
+
+  // Cross streaks
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  for (let arm = 0; arm < 8; arm++) {
+    const angle = (arm / 8) * Math.PI
+    ctx.save()
+    ctx.translate(cx, cx)
+    ctx.rotate(angle)
+    const g = ctx.createLinearGradient(-cx, 0, cx, 0)
+    g.addColorStop(0, 'rgba(0,0,0,0)')
+    g.addColorStop(0.3, 'rgba(255,220,150,0.0)')
+    g.addColorStop(0.48, 'rgba(255,220,150,0.15)')
+    g.addColorStop(0.5, 'rgba(255,240,200,0.4)')
+    g.addColorStop(0.52, 'rgba(255,220,150,0.15)')
+    g.addColorStop(0.7, 'rgba(255,220,150,0.0)')
+    g.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = g
+    ctx.fillRect(-cx, -2, size, 4)
+    ctx.restore()
+  }
+  ctx.restore()
+  return new THREE.CanvasTexture(canvas)
+}
+
+// ── Anamorphic Streak Sprite ────────────────────────────────────────────────
+let streakSprite = null
+const streakMat = new THREE.SpriteMaterial({
+  map: createStreakTex(1024, 64, 'rgb(180,220,255)'),
+  blending: THREE.AdditiveBlending,
+  transparent: true,
+  depthWrite: false,
+  opacity: 0.6
+})
+
+function createStreakSprite() {
+  if (streakSprite) {
+    sunLight.remove(streakSprite)
+    streakSprite.material.dispose()
+  }
+  const tex = createStreakTex(1024, 64, 'rgb(180,220,255)')
+  streakSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+    opacity: 0.6
+  }))
+  streakSprite.scale.set(params.flareSize * 8 * params.streakLength, params.flareSize * 0.25, 1)
+  streakSprite.visible = params.showStreak
+  sunLight.add(streakSprite)
+}
+
+// ── Bokeh Circles (separate sprites for more control) ───────────────────────
+const bokehSprites = []
+
+function createBokehSprites() {
+  bokehSprites.forEach(s => { sunLight.remove(s); s.material.dispose() })
+  bokehSprites.length = 0
+  if (!params.showBokeh) return
+
+  const colors = [0x6633ff, 0x0099ff, 0xff4422, 0x22ff66]
+  const count = Math.floor(params.flareCount)
+  for (let i = 0; i < count; i++) {
+    const t = 0.15 + (i / count) * 0.6
+    const size = params.flareSize * (0.3 + Math.random() * 0.5)
+    const tex = createHexTex(128, `rgb(${(colors[i % colors.length] >> 16) & 255},${(colors[i % colors.length] >> 8) & 255},${colors[i % colors.length] & 255})`)
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.5
+    })
+    const sprite = new THREE.Sprite(mat)
+    sprite.userData = { t }
+    bokehSprites.push(sprite)
+    sunLight.add(sprite)
+  }
+}
+
+// ── GUI ──────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: 'Lens Flare Controls' })
+gui.add(params, 'flareIntensity', 0, 3.0, 0.01).name('Intensity').onChange(v => {
+  if (lensflareObj) lensflareObj.intensity = v
+})
+gui.add(params, 'flareCount', 4, 12, 1).name('Flare Count').onChange(() => {
+  createLensflare()
+  createBokehSprites()
+})
+gui.add(params, 'flareSize', 50, 500, 1).name('Flare Size').onChange(() => {
+  createLensflare()
+  createBokehSprites()
+  if (streakSprite) {
+    streakSprite.scale.set(params.flareSize * 8 * params.streakLength, params.flareSize * 0.25, 1)
+  }
+})
+gui.addColor(params, 'sunColor').name('Sun Color').onChange(v => {
+  createLensflare()
+})
+gui.add(params, 'showStreak').name('Show Streak').onChange(v => {
+  if (streakSprite) streakSprite.visible = v
+})
+gui.add(params, 'streakLength', 0.1, 2.0, 0.01).name('Streak Length').onChange(v => {
+  if (streakSprite) {
+    streakSprite.scale.set(params.flareSize * 8 * v, params.flareSize * 0.25, 1)
+  }
+})
+gui.add(params, 'showBokeh').name('Show Bokeh').onChange(v => {
+  createLensflare()
+  createBokehSprites()
+})
+
+// ── Initialize ────────────────────────────────────────────────────────────────
+createLensflare()
+createStreakSprite()
+createBokehSprites()
+
+// ── Animate ──────────────────────────────────────────────────────────────────
+function updateBokehSprites(camera) {
+  const screenCenter = new THREE.Vector3(0, 0, 0)
+  const sunScreenPos = SUN_POS.clone().project(camera)
+  const sunToCenter = new THREE.Vector2(-sunScreenPos.x, -sunScreenPos.y)
+
+  bokehSprites.forEach(sprite => {
+    const t = sprite.userData.t
+    sprite.position.set(
+      sunScreenPos.x + sunToCenter.x * t * 2,
+      sunScreenPos.y + sunToCenter.y * t * 2,
+      0.5
+    )
+    // Scale based on distance from sun
+    const dist = Math.sqrt(Math.pow(sunToCenter.x * t, 2) + Math.pow(sunToCenter.y * t, 2))
+    const sz = params.flareSize * (0.3 + Math.random() * 0) * (1 + dist * 2)
+    sprite.scale.set(sz * 0.1, sz * 0.1, 1)
+  })
+}
+
+function checkFlareOcclusion(camera) {
+  const raycaster = new THREE.Raycaster()
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+  const dir = SUN_POS.clone().sub(camera.position).normalize()
+  raycaster.ray.direction.copy(dir)
+  raycaster.ray.origin.copy(camera.position)
+
+  // Intersect buildings (approximate)
+  const intersects = raycaster.intersectObjects(scene.children, true)
+  let occluded = false
+  for (const hit of intersects) {
+    if (hit.distance < SUN_POS.distanceTo(camera.position) - 5) {
+      occluded = true
+      break
+    }
+  }
+
+  if (lensflareObj) {
+    lensflareObj.visible = !occluded
+  }
+  if (streakSprite) {
+    streakSprite.visible = !occluded && params.showStreak
+  }
+  bokehSprites.forEach(s => { s.visible = !occluded })
+}
+
+const clock = new THREE.Clock()
+function animate() {
+  requestAnimationFrame(animate)
+  controls.update()
+  checkFlareOcclusion(camera)
+  updateBokehSprites(camera)
+
+  // Slowly drift the streak to follow the sun axis
+  const elapsed = clock.getElapsedTime()
+  if (streakSprite) {
+    streakSprite.material.opacity = 0.5 + Math.sin(elapsed * 0.5) * 0.1
+  }
+
+  renderer.render(scene, camera)
+}
+animate()
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

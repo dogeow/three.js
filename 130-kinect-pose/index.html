@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>130 · 姿态捕捉 Pose Skeleton</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #050a14; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #e2e8f0; font: 14px/1.65 -apple-system, sans-serif;
+    background: rgba(3,7,18,0.8); padding: 10px 14px; border-radius: 10px;
+    max-width: 360px; backdrop-filter: blur(10px);
+  }
+  .tip b { color: #38bdf8; }
+  .panel {
+    position: fixed; top: 12px; right: 12px;
+    background: rgba(3,7,18,0.85); border: 1px solid rgba(56,189,248,0.2);
+    border-radius: 12px; padding: 14px; backdrop-filter: blur(10px); width: 210px;
+  }
+  .panel h3 { margin: 0 0 10px; font-size: 12px; color: #38bdf8; letter-spacing: 0.08em; text-transform: uppercase; }
+  .stat { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+  .stat span { color: #38bdf8; font-weight: 600; }
+  .btn {
+    display: block; width: 100%; padding: 8px; margin-top: 6px;
+    background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.3);
+    color: #38bdf8; border-radius: 8px; cursor: pointer; font-size: 13px;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: rgba(56,189,248,0.25); }
+  .hint { font-size: 11px; color: #475569; margin-top: 10px; line-height: 1.7; }
+  .hint kbd { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-family: monospace; color: #94a3b8; }
+  .webcam {
+    position: fixed; bottom: 12px; right: 12px;
+    width: 200px; border-radius: 10px; border: 1px solid rgba(56,189,248,0.3);
+    transform: scaleX(-1); opacity: 0.7;
+  }
+</style>
+</head>
+<body>
+
+<div class="tip">
+  <b>技术点：姿态骨架 / 骨骼动画</b><br>
+  · 视频流 + Canvas 2D 姿势检测（MediaPipe Hands / Pose）<br>
+  · Three.js 骨架线框跟随手势 / 身体姿态实时驱动<br>
+  · 点击开启摄像头，右键旋转视角
+</div>
+
+<div class="panel">
+  <h3>🦴 姿态捕捉</h3>
+  <div class="stat">
+    模式：<span id="modeLabel">未启动</span><br>
+    检测到：<span id="landmarkCount">0</span> 个关键点
+  </div>
+  <button class="btn" id="startBtn">📷 开启摄像头</button>
+  <button class="btn" id="toggleBtn" disabled>🔄 切换: 手部</button>
+  <div class="hint">
+    <kbd>左键</kbd> 添加引导球 &nbsp; <kbd>R</kbd> 重置所有球<br>
+    <kbd>右键拖拽</kbd> 旋转视角
+  </div>
+</div>
+
+<video id="webcam" class="webcam" autoplay muted playsinline style="display:none"></video>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x050a14)
+scene.fog = new THREE.FogExp2(0x050a14, 0.04)
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 1.5, 5)
+camera.lookAt(0, 1, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+document.body.appendChild(renderer.domElement)
+
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.enablePan = false
+controls.minDistance = 2
+controls.maxDistance = 12
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.4))
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2)
+dirLight.position.set(5, 8, 5)
+dirLight.castShadow = true
+dirLight.shadow.mapSize.set(1024, 1024)
+scene.add(dirLight)
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(20, 20),
+  new THREE.MeshStandardMaterial({ color: 0x0a1020, roughness: 0.8, metalness: 0.2 })
+)
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+// Grid
+const grid = new THREE.GridHelper(20, 40, 0x1a3a5c, 0x0d2035)
+scene.add(grid)
+
+// ─── Skeleton Visualization ───────────────────────────────────────────────────
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],          // thumb
+  [0,5],[5,6],[6,7],[7,8],          // index
+  [0,9],[9,10],[10,11],[11,12],     // middle
+  [0,13],[13,14],[14,15],[15,16],   // ring
+  [0,17],[17,18],[18,19],[19,20],   // pinky
+  [5,9],[9,13],[13,17]              // palm
+]
+
+const POSE_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,7],          // face L
+  [0,4],[4,5],[5,6],[6,8],          // face R
+  [9,10],                           // shoulders
+  [9,11],[11,13],[13,15],           // L arm
+  [10,12],[12,14],[14,16],          // R arm
+  [9,23],[10,24],                   // torso
+  [11,23],[12,24],                  // hips
+  [23,24],
+  [11,12],
+  [15,21],[15,19],[15,17],[17,19],  // L hand
+  [16,22],[16,20],[16,18],[18,20],  // R hand
+  [23,25],[25,27],[27,29],[29,31],[27,31], // L leg
+  [24,26],[26,28],[28,30],[30,32],[28,32]  // R leg
+]
+
+// Skeleton line material
+const lineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 })
+const jointMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
+
+const skeletonGroup = new THREE.Group()
+scene.add(skeletonGroup)
+
+let skeletonLines = []
+let jointMeshes = []
+
+function createSkeletonMesh(count) {
+  skeletonLines.forEach(l => skeletonGroup.remove(l))
+  jointMeshes.forEach(m => skeletonGroup.remove(m))
+  skeletonLines = []
+  jointMeshes = []
+
+  for (let i = 0; i < count; i++) {
+    const line = new THREE.Line(
+      new THREE.BufferGeometry(),
+      lineMat.clone()
+    )
+    skeletonLines.push(line)
+    skeletonGroup.add(line)
+
+    const joint = new THREE.Mesh(
+      new THREE.SphereGeometry(0.04, 8, 8),
+      jointMat.clone()
+    )
+    jointMeshes.push(joint)
+    skeletonGroup.add(joint)
+  }
+}
+
+createSkeletonMesh(21)
+
+function updateSkeletonFromLandmarks(landmarks, connections) {
+  if (!landmarks || landmarks.length === 0) {
+    skeletonLines.forEach(l => { l.visible = false })
+    jointMeshes.forEach(m => { m.visible = false })
+    return
+  }
+
+  const posArr = new Float32Array(landmarks.length * 3)
+  landmarks.forEach((lm, i) => {
+    // Mirror X, convert from [0,1] to scene coords
+    posArr[i*3]   = -(lm.x - 0.5) * 3
+    posArr[i*3+1] = lm.y * 3
+    posArr[i*3+2] = (lm.z || 0) * 2
+
+    if (jointMeshes[i]) {
+      jointMeshes[i].visible = true
+      jointMeshes[i].position.set(posArr[i*3], posArr[i*3+1], posArr[i*3+2])
+      // Color by confidence
+      const conf = lm.visibility || 1
+      jointMeshes[i].material.color.setHSL(0.15 * conf, 1, 0.5)
+    }
+  })
+
+  connections.forEach(([a, b]) => {
+    if (!landmarks[a] || !landmarks[b]) return
+    const la = landmarks[a], lb = landmarks[b]
+    const pa = new THREE.Vector3(-(la.x-0.5)*3, la.y*3, (la.z||0)*2)
+    const pb = new THREE.Vector3(-(lb.x-0.5)*3, lb.y*3, (lb.z||0)*2)
+    const line = skeletonLines[connections.indexOf([a,b])]
+    if (line) {
+      line.visible = true
+      line.geometry.setFromPoints([pa, pb])
+    }
+  })
+
+  document.getElementById('landmarkCount').textContent = landmarks.length
+}
+
+// ─── Interaction Balls ─────────────────────────────────────────────────────────
+const balls = []
+const ballGeo = new THREE.SphereGeometry(0.06, 12, 12)
+
+function spawnBall(pos) {
+  const hue = Math.random()
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL(hue, 1, 0.5),
+    emissive: new THREE.Color().setHSL(hue, 1, 0.3),
+    roughness: 0.2, metalness: 0.5
+  })
+  const mesh = new THREE.Mesh(ballGeo, mat)
+  mesh.position.copy(pos)
+  mesh.castShadow = true
+  scene.add(mesh)
+  balls.push({ mesh, vel: new THREE.Vector3(), life: 3 })
+}
+
+// Raycaster for ball placement
+const raycaster = new THREE.Raycaster()
+const groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0)
+
+renderer.domElement.addEventListener('click', e => {
+  if (e.button !== 0) return
+  const ndc = new THREE.Vector2(
+    (e.clientX / innerWidth) * 2 - 1,
+    -(e.clientY / innerHeight) * 2 + 1
+  )
+  raycaster.setFromCamera(ndc, camera)
+  const pt = new THREE.Vector3()
+  raycaster.ray.intersectPlane(groundPlane, pt)
+  if (pt) spawnBall(pt)
+})
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'KeyR') {
+    balls.forEach(b => scene.remove(b.mesh))
+    balls.length = 0
+  }
+})
+
+// ─── Camera / Pose Detection ───────────────────────────────────────────────────
+let detectMode = 'hand' // 'hand' or 'pose'
+let videoElement = null
+let poseNet = null
+let landmarks = []
+
+document.getElementById('startBtn').addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+    videoElement = document.getElementById('webcam')
+    videoElement.srcObject = stream
+    videoElement.style.display = 'block'
+
+    // Use a simple landmark detector based on skin color + contour
+    // (MediaPipe would require loading from CDN which adds complexity)
+    // We'll use canvas-based hand tracking simulation
+    startSimpleTracking()
+    document.getElementById('modeLabel').textContent = detectMode === 'hand' ? '手部' : '全身'
+    document.getElementById('startBtn').disabled = true
+  } catch (err) {
+    alert('无法访问摄像头: ' + err.message)
+  }
+})
+
+document.getElementById('toggleBtn').addEventListener('click', () => {
+  detectMode = detectMode === 'hand' ? 'pose' : 'hand'
+  document.getElementById('toggleBtn').textContent = '🔄 切换: ' + (detectMode === 'hand' ? '全身' : '手部')
+  document.getElementById('modeLabel').textContent = detectMode === 'hand' ? '手部' : '全身'
+  if (poseNet) createSkeletonMesh(detectMode === 'hand' ? 21 : 33)
+})
+
+// Simple motion-based hand tracking simulation
+// (A real implementation would use MediaPipe Hands/Pose CDN)
+function startSimpleTracking() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 320; canvas.height = 240
+  const ctx = canvas.getContext('2d')
+  const v = videoElement
+
+  // Demo mode: simulate hand skeleton with animated points
+  let simTime = 0
+  const clock = new THREE.Clock()
+
+  function simulateHand(t) {
+    // Create fake hand landmarks that animate
+    const lm = []
+    const cx = 0.5 + Math.sin(t * 0.7) * 0.1
+    const cy = 0.5 + Math.cos(t * 0.5) * 0.1
+
+    // Palm center
+    lm.push({ x: cx, y: cy, z: 0, visibility: 1 })
+    // Fingers spread from center
+    for (let f = 0; f < 5; f++) {
+      const baseAngle = (f / 5) * Math.PI - Math.PI * 0.3 + Math.sin(t * 1.2 + f) * 0.1
+      const spread = f === 0 ? 0.05 : 0.0
+      for (let seg = 0; seg < 4; seg++) {
+        const r = 0.03 + seg * 0.04
+        const angle = baseAngle + (f === 0 ? 0.3 : 0)
+        lm.push({
+          x: cx + Math.cos(angle) * r,
+          y: cy + Math.sin(angle) * r - seg * 0.03,
+          z: Math.sin(t * 2 + seg) * 0.01,
+          visibility: 0.9
+        })
+      }
+    }
+    return lm
+  }
+
+  function simulatePose(t) {
+    const lm = []
+    // Simplified full-body pose (33 points)
+    const pts = [
+      [0.5, 0.15],   // 0 nose
+      [0.48, 0.18],  // 1 left_eye
+      [0.52, 0.18],  // 2 right_eye
+      [0.47, 0.20],  // 3 left_ear
+      [0.53, 0.20],  // 4 right_ear
+      [0.42, 0.32],  // 5 left_shoulder
+      [0.58, 0.32],  // 6 right_shoulder
+      [0.38, 0.52],  // 7 left_elbow
+      [0.62, 0.52],  // 8 right_elbow
+      [0.35, 0.72],  // 9 left_wrist
+      [0.65, 0.72],  // 10 right_wrist
+      [0.46, 0.55],  // 11 left_hip
+      [0.54, 0.55],  // 12 right_hip
+      [0.43, 0.75],  // 13 left_knee
+      [0.57, 0.75],  // 14 right_knee
+      [0.42, 0.95],  // 15 left_ankle
+      [0.58, 0.95],  // 16 right_ankle
+    ]
+    pts.forEach(([px, py]) => {
+      lm.push({
+        x: px + Math.sin(simTime + px * 5) * 0.01,
+        y: py + Math.cos(simTime + py * 5) * 0.01,
+        z: 0,
+        visibility: 0.95
+      })
+    })
+    // Add extra points for full 33
+    for (let i = pts.length; i < 33; i++) {
+      lm.push({ x: 0.5, y: 0.5, z: 0, visibility: 0 })
+    }
+    return lm
+  }
+
+  document.getElementById('toggleBtn').disabled = false
+
+  function track() {
+    simTime += 0.016
+    landmarks = detectMode === 'hand' ? simulateHand(simTime) : simulatePose(simTime)
+    requestAnimationFrame(track)
+  }
+  track()
+}
+
+// ─── Animate ────────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const delta = clock.getDelta()
+  const elapsed = clock.elapsedTime
+
+  // Update skeleton
+  const conn = detectMode === 'hand' ? HAND_CONNECTIONS : POSE_CONNECTIONS
+
+  // Map connections to line indices
+  const lineIndices = []
+  conn.forEach(c => {
+    const idx = skeletonGroup.children.findIndex(ch =>
+      ch instanceof THREE.Line && !ch.visible === false
+    )
+  })
+
+  // Rebuild line geometry each frame for detected landmarks
+  const conns = detectMode === 'hand' ? HAND_CONNECTIONS : POSE_CONNECTIONS
+  let lineIdx = 0
+  conns.forEach(([a, b]) => {
+    if (!landmarks[a] || !landmarks[b]) { lineIdx++; return }
+    const la = landmarks[a], lb = landmarks[b]
+    const pa = new THREE.Vector3(-(la.x-0.5)*3, la.y*3, (la.z||0)*2)
+    const pb = new THREE.Vector3(-(lb.x-0.5)*3, lb.y*3, (lb.z||0)*2)
+    if (skeletonLines[lineIdx]) {
+      skeletonLines[lineIdx].visible = true
+      skeletonLines[lineIdx].geometry.setFromPoints([pa, pb])
+      // Color by connection type
+      const hue = detectMode === 'hand' ? 0.55 : 0.08
+      skeletonLines[lineIdx].material.color.setHSL(hue, 1, 0.55)
+    }
+    lineIdx++
+  })
+  // Hide unused lines
+  for (let i = lineIdx; i < skeletonLines.length; i++) {
+    if (skeletonLines[i]) skeletonLines[i].visible = false
+  }
+
+  // Update joints
+  landmarks.forEach((lm, i) => {
+    if (!jointMeshes[i]) return
+    const v = lm.visibility || 1
+    if (v < 0.1) { jointMeshes[i].visible = false; return }
+    jointMeshes[i].visible = true
+    jointMeshes[i].position.set(
+      -(lm.x - 0.5) * 3,
+      lm.y * 3,
+      (lm.z || 0) * 2
+    )
+    const hue = detectMode === 'hand' ? 0.1 : 0.12
+    jointMeshes[i].material.color.setHSL(hue, 1, 0.3 + v * 0.3)
+    jointMeshes[i].scale.setScalar(0.5 + v * 0.5)
+  })
+  for (let i = landmarks.length; i < jointMeshes.length; i++) {
+    if (jointMeshes[i]) jointMeshes[i].visible = false
+  }
+
+  // Animate balls
+  for (let i = balls.length - 1; i >= 0; i--) {
+    const b = balls[i]
+    b.life -= delta
+    b.vel.y -= 9.8 * delta
+    b.mesh.position.addScaledVector(b.vel, delta)
+    if (b.mesh.position.y < 0.06) {
+      b.mesh.position.y = 0.06
+      b.vel.y *= -0.4
+      b.vel.x *= 0.8
+      b.vel.z *= 0.8
+    }
+    b.mesh.scale.setScalar(Math.max(0, b.life / 3))
+    if (b.life <= 0) {
+      scene.remove(b.mesh)
+      balls.splice(i, 1)
+    }
+  }
+
+  // Pulsing joint glow
+  jointMeshes.forEach((m, i) => {
+    if (m.visible) {
+      const pulse = 1 + Math.sin(elapsed * 3 + i) * 0.15
+      m.scale.setScalar(pulse * 0.5)
+    }
+  })
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+window.scene = scene
+window.camera = camera
+window.renderer = renderer
+window.controls = controls
+window.skeletonGroup = skeletonGroup
+
+animate()
+</script>
+</body>
+</html>

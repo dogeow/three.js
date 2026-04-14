@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>131 · SDF 雕刻器 SDF Sculptor</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #08060c; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #e2e8f0; font: 14px/1.65 -apple-system, sans-serif;
+    background: rgba(3,7,18,0.8); padding: 10px 14px; border-radius: 10px;
+    max-width: 380px; backdrop-filter: blur(10px);
+  }
+  .tip b { color: #f472b6; }
+  .panel {
+    position: fixed; top: 12px; right: 12px;
+    background: rgba(3,7,18,0.85); border: 1px solid rgba(244,114,182,0.2);
+    border-radius: 12px; padding: 14px; backdrop-filter: blur(10px); width: 200px;
+  }
+  .panel h3 { margin: 0 0 12px; font-size: 12px; color: #f472b6; letter-spacing: 0.08em; text-transform: uppercase; }
+  .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .mode-btn {
+    flex: 1; padding: 7px 4px; border-radius: 8px; border: 1px solid rgba(244,114,182,0.3);
+    background: rgba(244,114,182,0.08); color: #94a3b8; font-size: 12px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .mode-btn.active { background: rgba(244,114,182,0.25); color: #f472b6; border-color: #f472b6; }
+  .ctrl { margin-bottom: 10px; }
+  .ctrl label { display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+  .ctrl label span { color: #f472b6; font-weight: 600; }
+  .ctrl input[type=range] {
+    width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
+    background: rgba(255,255,255,0.08); border-radius: 2px; outline: none;
+  }
+  .ctrl input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #f472b6; cursor: pointer;
+  }
+  .btn {
+    display: block; width: 100%; padding: 8px; margin-top: 6px;
+    background: rgba(244,114,182,0.15); border: 1px solid rgba(244,114,182,0.3);
+    color: #f472b6; border-radius: 8px; cursor: pointer; font-size: 13px;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: rgba(244,114,182,0.25); }
+  .hint { font-size: 11px; color: #475569; margin-top: 10px; line-height: 1.7; }
+  .hint kbd { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-family: monospace; color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<div class="tip">
+  <b>技术点：SDF 有符号距离场 / Raymarching 雕刻</b><br>
+  · GPU Raymarching 渲染球体追踪立方体中的 SDF 模型<br>
+  · 点击/拖拽添加/减去基础体素，实时更新 SDF<br>
+  · 支持多体素联合（Union / Subtract / Smooth）雕刻模式
+</div>
+
+<div class="panel">
+  <h3>🗿 SDF 雕刻</h3>
+
+  <div class="mode-row">
+    <button class="mode-btn active" id="modeAdd">添加</button>
+    <button class="mode-btn" id="modeSub">减去</button>
+    <button class="mode-btn" id="modeSmooth">平滑</button>
+  </div>
+
+  <div class="ctrl">
+    <label>笔刷半径 <span id="rVal">0.5</span></label>
+    <input type="range" id="rSlider" min="0.2" max="2.0" step="0.1" value="0.5" />
+  </div>
+  <div class="ctrl">
+    <label>平滑度 <span id="sVal">0.3</span></label>
+    <input type="range" id="sSlider" min="0.0" max="1.0" step="0.05" value="0.3" />
+  </div>
+  <div class="ctrl">
+    <label>细分 <span id="resVal">128</span></label>
+    <input type="range" id="resSlider" min="64" max="192" step="16" value="128" />
+  </div>
+
+  <button class="btn" id="resetBtn">🔄 重置</button>
+  <button class="btn" id="sphereBtn">⭕ 添加球体</button>
+  <button class="btn" id="boxBtn">⬜ 添加立方体</button>
+
+  <div class="hint">
+    <kbd>左键</kbd> 雕刻 &nbsp; <kbd>右键拖</kbd> 旋转视角
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+// ─── Scene ────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x08060c)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 0, 4)
+camera.lookAt(0, 0, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: false })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+document.body.appendChild(renderer.domElement)
+
+// Lights (used for normal shading)
+scene.add(new THREE.AmbientLight(0xffffff, 0.3))
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8)
+dirLight.position.set(5, 5, 5)
+scene.add(dirLight)
+
+// ─── Raymarching Cube ─────────────────────────────────────────────────────────
+// We render SDF inside a bounding box using a custom shader
+const CUBE_SIZE = 2.5
+
+// Proxy geometry - the raymarched cube shell
+const proxyGeo = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE)
+const proxyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  transparent: true,
+  depthWrite: false,
+  uniforms: {
+    uVoxels: { value: [] },
+    uResolution: { value: 128 },
+    uTime: { value: 0 },
+    uCamPos: { value: new THREE.Vector3() },
+    uBrushRadius: { value: 0.5 },
+    uSmoothness: { value: 0.3 },
+    uOperation: { value: 0 },
+  },
+  vertexShader: `
+    varying vec3 vWorldPos;
+    varying vec3 vLocalPos;
+    void main() {
+      vLocalPos = position;
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    varying vec3 vWorldPos;
+    varying vec3 vLocalPos;
+    uniform float uResolution;
+    uniform float uTime;
+    uniform vec3 uCamPos;
+    uniform float uBrushRadius;
+    uniform float uSmoothness;
+    uniform int uOperation;
+
+    // Max voxel count
+    #define MAX_VOXELS 512
+    uniform vec4 uVoxels[MAX_VOXELS]; // xyz=pos, w=type(0=add,1=sub,2=smooth)
+    uniform int uVoxelCount;
+
+    // SDF operations
+    float sdSphere(vec3 p, float r) { return length(p) - r; }
+    float sdBox(vec3 p, vec3 b) {
+      vec3 q = abs(p) - b;
+      return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+    }
+
+    float opUnion(float a, float b) { return min(a, b); }
+    float opSub(float a, float b) { return max(a, -b); }
+    float opSmooth(float a, float b, float k) {
+      float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+      return mix(b, a, h) - k * h * (1.0 - h);
+    }
+
+    float sceneSDF(vec3 p) {
+      float d = 1e10;
+      for (int i = 0; i < MAX_VOXELS; i++) {
+        if (i >= uVoxelCount) break;
+        vec4 v = uVoxels[i];
+        float sd;
+        if (v.w < 0.5) {
+          // Sphere
+          sd = sdSphere(p - v.xyz, uBrushRadius);
+        } else if (v.w < 1.5) {
+          // Box
+          sd = sdBox(p - v.xyz, vec3(uBrushRadius * 0.8));
+        } else {
+          // Smooth sphere
+          sd = sdSphere(p - v.xyz, uBrushRadius);
+        }
+
+        if (v.w < 0.5) {
+          d = opUnion(d, sd);
+        } else if (v.w < 1.5) {
+          d = opSub(d, sd);
+        } else {
+          d = opSmooth(d, sd, uSmoothness);
+        }
+      }
+      // Clamp to bounding box
+      float bbox = sdBox(p, vec3(${CUBE_SIZE.toFixed(1)} * 0.5));
+      d = opUnion(d, bbox);
+      return d;
+    }
+
+    vec3 calcNormal(vec3 p) {
+      float e = 0.001;
+      return normalize(vec3(
+        sceneSDF(p + vec3(e,0,0)) - sceneSDF(p - vec3(e,0,0)),
+        sceneSDF(p + vec3(0,e,0)) - sceneSDF(p - vec3(0,e,0)),
+        sceneSDF(p + vec3(0,0,e)) - sceneSDF(p - vec3(0,0,e))
+      ));
+    }
+
+    void main() {
+      // Ray direction
+      vec3 ro = uCamPos;
+      vec3 rd = normalize(vWorldPos - uCamPos);
+
+      // March
+      float t = 0.0;
+      float maxDist = 10.0;
+      bool hit = false;
+      float prevD = 1e10;
+      for (int i = 0; i < 120; i++) {
+        vec3 p = ro + rd * t;
+        float d = sceneSDF(p);
+        if (d < 0.001) { hit = true; break; }
+        if (t > maxDist) break;
+        t += max(d, 0.005);
+        prevD = d;
+      }
+
+      if (!hit) discard;
+
+      vec3 p = ro + rd * t;
+      vec3 n = calcNormal(p);
+
+      // Lighting
+      vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+      float diff = max(dot(n, lightDir), 0.0);
+      float ambient = 0.2;
+
+      // Base color gradient by height
+      float h = (p.y / ${CUBE_SIZE.toFixed(1)} * 0.5 + 0.5);
+      vec3 col1 = vec3(0.96, 0.45, 0.71); // pink
+      vec3 col2 = vec3(0.55, 0.29, 0.95); // purple
+      vec3 baseColor = mix(col1, col2, h);
+
+      // Subsurface scatter hint
+      float sss = max(0.0, -dot(n, lightDir)) * 0.3;
+      baseColor += vec3(0.2, 0.1, 0.3) * sss;
+
+      // Fresnel rim
+      float fresnel = pow(1.0 - abs(dot(n, -rd)), 3.0);
+      baseColor += vec3(0.4, 0.2, 0.5) * fresnel;
+
+      vec3 col = baseColor * (diff + ambient);
+
+      // AO hint
+      float ao = 1.0;
+      col *= ao;
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+})
+
+// For correct raycasting, we need the mesh on the front side too
+const proxyMatFront = proxyMat.clone()
+proxyMatFront.side = THREE.FrontSide
+
+const proxyMesh = new THREE.Mesh(proxyGeo, proxyMatFront)
+scene.add(proxyMesh)
+
+// Voxel data
+let voxels = [] // { pos: Vector3, type: 0|1|2 }
+const MAX_VOXELS = 512
+
+// Initial sphere
+voxels.push({ pos: new THREE.Vector3(0, 0, 0), type: 0 })
+updateVoxelUniforms()
+
+function updateVoxelUniforms() {
+  const arr = new Array(MAX_VOXELS).fill(null).map(() => new THREE.Vector4(0,0,0,0))
+  voxels.forEach((v, i) => {
+    arr[i] = new THREE.Vector4(v.pos.x, v.pos.y, v.pos.z, v.type)
+  })
+  proxyMat.uniforms.uVoxels.value = arr
+  proxyMat.uniforms.uVoxelCount.value = voxels.length
+  proxyMatFront.uniforms.uVoxels.value = arr
+  proxyMatFront.uniforms.uVoxelCount.value = voxels.length
+}
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.enablePan = false
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+
+let sculptMode = 'add' // add | sub | smooth
+let brushRadius = 0.5
+let smoothness = 0.3
+
+document.getElementById('modeAdd').addEventListener('click', () => {
+  sculptMode = 'add'
+  proxyMat.uniforms.uOperation.value = 0
+  proxyMatFront.uniforms.uOperation.value = 0
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'))
+  document.getElementById('modeAdd').classList.add('active')
+})
+document.getElementById('modeSub').addEventListener('click', () => {
+  sculptMode = 'sub'
+  proxyMat.uniforms.uOperation.value = 1
+  proxyMatFront.uniforms.uOperation.value = 1
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'))
+  document.getElementById('modeSub').classList.add('active')
+})
+document.getElementById('modeSmooth').addEventListener('click', () => {
+  sculptMode = 'smooth'
+  proxyMat.uniforms.uOperation.value = 2
+  proxyMatFront.uniforms.uOperation.value = 2
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'))
+  document.getElementById('modeSmooth').classList.add('active')
+})
+
+document.getElementById('rSlider').addEventListener('input', e => {
+  brushRadius = parseFloat(e.target.value)
+  document.getElementById('rVal').textContent = brushRadius.toFixed(1)
+  proxyMat.uniforms.uBrushRadius.value = brushRadius
+  proxyMatFront.uniforms.uBrushRadius.value = brushRadius
+})
+document.getElementById('sSlider').addEventListener('input', e => {
+  smoothness = parseFloat(e.target.value)
+  document.getElementById('sVal').textContent = smoothness.toFixed(2)
+  proxyMat.uniforms.uSmoothness.value = smoothness
+  proxyMatFront.uniforms.uSmoothness.value = smoothness
+})
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  voxels = []
+  proxyMat.uniforms.uVoxelCount.value = 0
+  proxyMatFront.uniforms.uVoxelCount.value = 0
+})
+document.getElementById('sphereBtn').addEventListener('click', () => {
+  if (voxels.length < MAX_VOXELS) {
+    voxels.push({ pos: new THREE.Vector3(
+      (Math.random()-0.5)*0.8,
+      (Math.random()-0.5)*0.8,
+      (Math.random()-0.5)*0.8
+    ), type: 0 })
+    updateVoxelUniforms()
+  }
+})
+document.getElementById('boxBtn').addEventListener('click', () => {
+  if (voxels.length < MAX_VOXELS) {
+    voxels.push({ pos: new THREE.Vector3(
+      (Math.random()-0.5)*0.8,
+      (Math.random()-0.5)*0.8,
+      (Math.random()-0.5)*0.8
+    ), type: 1 })
+    updateVoxelUniforms()
+  }
+})
+
+// Raycasting for sculpting
+const raycaster = new THREE.Raycaster()
+const boxGeo = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE)
+const boxCenter = new THREE.Vector3()
+
+renderer.domElement.addEventListener('click', e => {
+  const ndc = new THREE.Vector2(
+    (e.clientX / innerWidth) * 2 - 1,
+    -(e.clientY / innerHeight) * 2 + 1
+  )
+  raycaster.setFromCamera(ndc, camera)
+
+  // Intersect the bounding box
+  const target = new THREE.Vector3()
+  const hit = raycaster.ray.intersectBox(
+    new THREE.Box3(boxCenter.clone().subScalar(CUBE_SIZE/2), boxCenter.clone().addScalar(CUBE_SIZE/2)),
+    target
+  )
+
+  if (hit && voxels.length < MAX_VOXELS) {
+    // Snap to a grid within the cube
+    const gridSize = 0.2
+    const snapped = new THREE.Vector3(
+      Math.round(target.x / gridSize) * gridSize,
+      Math.round(target.y / gridSize) * gridSize,
+      Math.round(target.z / gridSize) * gridSize
+    )
+    // Clamp to cube
+    const half = CUBE_SIZE / 2 - brushRadius
+    snapped.clamp(new THREE.Vector3(-half,-half,-half), new THREE.Vector3(half,half,half))
+
+    let type = sculptMode === 'add' ? 0 : sculptMode === 'sub' ? 1 : 2
+    voxels.push({ pos: snapped.clone(), type })
+    updateVoxelUniforms()
+  }
+})
+
+// ─── Brush cursor visualization ────────────────────────────────────────────────
+const brushCursor = new THREE.Mesh(
+  new THREE.TorusGeometry(0.5, 0.02, 8, 32),
+  new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.6 })
+)
+brushCursor.visible = false
+scene.add(brushCursor)
+
+renderer.domElement.addEventListener('mousemove', e => {
+  const ndc = new THREE.Vector2(
+    (e.clientX / innerWidth) * 2 - 1,
+    -(e.clientY / innerHeight) * 2 + 1
+  )
+  raycaster.setFromCamera(ndc, camera)
+  const target = new THREE.Vector3()
+  const hit = raycaster.ray.intersectBox(
+    new THREE.Box3(boxCenter.clone().subScalar(CUBE_SIZE/2), boxCenter.clone().addScalar(CUBE_SIZE/2)),
+    target
+  )
+  if (hit) {
+    brushCursor.visible = true
+    brushCursor.position.copy(target)
+    brushCursor.scale.setScalar(brushRadius / 0.5)
+  } else {
+    brushCursor.visible = false
+  }
+})
+
+// ─── Animate ──────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const elapsed = clock.elapsedTime
+
+  proxyMat.uniforms.uTime.value = elapsed
+  proxyMat.uniforms.uCamPos.value.copy(camera.position)
+  proxyMatFront.uniforms.uTime.value = elapsed
+  proxyMatFront.uniforms.uCamPos.value.copy(camera.position)
+
+  // Pulse brush cursor
+  brushCursor.material.opacity = 0.4 + Math.sin(elapsed * 4) * 0.2
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+window.scene = scene
+window.camera = camera
+window.renderer = renderer
+window.controls = controls
+window.voxels = voxels
+
+animate()
+</script>
+</body>
+</html>

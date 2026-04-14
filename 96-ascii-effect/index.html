@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>96 · AsciiEffect 字符画渲染</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #020617; color: #d1fae5; }
+  canvas { display: none; }
+  .tip {
+    position: fixed; top: 12px; left: 12px; z-index: 10;
+    color: #d1fae5; font: 14px/1.65 -apple-system, BlinkMacSystemFont, sans-serif;
+    background: rgba(2, 6, 23, 0.76); padding: 10px 14px; border-radius: 10px;
+    max-width: 420px; backdrop-filter: blur(10px);
+  }
+  .tip label { display: block; margin-top: 10px; }
+  .tip input, .tip select { width: 100%; margin-top: 4px; }
+  .tip .switch { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; }
+  .value { color: #86efac; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：AsciiEffect 字符画渲染</b><br>
+  · 把 3D 渲染结果重新采样成字符密度，做终端监控、复古黑客屏和实验影像<br>
+  · 这不是图片滤镜，而是用 DOM 字符逐帧重建整张画面
+  <label for="resolution">
+    <span class="row">
+      <span>字符密度</span>
+      <span class="value" id="resolution-value">0.16</span>
+    </span>
+    <input id="resolution" type="range" min="0.12" max="0.22" step="0.01" value="0.16" />
+  </label>
+  <label for="charset">
+    <span class="row">
+      <span>字符集</span>
+      <span class="value" id="charset-value">dense</span>
+    </span>
+    <select id="charset">
+      <option value="dense">dense</option>
+      <option value="soft">soft</option>
+      <option value="tech">tech</option>
+    </select>
+  </label>
+  <label class="switch">
+    <input id="invert" type="checkbox" />
+    反相终端
+  </label>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { AsciiEffect } from 'three/addons/effects/AsciiEffect.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x020617)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 4.6, 12)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(1)
+document.body.appendChild(renderer.domElement)
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.52))
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.1)
+keyLight.position.set(5, 8, 5)
+scene.add(keyLight)
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(15, 96),
+  new THREE.MeshStandardMaterial({ color: 0x101826, roughness: 0.92, metalness: 0.08 })
+)
+floor.rotation.x = -Math.PI / 2
+floor.position.y = -1.9
+scene.add(floor)
+
+const grid = new THREE.GridHelper(18, 30, 0x9ca3af, 0x374151)
+grid.position.y = -1.88
+grid.material.transparent = true
+grid.material.opacity = 0.32
+scene.add(grid)
+
+const group = new THREE.Group()
+scene.add(group)
+
+const knot = new THREE.Mesh(
+  new THREE.TorusKnotGeometry(1.2, 0.32, 180, 28),
+  new THREE.MeshStandardMaterial({
+    color: 0xf8fafc,
+    metalness: 0.1,
+    roughness: 0.2
+  })
+)
+knot.position.y = 1.4
+group.add(knot)
+
+const sphere = new THREE.Mesh(
+  new THREE.SphereGeometry(0.82, 32, 32),
+  new THREE.MeshStandardMaterial({
+    color: 0xcbd5e1,
+    metalness: 0.08,
+    roughness: 0.16
+  })
+)
+sphere.position.set(-2.3, 0.9, 0)
+group.add(sphere)
+
+const cube = new THREE.Mesh(
+  new THREE.BoxGeometry(1.25, 1.25, 1.25),
+  new THREE.MeshStandardMaterial({
+    color: 0x94a3b8,
+    metalness: 0.06,
+    roughness: 0.24
+  })
+)
+cube.position.set(2.3, 0.4, 0.35)
+group.add(cube)
+
+const arcs = []
+for (let i = 0; i < 3; i++) {
+  const arc = new THREE.Mesh(
+    new THREE.TorusGeometry(2.8 + i * 0.65, 0.06, 12, 120, Math.PI * 1.5),
+    new THREE.MeshBasicMaterial({ color: 0x64748b })
+  )
+  arc.rotation.x = Math.PI / 2
+  arc.rotation.z = i * 0.55
+  arc.position.y = 0.3 + i * 0.55
+  scene.add(arc)
+  arcs.push(arc)
+}
+
+const charsets = {
+  dense: ' .,:;i1tfLCG08@',
+  soft: ' .:-=+*#%@',
+  tech: ' _.-+=xX$#'
+}
+
+const resolutionInput = document.getElementById('resolution')
+const resolutionValue = document.getElementById('resolution-value')
+const charsetInput = document.getElementById('charset')
+const charsetValue = document.getElementById('charset-value')
+const invertInput = document.getElementById('invert')
+
+let effect
+let controls
+
+function buildEffect() {
+  const target = controls ? controls.target.clone() : new THREE.Vector3(0, 1.2, 0)
+
+  if (controls) controls.dispose()
+  if (effect) effect.domElement.remove()
+
+  effect = new AsciiEffect(renderer, charsets[charsetInput.value], {
+    invert: invertInput.checked,
+    resolution: Number(resolutionInput.value),
+    scale: 1.15
+  })
+
+  effect.domElement.style.position = 'absolute'
+  effect.domElement.style.top = '0'
+  effect.domElement.style.left = '0'
+  effect.domElement.style.width = '100%'
+  effect.domElement.style.height = '100%'
+  effect.domElement.style.color = invertInput.checked ? '#0f172a' : '#86efac'
+  effect.domElement.style.backgroundColor = invertInput.checked ? '#dcfce7' : '#020617'
+  effect.domElement.style.pointerEvents = 'auto'
+  document.body.appendChild(effect.domElement)
+  effect.setSize(innerWidth, innerHeight)
+
+  controls = new OrbitControls(camera, effect.domElement)
+  controls.enableDamping = true
+  controls.enablePan = false
+  controls.minDistance = 6
+  controls.maxDistance = 20
+  controls.target.copy(target)
+
+  resolutionValue.textContent = Number(resolutionInput.value).toFixed(2)
+  charsetValue.textContent = charsetInput.value
+}
+
+resolutionInput.addEventListener('input', buildEffect)
+charsetInput.addEventListener('change', buildEffect)
+invertInput.addEventListener('change', buildEffect)
+
+buildEffect()
+
+const clock = new THREE.Clock()
+
+function animate() {
+  const delta = clock.getDelta()
+  const time = clock.elapsedTime
+
+  group.rotation.y += delta * 0.25
+  knot.rotation.x += delta * 0.34
+  knot.rotation.y += delta * 0.52
+  sphere.position.y = 0.9 + Math.sin(time * 1.4) * 0.34
+  cube.rotation.x += delta * 0.4
+  cube.rotation.y -= delta * 0.36
+
+  arcs.forEach((arc, index) => {
+    arc.rotation.y = time * (0.18 + index * 0.07)
+  })
+
+  controls.update()
+  effect.render(scene, camera)
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  effect.setSize(innerWidth, innerHeight)
+})
+
+window.scene = scene
+window.camera = camera
+window.effect = () => effect
+
+renderer.setAnimationLoop(animate)
+</script>
+</body>
+</html>

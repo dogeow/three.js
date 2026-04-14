@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Earth Globe - Three.js</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; }
+    canvas { display: block; }
+
+    #tip {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      background: rgba(8, 12, 20, 0.72);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(80, 140, 255, 0.15);
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: rgba(180, 210, 255, 0.9);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 12.5px;
+      line-height: 1.7;
+      max-width: 260px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+      pointer-events: none;
+    }
+    #tip strong {
+      color: rgba(120, 180, 255, 1);
+      font-size: 13px;
+    }
+    #tip .tech {
+      margin-top: 8px;
+      color: rgba(140, 180, 240, 0.65);
+      font-size: 11.5px;
+    }
+
+    #title {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(180, 210, 255, 0.8);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      pointer-events: none;
+      text-shadow: 0 0 20px rgba(80, 140, 255, 0.4);
+    }
+  </style>
+</head>
+<body>
+  <div id="title">Earth Globe</div>
+  <div id="tip">
+    <strong>Day/Night Terminator</strong><br>
+    Directional light slowly orbits the Earth, creating a moving shadow line between day and night sides.<br>
+    <span class="tech">Fresnel glow &bull; City lights &bull; Cloud layer &bull; Normal mapping</span>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ── Renderer ──────────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    // ── Scene ──────────────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000008);
+
+    // ── Camera ─────────────────────────────────────────────────────────────────
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 0, 6);
+
+    // ── Controls ───────────────────────────────────────────────────────────────
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 2.5;
+    controls.maxDistance = 15;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.4;
+
+    // ── Clock ──────────────────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    // ── Stars ──────────────────────────────────────────────────────────────────
+    (function buildStars() {
+      const count = 8000;
+      const pos = new Float32Array(count * 3);
+      const col = new Float32Array(count * 3);
+      const sizes = new Float32Array(count);
+
+      for (let i = 0; i < count; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 300 + Math.random() * 200;
+        pos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+        pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+        pos[i * 3 + 2] = r * Math.cos(phi);
+
+        // Slightly vary star colors: white, blue-white, warm yellow
+        const t = Math.random();
+        col[i * 3]     = 0.8 + t * 0.2;
+        col[i * 3 + 1] = 0.8 + t * 0.15;
+        col[i * 3 + 2] = 0.85 + t * 0.15;
+
+        sizes[i] = 0.3 + Math.random() * 1.2;
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+      const mat = new THREE.PointsMaterial({
+        size: 0.8,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.85,
+        sizeAttenuation: true,
+        depthWrite: false,
+      });
+
+      const stars = new THREE.Points(geo, mat);
+      scene.add(stars);
+    })();
+
+    // ── Sun (visual) ───────────────────────────────────────────────────────────
+    const sunGeo = new THREE.SphereGeometry(0.45, 32, 32);
+    const sunMat = new THREE.MeshBasicMaterial({ color: 0xfff8e0 });
+    const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    sunMesh.position.set(40, 10, 30);
+    scene.add(sunMesh);
+
+    // Sun glow sprite
+    const spriteMat = new THREE.SpriteMaterial({
+      map: (function() {
+        const c = document.createElement('canvas');
+        c.width = c.height = 128;
+        const ctx = c.getContext('2d');
+        const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+        g.addColorStop(0, 'rgba(255,248,200,1)');
+        g.addColorStop(0.2, 'rgba(255,220,120,0.8)');
+        g.addColorStop(0.6, 'rgba(255,180,50,0.2)');
+        g.addColorStop(1, 'rgba(255,150,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, 128, 128);
+        const tex = new THREE.CanvasTexture(c);
+        return tex;
+      })(),
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const sunGlow = new THREE.Sprite(spriteMat);
+    sunGlow.scale.set(4, 4, 1);
+    sunMesh.add(sunGlow);
+
+    // ── Earth Group ─────────────────────────────────────────────────────────────
+    const earthGroup = new THREE.Group();
+    scene.add(earthGroup);
+
+    // ── Earth Mesh ─────────────────────────────────────────────────────────────
+    const earthGeo = new THREE.SphereGeometry(1, 64, 64);
+
+    const textureLoader = new THREE.TextureLoader();
+
+    // Diffuse map
+    const earthDiffuse = textureLoader.load(
+      'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg'
+    );
+    earthDiffuse.colorSpace = THREE.SRGBColorSpace;
+
+    // Normal map
+    const earthNormal = textureLoader.load(
+      'https://threejs.org/examples/textures/planets/earth_normal_2048.jpg'
+    );
+
+    // Specular map (ocean reflection)
+    const earthSpecular = textureLoader.load(
+      'https://threejs.org/examples/textures/planets/earth_specular_2048.jpg'
+    );
+
+    // City lights map
+    const earthLights = textureLoader.load(
+      'https://threejs.org/examples/textures/planets/earth_lights_2048.png'
+    );
+    earthLights.colorSpace = THREE.SRGBColorSpace;
+
+    // Clouds map
+    const earthClouds = textureLoader.load(
+      'https://threejs.org/examples/textures/planets/earth_clouds_1024.png'
+    );
+    earthClouds.colorSpace = THREE.SRGBColorSpace;
+
+    // Earth shader material with day/night blending
+    const earthMat = new THREE.MeshPhongMaterial({
+      map: earthDiffuse,
+      normalMap: earthNormal,
+      normalScale: new THREE.Vector2(1.0, 1.0),
+      specularMap: earthSpecular,
+      specular: new THREE.Color(0x223366),
+      shininess: 15,
+    });
+
+    // Custom earth shader for city lights + day/night blending
+    const earthShaderMat = new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: earthDiffuse },
+        lightsMap: { value: earthLights },
+        normalMap: { value: earthNormal },
+        specularMap: { value: earthSpecular },
+        sunDirection: { value: new THREE.Vector3(1, 0, 0).normalize() },
+        ambientColor: { value: new THREE.Color(0x112244) },
+        specularColor: { value: new THREE.Color(0x223366) },
+      },
+      vertexShader: /* glsl */`
+        varying vec3 vNormal;
+        varying vec2 vUv;
+        varying vec3 vWorldPosition;
+
+        void main() {
+          vUv = uv;
+          vNormal = normalize(normalMatrix * normal);
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPos.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform sampler2D map;
+        uniform sampler2D lightsMap;
+        uniform sampler2D normalMap;
+        uniform sampler2D specularMap;
+        uniform vec3 sunDirection;
+        uniform vec3 ambientColor;
+        uniform vec3 specularColor;
+
+        varying vec3 vNormal;
+        varying vec2 vUv;
+        varying vec3 vWorldPosition;
+
+        void main() {
+          vec3 normal = normalize(vNormal);
+          // Perturb normal from normal map
+          vec3 normalTex = texture2D(normalMap, vUv).rgb * 2.0 - 1.0;
+          normal = normalize(normal + vec3(normalTex.rg * 0.5, normalTex.b));
+
+          float NdotL = dot(normal, sunDirection);
+          float diffuse = max(NdotL, 0.0);
+          float nightSide = smoothstep(-0.1, -0.3, NdotL);
+
+          vec3 dayColor = texture2D(map, vUv).rgb;
+          vec3 nightColor = texture2D(lightsMap, vUv).rgb * 1.8;
+
+          // Specular
+          vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+          vec3 halfDir = normalize(sunDirection + viewDir);
+          float spec = pow(max(dot(normal, halfDir), 0.0), 60.0);
+          float specMask = texture2D(specularMap, vUv).r;
+
+          // Combine
+          vec3 lit = dayColor * (ambientColor + vec3(diffuse * 0.9));
+          vec3 dark = nightColor * vec3(1.0, 0.85, 0.6);
+          vec3 col = mix(lit, dark, nightSide);
+          col += spec * specularColor * specMask * 0.6;
+
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+    });
+
+    const earthMesh = new THREE.Mesh(earthGeo, earthShaderMat);
+    earthMesh.castShadow = true;
+    earthMesh.receiveShadow = true;
+    earthGroup.add(earthMesh);
+
+    // ── Atmosphere Glow ────────────────────────────────────────────────────────
+    const atmosphereVert = /* glsl */`
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+        vViewPosition = -mvPos.xyz;
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `;
+    const atmosphereFrag = /* glsl */`
+      uniform vec3 glowColor;
+      uniform float intensity;
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      void main() {
+        vec3 viewDir = normalize(vViewPosition);
+        float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.5);
+        gl_FragColor = vec4(glowColor, fresnel * intensity);
+      }
+    `;
+
+    const atmosphereMat = new THREE.ShaderMaterial({
+      uniforms: {
+        glowColor: { value: new THREE.Color(0x3377ff) },
+        intensity: { value: 0.7 },
+      },
+      vertexShader: atmosphereVert,
+      fragmentShader: atmosphereFrag,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+    });
+
+    const atmosphereMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(1.065, 64, 64),
+      atmosphereMat
+    );
+    earthGroup.add(atmosphereMesh);
+
+    // Second, softer outer atmosphere
+    const outerAtmoMat = new THREE.ShaderMaterial({
+      uniforms: {
+        glowColor: { value: new THREE.Color(0x1a44cc) },
+        intensity: { value: 0.35 },
+      },
+      vertexShader: atmosphereVert,
+      fragmentShader: atmosphereFrag,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+    });
+    const outerAtmosphereMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(1.15, 64, 64),
+      outerAtmoMat
+    );
+    earthGroup.add(outerAtmosphereMesh);
+
+    // ── Clouds Layer ───────────────────────────────────────────────────────────
+    const cloudsGeo = new THREE.SphereGeometry(1.012, 64, 64);
+    const cloudsMat = new THREE.MeshPhongMaterial({
+      map: earthClouds,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
+    earthGroup.add(cloudsMesh);
+
+    // ── Moon ───────────────────────────────────────────────────────────────────
+    const moonGeo = new THREE.SphereGeometry(0.27, 32, 32);
+    const moonDiffuse = textureLoader.load(
+      'https://threejs.org/examples/textures/planets/moon_1024.jpg'
+    );
+    moonDiffuse.colorSpace = THREE.SRGBColorSpace;
+
+    const moonMat = new THREE.MeshPhongMaterial({
+      map: moonDiffuse,
+      shininess: 2,
+    });
+    const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    moonMesh.castShadow = true;
+
+    // Moon orbit group
+    const moonOrbit = new THREE.Group();
+    earthGroup.add(moonOrbit);
+    moonOrbit.add(moonMesh);
+    moonMesh.position.set(3.2, 0.3, 0);
+
+    // Moon surface detail (bump)
+    const moonBump = textureLoader.load(
+      'https://threejs.org/examples/textures/planets/moon_normal_2048.jpg'
+    );
+    moonMesh.material.normalMap = moonBump;
+    moonMesh.material.normalScale = new THREE.Vector2(0.1, 0.1);
+
+    // ── Directional Light (Sun) ───────────────────────────────────────────────
+    const sunLight = new THREE.DirectionalLight(0xfff8f0, 3.5);
+    sunLight.position.copy(sunMesh.position);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 200;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+
+    // Ambient fill
+    const ambientLight = new THREE.AmbientLight(0x102030, 0.4);
+    scene.add(ambientLight);
+
+    // Hemisphere (sky/ground)
+    const hemiLight = new THREE.HemisphereLight(0x4466aa, 0x221100, 0.3);
+    scene.add(hemiLight);
+
+    // ── Expose to window ──────────────────────────────────────────────────────
+    window.scene = scene;
+    window.camera = camera;
+    window.renderer = renderer;
+    window.controls = controls;
+    window.earthGroup = earthGroup;
+    window.earthMesh = earthMesh;
+    window.moonMesh = moonMesh;
+    window.moonOrbit = moonOrbit;
+    window.cloudsMesh = cloudsMesh;
+    window.sunMesh = sunMesh;
+    window.sunLight = sunLight;
+    window.earthShaderMat = earthShaderMat;
+
+    // ── Animation Loop ─────────────────────────────────────────────────────────
+    const EARTH_RADIUS = 1;
+    const MOON_ORBIT_RADIUS = 3.2;
+    const MOON_ORBIT_SPEED = 0.08;
+    const SUN_ORBIT_RADIUS = 55;
+    const SUN_ORBIT_SPEED = 0.012;
+
+    let lastTime = 0;
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const elapsed = clock.getElapsedTime();
+      const delta = elapsed - lastTime;
+      lastTime = elapsed;
+
+      // Earth self-rotation (slightly faster than orbit)
+      earthMesh.rotation.y += 0.0012;
+      cloudsMesh.rotation.y += 0.0015; // clouds drift slightly
+
+      // Moon orbit around Earth
+      const moonAngle = elapsed * MOON_ORBIT_SPEED;
+      moonMesh.position.x = Math.cos(moonAngle) * MOON_ORBIT_RADIUS;
+      moonMesh.position.z = Math.sin(moonAngle) * MOON_ORBIT_RADIUS;
+      moonMesh.position.y = Math.sin(moonAngle * 0.3) * 0.4;
+      moonMesh.rotation.y += 0.005;
+
+      // Sun orbits around scene (slow)
+      const sunAngle = elapsed * SUN_ORBIT_SPEED;
+      const sunX = Math.cos(sunAngle) * SUN_ORBIT_RADIUS;
+      const sunZ = Math.sin(sunAngle) * SUN_ORBIT_RADIUS;
+      sunMesh.position.set(sunX, 10, sunZ);
+      sunLight.position.copy(sunMesh.position);
+
+      // Update sun direction uniform for day/night shader
+      const sunDir = sunMesh.position.clone().normalize();
+      earthShaderMat.uniforms.sunDirection.value.copy(sunDir).negate();
+
+      // Subtle atmosphere shimmer
+      atmosphereMat.uniforms.intensity.value = 0.65 + Math.sin(elapsed * 0.5) * 0.05;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ── Resize Handler ─────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

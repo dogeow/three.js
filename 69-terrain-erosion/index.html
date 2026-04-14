@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>69 · 地形侵蚀 Terrain Erosion</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { margin: 0; overflow: hidden; background: #1a2a1a; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px; color: #fff;
+    font: 14px/1.65 -apple-system, sans-serif;
+    background: rgba(0,0,0,.6); padding: 10px 14px; border-radius: 8px;
+    max-width: 420px; pointer-events: none; z-index: 10;
+  }
+  .progress-bar {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    width: 300px; height: 6px; background: rgba(0,0,0,.5); border-radius: 3px;
+    overflow: hidden; display: none;
+  }
+  .progress-fill {
+    height: 100%; background: #4fc3f7; width: 0%;
+    transition: width 0.1s; border-radius: 3px;
+  }
+  .progress-label {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+    color: #fff; font: 12px sans-serif; display: none;
+  }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：地形侵蚀模拟</b><br>
+  · 水力侵蚀：水流粒子沿梯度下坡，携带泥沙，速度越快携带量越大<br>
+  · 泥沙沉积：水流减速时泥沙沉积，地形缓慢抬升<br>
+  · 侵蚀刻蚀：超出携带能力时侵蚀地形，形成河道/峡谷<br>
+  · 热力侵蚀：陡坡物质滑落，模拟岩石崩落效果
+</div>
+<div class="progress-label" id="progLabel">侵蚀模拟进度: 0%</div>
+<div class="progress-bar"><div class="progress-fill" id="progFill"></div></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const GRID = 128;
+const CELL_SIZE = 1.0;
+const WORLD_SIZE = GRID * CELL_SIZE;
+
+// ── Erosion Parameters ──────────────────────────────────────────────────────
+const params = {
+  noiseScale: 0.015,
+  heightScale: 18.0,
+  erosionIterations: 30000,
+  erosionStrength: 0.3,
+  depositionRate: 0.05,
+  sedimentCapacity: 4.0,
+  evaporation: 0.02,
+  friction: 0.05,
+  minSlope: 0.01,
+  thermalStrength: 0.15,
+  thermalIterations: 500,
+  showWireframe: false,
+  autoErode: true,
+  erosionSpeed: 200,   // droplets per frame
+};
+
+// ── Terrain Data ────────────────────────────────────────────────────────────
+let terrain = new Float32Array(GRID * GRID);
+let waterHeight = new Float32Array(GRID * GRID);
+let sedimentHeight = new Float32Array(GRID * GRID);
+let erosionBrush = new Float32Array(GRID * GRID); // for visualization
+
+let dropletIndex = 0;
+let isEroding = false;
+
+// ── Noise ───────────────────────────────────────────────────────────────────
+function hash(x, y) {
+  let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+  return n - Math.floor(n);
+}
+
+function smoothNoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash(ix, iy), b = hash(ix + 1, iy);
+  const c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+
+function fbm(x, y, octaves = 6) {
+  let v = 0, amp = 0.5, freq = 1.0, total = 0;
+  for (let i = 0; i < octaves; i++) {
+    v += smoothNoise(x * freq, y * freq) * amp;
+    total += amp;
+    amp *= 0.5;
+    freq *= 2.0;
+  }
+  return v / total;
+}
+
+function initTerrain() {
+  const half = GRID / 2;
+  for (let z = 0; z < GRID; z++) {
+    for (let x = 0; x < GRID; x++) {
+      const nx = (x - half) * params.noiseScale;
+      const nz = (z - half) * params.noiseScale;
+      // Circular island falloff
+      const dx = (x / GRID - 0.5) * 2;
+      const dz = (z / GRID - 0.5) * 2;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      const falloff = Math.max(0, 1 - dist * dist * 1.2);
+      const h = fbm(nx, nz) * params.heightScale * falloff;
+      terrain[z * GRID + x] = h;
+      waterHeight[z * GRID + x] = 0;
+      sedimentHeight[z * GRID + x] = 0;
+    }
+  }
+  erosionBrush.fill(0);
+}
+
+// ── Gradient ────────────────────────────────────────────────────────────────
+function getHeightAndGrad(px, pz) {
+  const x = Math.max(0, Math.min(GRID - 1.001, px));
+  const z = Math.max(0, Math.min(GRID - 1.001, pz));
+  const ix = Math.floor(x), iz = Math.floor(z);
+  const fx = x - ix, fz = z - iz;
+  const ix1 = Math.min(ix + 1, GRID - 1), iz1 = Math.min(iz + 1, GRID - 1);
+
+  const h00 = terrain[iz * GRID + ix];
+  const h10 = terrain[iz * GRID + ix1];
+  const h01 = terrain[iz1 * GRID + ix];
+  const h11 = terrain[iz1 * GRID + ix1];
+
+  const h = h00 + (h10 - h00) * fx + (h01 - h00) * fz + (h00 - h10 - h01 + h11) * fx * fz;
+
+  const gx = (h10 - h00) * (1 - fz) + (h11 - h01) * fz;
+  const gz = (h01 - h00) * (1 - fx) + (h11 - h10) * fx;
+
+  return { h, gx, gz };
+}
+
+// ── Hydraulic Erosion (Droplet Model) ───────────────────────────────────────
+function erodeDroplet() {
+  // Spawn
+  let px = Math.random() * (GRID - 1);
+  let pz = Math.random() * (GRID - 1);
+  let vx = 0, vz = 0;
+  let water = 1.0;
+  let sediment = 0.0;
+  const volume = 1.0;
+
+  for (let step = 0; step < 64; step++) {
+    const { h, gx, gz } = getHeightAndGrad(px, pz);
+    const gradLen = Math.sqrt(gx * gx + gz * gz);
+
+    // New direction: steepest descent
+    let nvx = 0, nvz = 0;
+    if (gradLen > params.minSlope) {
+      nvx = -gx / gradLen;
+      nvz = -gz / gradLen;
+    }
+
+    // Velocity update
+    vx = vx * (1 - params.friction) + nvx * 0.5;
+    vz = vz * (1 - params.friction) + nvz * 0.5;
+
+    const speed = Math.sqrt(vx * vx + vz * vz);
+    if (speed < 0.001) break;
+
+    // Move
+    const npz = pz + vz;
+    const npx = px + vx;
+    if (npx < 0 || npx >= GRID - 1 || npz < 0 || npz >= GRID - 1) break;
+
+    const { h: nh } = getHeightAndGrad(npx, npz);
+    const heightDiff = nh - h;
+
+    // Sediment capacity
+    const capacity = Math.max(
+      -heightDiff,
+      params.sedimentCapacity * speed * water * params.erosionStrength
+    );
+
+    // Deposit / erode
+    if (sediment > capacity || heightDiff > 0) {
+      // Deposit
+      const deposit = heightDiff > 0
+        ? Math.min(heightDiff, sediment)
+        : (sediment - capacity) * params.depositionRate;
+      sediment -= deposit;
+      depositSediment(px, pz, deposit);
+    } else {
+      // Erode
+      const erodeAmt = Math.min((capacity - sediment) * 0.1, -heightDiff * 0.5);
+      erodeTerrain(px, pz, erodeAmt);
+      sediment += erodeAmt;
+    }
+
+    px = npx;
+    pz = npz;
+    water *= (1 - params.evaporation);
+    if (water < 0.01) break;
+  }
+}
+
+function depositSediment(px, pz, amount) {
+  const ix = Math.floor(px), iz = Math.floor(pz);
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = ix + dx, nz = iz + dz;
+      if (nx < 0 || nx >= GRID || nz < 0 || nz >= GRID) continue;
+      const w = (1 - Math.abs(dx) * 0.5) * (1 - Math.abs(dz) * 0.5);
+      terrain[nz * GRID + nx] += amount * w * 0.5;
+      erosionBrush[nz * GRID + nx] += amount * w * 0.5;
+    }
+  }
+}
+
+function erodeTerrain(px, pz, amount) {
+  const ix = Math.floor(px), iz = Math.floor(pz);
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = ix + dx, nz = iz + dz;
+      if (nx < 0 || nx >= GRID || nz < 0 || nz >= GRID) continue;
+      const w = (1 - Math.abs(dx) * 0.5) * (1 - Math.abs(dz) * 0.5);
+      terrain[nz * GRID + nx] -= amount * w * params.erosionStrength;
+      erosionBrush[nz * GRID + nx] += amount * w * params.erosionStrength;
+    }
+  }
+}
+
+// ── Thermal Erosion ──────────────────────────────────────────────────────────
+function applyThermalErosion(iterations) {
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let z = 1; z < GRID - 1; z++) {
+      for (let x = 1; x < GRID - 1; x++) {
+        const h = terrain[z * GRID + x];
+        let maxDiff = 0, totalMove = 0;
+        const neighbors = [];
+
+        // Check 8 neighbors
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dz === 0) continue;
+            const nh = terrain[(z + dz) * GRID + (x + dx)];
+            const diff = h - nh;
+            if (diff > params.minSlope) {
+              neighbors.push({ dx, dz, diff });
+              maxDiff = Math.max(maxDiff, diff);
+              totalMove += diff;
+            }
+          }
+        }
+
+        if (totalMove > 0 && maxDiff > params.minSlope) {
+          const talusAngle = 0.05;
+          if (maxDiff > talusAngle) {
+            const amount = (maxDiff - talusAngle) * params.thermalStrength * 0.1;
+            for (const n of neighbors) {
+              const share = n.diff / totalMove;
+              terrain[z * GRID + x] -= amount * share;
+              terrain[(z + n.dz) * GRID + (x + n.dx)] += amount * share;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ── Color by Height ─────────────────────────────────────────────────────────
+function getTerrainColor(h, minH, maxH) {
+  const range = maxH - minH;
+  const t = range > 0 ? (h - minH) / range : 0.5;
+
+  // Bright terrain colors for visibility
+  let color = new THREE.Color();
+  if (t < 0.08) {
+    color.setRGB(0.82, 0.75, 0.55); // sandy beach
+  } else if (t < 0.25) {
+    const g = THREE.MathUtils.lerp(0.42, 0.60, (t - 0.08) / 0.17);
+    color.setRGB(0.32, g, 0.18);
+  } else if (t < 0.55) {
+    const g = THREE.MathUtils.lerp(0.52, 0.42, (t - 0.25) / 0.30);
+    color.setRGB(0.45, g, 0.35);
+  } else if (t < 0.80) {
+    color.setRGB(0.52, 0.48, 0.45);
+  } else {
+    color.setRGB(0.95, 0.97, 1.0); // snow
+  }
+  return color;
+}
+
+// ── Three.js Setup ──────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x3a5068);
+scene.fog = new THREE.FogExp2(0x3a5068, 0.002);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(0, 80, 0);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.maxHeight = 150;
+controls.target.set(0, 3, 0);
+
+// Lighting
+const ambient = new THREE.AmbientLight(0xaabbcc, 1.2);
+const hemi = new THREE.HemisphereLight(0x88bbdd, 0x445533, 1.5);
+scene.add(hemi);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xffeedd, 2.0);
+sun.position.set(60, 100, 40);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+sun.shadow.camera.near = 10;
+sun.shadow.camera.far = 400;
+sun.shadow.camera.left = -120;
+sun.shadow.camera.right = 120;
+sun.shadow.camera.top = 120;
+sun.shadow.camera.bottom = -120;
+scene.add(sun);
+
+const fillLight = new THREE.DirectionalLight(0x8899cc, 0.6);
+fillLight.position.set(-40, 30, -60);
+scene.add(fillLight);
+
+// Solid base plane (prevents black under terrain)
+const baseMat = new THREE.MeshStandardMaterial({ color: 0x2a3a4a, roughness: 0.95 });
+const baseMesh = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE), baseMat);
+baseMesh.rotation.x = -Math.PI / 2;
+baseMesh.position.y = -3;
+scene.add(baseMesh);
+
+// ── Geometry ────────────────────────────────────────────────────────────────
+const geometry = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, GRID - 1, GRID - 1);
+geometry.rotateX(-Math.PI / 2);
+
+// Add vertex color attribute (required for vertexColors: true)
+const vertCount = (GRID) * (GRID);
+geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3));
+
+const material = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  roughness: 0.85,
+  metalness: 0.05,
+  flatShading: false,
+});
+
+const terrainMesh = new THREE.Mesh(geometry, material);
+terrainMesh.receiveShadow = true;
+terrainMesh.castShadow = false;
+scene.add(terrainMesh);
+
+// Wireframe overlay
+const wireMat = new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true, transparent: true, opacity: 0 });
+const wireMesh = new THREE.Mesh(geometry, wireMat);
+wireMesh.visible = false;
+scene.add(wireMesh);
+
+// Compute height range
+function computeHeightRange() {
+  let minH = Infinity, maxH = -Infinity;
+  for (let i = 0; i < terrain.length; i++) {
+    if (terrain[i] < minH) minH = terrain[i];
+    if (terrain[i] > maxH) maxH = terrain[i];
+  }
+  return { minH, maxH };
+}
+
+// Update geometry from terrain data
+function updateGeometry() {
+  const pos = geometry.attributes.position;
+  const colors = geometry.attributes.color;
+
+  const { minH, maxH } = computeHeightRange();
+
+  for (let z = 0; z < GRID; z++) {
+    for (let x = 0; x < GRID; x++) {
+      const idx = z * GRID + x;
+      const vertIdx = idx;
+      pos.setZ(vertIdx, terrain[idx]);
+
+      const col = getTerrainColor(terrain[idx], minH, maxH);
+
+      // Slight variation from erosion brush
+      const brush = erosionBrush[idx];
+      if (brush > 0.5) {
+        col.r = Math.min(1, col.r * 1.15 + 0.05);
+        col.g = Math.max(0, col.g - brush * 0.002);
+        col.b = Math.max(0, col.b - brush * 0.003);
+      }
+
+      colors.setXYZ(vertIdx, col.r, col.g, col.b);
+    }
+  }
+
+  pos.needsUpdate = true;
+  colors.needsUpdate = true;
+  geometry.computeVertexNormals();
+}
+
+// Initial terrain
+initTerrain();
+updateGeometry();
+
+// ── Erosion Loop ────────────────────────────────────────────────────────────
+let erosionTarget = 0;
+let erosionDone = 0;
+let thermalTarget = 0;
+let thermalDone = 0;
+
+const progFill = document.getElementById('progFill');
+const progLabel = document.getElementById('progLabel');
+const progBar = document.querySelector('.progress-bar');
+
+function showProgress(show) {
+  progBar.style.display = show ? 'block' : 'none';
+  progLabel.style.display = show ? 'block' : 'none';
+}
+
+function updateProgressLabel() {
+  const total = erosionTarget + thermalTarget;
+  const done = erosionDone + thermalDone;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 100;
+  progFill.style.width = pct + '%';
+  progLabel.textContent = `侵蚀模拟进度: ${pct}%`;
+}
+
+function startErosion() {
+  if (isEroding) return;
+  isEroding = true;
+  erosionTarget = params.erosionIterations;
+  erosionDone = 0;
+  thermalTarget = params.thermalIterations;
+  thermalDone = 0;
+  dropletIndex = 0;
+  showProgress(true);
+  updateProgressLabel();
+}
+
+function stopErosion() {
+  isEroding = false;
+  showProgress(false);
+}
+
+function erodeBatch(count) {
+  if (!isEroding) return;
+  let remaining = count;
+  while (remaining > 0 && erosionDone < erosionTarget) {
+    erodeDroplet();
+    erosionDone++;
+    remaining--;
+  }
+  updateProgressLabel();
+  if (erosionDone >= erosionTarget && thermalDone < thermalTarget) {
+    // Thermal erosion in single batch (it's fast)
+    const thermalRemaining = Math.min(thermalTarget - thermalDone, 50);
+    applyThermalErosion(thermalRemaining);
+    thermalDone += thermalRemaining;
+    updateProgressLabel();
+  }
+  if (erosionDone >= erosionTarget && thermalDone >= thermalTarget) {
+    isEroding = false;
+    showProgress(false);
+  }
+}
+
+// ── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '地形侵蚀 Terrain Erosion' });
+gui.domElement.style.position = 'fixed';
+gui.domElement.style.top = '12px';
+gui.domElement.style.right = '12px';
+
+const terrainFolder = gui.addFolder('地形 Terrain');
+terrainFolder.add(params, 'noiseScale', 0.005, 0.05, 0.001).name('噪声缩放').onChange(v => {
+  if (!isEroding) { initTerrain(); updateGeometry(); }
+});
+terrainFolder.add(params, 'heightScale', 5, 30, 0.5).name('高度比例').onChange(v => {
+  if (!isEroding) { initTerrain(); updateGeometry(); }
+});
+terrainFolder.add(params, 'showWireframe').name('显示线框').onChange(v => {
+  wireMesh.visible = v;
+  wireMat.opacity = v ? 0.15 : 0;
+});
+
+const erosionFolder = gui.addFolder('水力侵蚀 Hydraulic');
+erosionFolder.add(params, 'erosionIterations', 1000, 80000, 1000).name('迭代次数');
+erosionFolder.add(params, 'erosionStrength', 0.05, 1.0, 0.01).name('侵蚀强度');
+erosionFolder.add(params, 'sedimentCapacity', 1.0, 10.0, 0.5).name('泥沙容量');
+erosionFolder.add(params, 'depositionRate', 0.01, 0.3, 0.01).name('沉积速率');
+erosionFolder.add(params, 'evaporation', 0.005, 0.1, 0.005).name('水分蒸发');
+erosionFolder.add(params, 'friction', 0.01, 0.2, 0.01).name('摩擦力');
+
+const thermalFolder = gui.addFolder('热力侵蚀 Thermal');
+thermalFolder.add(params, 'thermalIterations', 0, 2000, 50).name('迭代次数');
+thermalFolder.add(params, 'thermalStrength', 0.01, 0.5, 0.01).name('侵蚀强度');
+
+const simFolder = gui.addFolder('模拟 Simulation');
+simFolder.add(params, 'erosionSpeed', 50, 1000, 50).name('模拟速度');
+simFolder.add(params, 'autoErode').name('自动模拟');
+simFolder.add({ run: () => startErosion() }, 'run').name('开始侵蚀 Start');
+simFolder.add({ reset: () => { stopErosion(); initTerrain(); updateGeometry(); } }, 'reset').name('重置 Reset');
+
+// ── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Animate ─────────────────────────────────────────────────────────────────
+let lastErodeTime = 0;
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  controls.update();
+
+  if (params.autoErode && !isEroding && dropletIndex === 0) {
+    startErosion();
+  }
+
+  if (isEroding && time - lastErodeTime > 16) {
+    erodeBatch(params.erosionSpeed);
+    updateGeometry();
+    lastErodeTime = time;
+  }
+
+  renderer.render(scene, camera);
+}
+
+animate(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>70 · 抖动透明 Dithered Transparency</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { margin: 0; overflow: hidden; background: #0d0d1a; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #e0e0e0; font: 14px/1.65 -apple-system, sans-serif;
+    background: rgba(0,0,0,.6); padding: 10px 14px; border-radius: 8px;
+    max-width: 420px; pointer-events: none; border: 1px solid rgba(255,255,255,.08);
+    text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  }
+  .tip b { color: #7ec8e3; }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：Bayer 矩阵抖动透明</b><br>
+  · 核心思想：不靠 alpha 混合，而是用噪声阈值决定像素可见/不可见<br>
+  · Bayer 4x4 矩阵：值 0~1 的有序阈值图案，屏幕坐标取模查表<br>
+  · 当 opacity &lt; threshold 时 discard，最终人眼感知为半透明<br>
+  · 最大优点：不需要排序，不受渲染顺序影响，杜绝透明穿插错误
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Renderer ───────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x0d0d1a, 1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ─── Scene & Camera ──────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(12, 10, 16);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 1, 0);
+
+// ─── Lighting ────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+dirLight.position.set(8, 12, 6);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 60;
+dirLight.shadow.camera.left = -20;
+dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 20;
+dirLight.shadow.camera.bottom = -20;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x4488cc, 0.5);
+fillLight.position.set(-5, 3, -5);
+scene.add(fillLight);
+
+// ─── Checkered Floor ─────────────────────────────────────────────────────────
+const floorGeo = new THREE.PlaneGeometry(40, 40);
+const floorMat = new THREE.ShaderMaterial({
+  uniforms: {},
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec2 vUv;
+    void main() {
+      vec2 grid = floor(vUv * 20.0);
+      float checker = mod(grid.x + grid.y, 2.0);
+      vec3 col1 = vec3(0.06, 0.06, 0.1);
+      vec3 col2 = vec3(0.1, 0.1, 0.16);
+      vec3 col = mix(col1, col2, checker);
+      // subtle grid lines
+      vec2 f = fract(vUv * 20.0);
+      float line = step(0.96, max(f.x, f.y));
+      col += line * 0.02;
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+  side: THREE.DoubleSide
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ─── Dithered Shader ─────────────────────────────────────────────────────────
+const ditherVertexShader = `
+  varying vec3 vNormal;
+  varying vec3 vWorldPosition;
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPos.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const ditherFragmentShader = `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  uniform float uDitherScale;
+  uniform bool uUseDither;
+  uniform bool uUseAlphaBlend;
+  uniform float uTime;
+
+  varying vec3 vNormal;
+  varying vec3 vWorldPosition;
+  varying vec2 vUv;
+
+  // 4x4 Bayer ordered dithering matrix
+  const float bayerMatrix[16] = float[16](
+     0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
+    12.0/16.0,  4.0/16.0, 14.0/16.0,  6.0/16.0,
+     3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
+    15.0/16.0,  7.0/16.0, 13.0/16.0,  5.0/16.0
+  );
+
+  float getBayer(vec2 coord) {
+    int x = int(mod(coord.x, 4.0));
+    int y = int(mod(coord.y, 4.0));
+    return bayerMatrix[y * 4 + x];
+  }
+
+  void main() {
+    // Simple lighting
+    vec3 lightDir = normalize(vec3(8.0, 12.0, 6.0));
+    float diff = max(dot(vNormal, lightDir), 0.0) * 0.7 + 0.3;
+
+    vec3 color = uColor * diff;
+
+    // Rim lighting
+    vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+    float rim = 1.0 - max(dot(viewDir, vNormal), 0.0);
+    rim = pow(rim, 3.0) * 0.4;
+    color += rim * uColor;
+
+    if (uUseAlphaBlend) {
+      gl_FragColor = vec4(color, uOpacity);
+    } else if (uUseDither) {
+      float threshold = getBayer(gl_FragCoord.xy / uDitherScale);
+      if (uOpacity < threshold) discard;
+      gl_FragColor = vec4(color, 1.0);
+    } else {
+      gl_FragColor = vec4(color, 1.0);
+    }
+  }
+`;
+
+// Standard transparent shader for comparison
+const alphaFragmentShader = `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  uniform float uTime;
+
+  varying vec3 vNormal;
+  varying vec3 vWorldPosition;
+  varying vec2 vUv;
+
+  void main() {
+    vec3 lightDir = normalize(vec3(8.0, 12.0, 6.0));
+    float diff = max(dot(vNormal, lightDir), 0.0) * 0.7 + 0.3;
+    vec3 color = uColor * diff;
+
+    vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+    float rim = 1.0 - max(dot(viewDir, vNormal), 0.0);
+    rim = pow(rim, 3.0) * 0.4;
+    color += rim * uColor;
+
+    gl_FragColor = vec4(color, uOpacity);
+  }
+`;
+
+// ─── Parameters ───────────────────────────────────────────────────────────────
+const params = {
+  ditherScale: 3.0,
+  opacity: 0.4,
+  useDither: true,
+  useAlphaBlend: false,
+  objectColor: '#4fc3f7',
+  rotationSpeed: 0.3
+};
+
+// ─── Materials ───────────────────────────────────────────────────────────────
+function createDitheredMaterial(color) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(color) },
+      uOpacity: { value: params.opacity },
+      uDitherScale: { value: params.ditherScale },
+      uUseDither: { value: params.useDither },
+      uUseAlphaBlend: { value: params.useAlphaBlend },
+      uTime: { value: 0 }
+    },
+    vertexShader: ditherVertexShader,
+    fragmentShader: ditherFragmentShader,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+}
+
+function createAlphaMaterial(color) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(color) },
+      uOpacity: { value: params.opacity },
+      uTime: { value: 0 }
+    },
+    vertexShader: ditherVertexShader,
+    fragmentShader: alphaFragmentShader,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+}
+
+// ─── Objects ─────────────────────────────────────────────────────────────────
+// We'll track all dithered objects for uniform updates
+const ditheredObjects = [];
+const alphaObjects = [];
+const allObjects = [];
+
+// Center large cube
+const cubeGeo = new THREE.BoxGeometry(3, 3, 3);
+const cubeMat = createDitheredMaterial(params.objectColor);
+const cube = new THREE.Mesh(cubeGeo, cubeMat);
+cube.position.set(0, 1.5, 0);
+cube.castShadow = true;
+scene.add(cube);
+ditheredObjects.push(cube);
+allObjects.push(cube);
+
+// Spheres
+const sphereGeo = new THREE.SphereGeometry(1.2, 32, 32);
+const spherePositions = [
+  { pos: [3.5, 0.8, 1.5], color: '#ff7043' },
+  { pos: [-3.2, 1.2, -1.5], color: '#66bb6a' },
+  { pos: [1.5, 0.5, 3.8], color: '#ffa726' },
+  { pos: [-2, 2.5, 2.5], color: '#ab47bc' },
+  { pos: [2.5, 2, -2.5], color: '#ef5350' },
+];
+
+spherePositions.forEach(({ pos, color }) => {
+  const mat = createDitheredMaterial(color);
+  const mesh = new THREE.Mesh(sphereGeo, mat);
+  mesh.position.set(...pos);
+  mesh.castShadow = true;
+  scene.add(mesh);
+  ditheredObjects.push(mesh);
+  allObjects.push(mesh);
+});
+
+// Torus
+const torusGeo = new THREE.TorusGeometry(1.5, 0.5, 16, 48);
+const torusMat = createDitheredMaterial('#26c6da');
+const torus = new THREE.Mesh(torusGeo, torusMat);
+torus.position.set(-1, 0.8, -3.5);
+torus.rotation.x = Math.PI / 4;
+torus.castShadow = true;
+scene.add(torus);
+ditheredObjects.push(torus);
+allObjects.push(torus);
+
+// Octahedron
+const octaGeo = new THREE.OctahedronGeometry(1.3);
+const octaMat = createDitheredMaterial('#ec407a');
+const octa = new THREE.Mesh(octaGeo, octaMat);
+octa.position.set(0.5, 3.5, -1);
+octa.castShadow = true;
+scene.add(octa);
+ditheredObjects.push(octa);
+allObjects.push(octa);
+
+// ─── Alpha-blended comparison objects (right side, labeled) ─────────────────
+// These use standard alpha blending - require correct render order
+const alphaGroup = new THREE.Group();
+alphaGroup.position.set(6, 0, 0);
+scene.add(alphaGroup);
+
+// Add a label-like plane
+const labelGeo = new THREE.PlaneGeometry(3, 0.5);
+const labelMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+const label = new THREE.Mesh(labelGeo, labelMat);
+label.position.set(0, 4.5, 0);
+label.rotation.x = -Math.PI / 2;
+alphaGroup.add(label);
+
+// Sphere for alpha comparison
+const aSphereGeo = new THREE.SphereGeometry(1.2, 32, 32);
+const aSphereMat = createAlphaMaterial('#ff7043');
+const aSphere = new THREE.Mesh(aSphereGeo, aSphereMat);
+aSphere.position.set(0, 0.8, 1.5);
+aSphere.castShadow = true;
+alphaGroup.add(aSphere);
+alphaObjects.push(aSphere);
+
+// Torus for alpha comparison
+const aTorusMat = createAlphaMaterial('#26c6da');
+const aTorus = new THREE.Mesh(torusGeo.clone(), aTorusMat);
+aTorus.position.set(0, 0.8, -3.5);
+aTorus.rotation.x = Math.PI / 4;
+aTorus.castShadow = true;
+alphaGroup.add(aTorus);
+alphaObjects.push(aTorus);
+
+// Octahedron for alpha comparison
+const aOctaMat = createAlphaMaterial('#ec407a');
+const aOcta = new THREE.Mesh(octaGeo.clone(), aOctaMat);
+aOcta.position.set(0.5, 3.5, -1);
+aOcta.castShadow = true;
+alphaGroup.add(aOcta);
+alphaObjects.push(aOcta);
+
+// ─── Label for dithered side ─────────────────────────────────────────────────
+const ditherLabelMat = new THREE.MeshBasicMaterial({ color: 0x7ec8e3 });
+const ditherLabel = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 0.5), ditherLabelMat);
+ditherLabel.position.set(-3.5, 5, 0);
+ditherLabel.rotation.x = -Math.PI / 2;
+scene.add(ditherLabel);
+
+// Dither label text
+const canvas2d = document.createElement('canvas');
+canvas2d.width = 512;
+canvas2d.height = 64;
+const ctx2d = canvas2d.getContext('2d');
+ctx2d.fillStyle = 'rgba(126, 200, 227, 0)';
+ctx2d.fillRect(0, 0, 512, 64);
+ctx2d.font = 'bold 36px -apple-system, sans-serif';
+ctx2d.fillStyle = '#7ec8e3';
+ctx2d.textAlign = 'center';
+ctx2d.fillText('DITHERED (No Sorting)', 256, 44);
+const ditherTex = new THREE.CanvasTexture(canvas2d);
+const ditherLabelMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(4, 0.5),
+  new THREE.MeshBasicMaterial({ map: ditherTex, transparent: true, depthWrite: false })
+);
+ditherLabelMesh.position.set(-3.5, 5.01, 0);
+ditherLabelMesh.rotation.x = -Math.PI / 2;
+scene.add(ditherLabelMesh);
+
+// Alpha label
+const alphaTex = new THREE.CanvasTexture(canvas2d);
+const aCtx = canvas2d.getContext('2d');
+aCtx.clearRect(0, 0, 512, 64);
+aCtx.fillStyle = 'rgba(136, 136, 136, 0)';
+aCtx.fillRect(0, 0, 512, 64);
+aCtx.font = 'bold 36px -apple-system, sans-serif';
+aCtx.fillStyle = '#888888';
+aCtx.textAlign = 'center';
+aCtx.fillText('ALPHA BLEND (Sorted)', 256, 44);
+alphaTex.needsUpdate = true;
+const alphaLabelMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(4, 0.5),
+  new THREE.MeshBasicMaterial({ map: alphaTex, transparent: true, depthWrite: false })
+);
+alphaLabelMesh.position.set(6, 5.01, 0);
+alphaLabelMesh.rotation.x = -Math.PI / 2;
+scene.add(alphaLabelMesh);
+
+// Arrow line between sections
+const arrowPoints = [
+  new THREE.Vector3(-1.5, 4.5, 0),
+  new THREE.Vector3(1.5, 4.5, 0),
+];
+const arrowGeo = new THREE.BufferGeometry().setFromPoints(arrowPoints);
+const arrowLine = new THREE.Line(
+  arrowGeo,
+  new THREE.LineBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.5 })
+);
+scene.add(arrowLine);
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '抖动透明 Dithered Transparency' });
+
+gui.add(params, 'opacity', 0.05, 1.0, 0.01).name('透明度 Opacity').onChange(v => {
+  ditheredObjects.forEach(obj => {
+    obj.material.uniforms.uOpacity.value = v;
+  });
+  alphaObjects.forEach(obj => {
+    obj.material.uniforms.uOpacity.value = v;
+  });
+});
+
+gui.add(params, 'ditherScale', 1.0, 10.0, 0.5).name('抖动刻度 Dither Scale').onChange(v => {
+  ditheredObjects.forEach(obj => {
+    obj.material.uniforms.uDitherScale.value = v;
+  });
+});
+
+gui.add(params, 'useDither').name('启用抖动 Use Dither').onChange(v => {
+  ditheredObjects.forEach(obj => {
+    obj.material.uniforms.uUseDither.value = v;
+  });
+});
+
+gui.add(params, 'useAlphaBlend').name('Alpha 混合 Alpha Blend').onChange(v => {
+  ditheredObjects.forEach(obj => {
+    obj.material.uniforms.uUseAlphaBlend.value = v;
+  });
+});
+
+gui.addColor(params, 'objectColor').name('物体颜色 Object Color').onChange(v => {
+  cube.material.uniforms.uColor.value.set(v);
+});
+
+gui.add(params, 'rotationSpeed', 0, 1.5, 0.05).name('旋转速度 Rotation Speed');
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Animation Loop ──────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const elapsed = clock.getElapsedTime();
+  const rot = elapsed * params.rotationSpeed;
+
+  // Rotate all dithered objects
+  ditheredObjects.forEach((obj, i) => {
+    obj.rotation.y = rot * (i % 2 === 0 ? 1 : -0.7) + i * 0.5;
+    obj.rotation.x = Math.sin(elapsed * 0.5 + i) * 0.2;
+    obj.material.uniforms.uTime.value = elapsed;
+  });
+
+  // Rotate alpha objects too
+  alphaObjects.forEach((obj, i) => {
+    obj.rotation.y = rot * (i % 2 === 0 ? 1 : -0.7) + i * 0.5;
+    obj.rotation.x = Math.sin(elapsed * 0.5 + i) * 0.2;
+    obj.material.uniforms.uTime.value = elapsed;
+  });
+
+  // Rotate torus specially
+  torus.rotation.z = elapsed * 0.5;
+  aTorus.rotation.z = elapsed * 0.5;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
