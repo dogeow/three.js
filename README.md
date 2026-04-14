@@ -326,9 +326,6 @@ animate()
 | [167](./167-holographic-comm/index.html) | **全息通信器 ★** | 全息投影锥，扫描环，脉冲粒子，输入文字实时全息渲染 |
 | [168](./168-qubit-viz/index.html) | **量子比特可视化 ★** | 三维布洛赫球，θ/φ 角拖拽，预设 Pauli 态 |
 | [169](./169-time-dilation/index.html) | **时间膨胀效应 ★** | 狭义相对论 Lorentz 因子，地面/飞船双时钟，多普勒频移着色 |
-| [172](./172-voxel-fracture/index.html) | **Voxel Fracture ★** | 点击爆炸、Verlet物理、InstancedMesh碎片模拟 |
-| [173](./173-audio-fft-visualizer/index.html) | **Audio FFT Visualizer ★** | Web Audio API频谱分析、3D柱图频谱驱动 |
-| [174](./174-sdf-raymarcher/index.html) | **SDF Ray Marching ★** | GLSL光线步进、SDF基础体素、软阴影、环境光遮蔽 |
 
 ---
 
@@ -524,7 +521,19 @@ animate()
 
 ## 二十七、新示例（170~）
 
+| [170](./170-particle-attractor/index.html) | **Particle Attractor** | 距离场引力粒子群、鼠标吸引/排斥、速度颜色编码 |
 | [171](./171-morph-blob/index.html) | **Morph Blob ★** | FBM顶点变形、虹彩菲涅尔着色、鼠标悬停发光 |
+| [172](./172-voxel-fracture/index.html) | **Voxel Fracture ★** | 点击爆炸、Verlet物理、InstancedMesh碎片模拟 |
+| [173](./173-audio-fft-visualizer/index.html) | **Audio FFT Visualizer ★** | Web Audio API频谱分析、3D柱图频谱驱动 |
+| [174](./174-sdf-raymarcher/index.html) | **SDF Ray Marching ★** | GLSL光线步进、SDF基础体素、软阴影、环境光遮蔽 |
 | [175](./175-fluid-dye/index.html) | **Fluid Dye Sim ★** | Navier-Stokes流体、染料平流、ping-pong FBO、鼠标注入 |
 | [176](./176-terrain-erosion/index.html) | **Terrain Erosion ★** | 程序化地形、水力侵蚀、热力侵蚀、实时顶点位移 |
 | [177](./177-portal-portal/index.html) | **Portal Door ★** | StencilBuffer传送门、RenderTarget视口替换、穿越位移 |
+| [178](./178-neural-style-transfer/index.html) | **神经风格迁移 ★** | GLSL 神经风格迁移着色器，卷积网络驱动的艺术风格滤镜 |
+| [179](./179-volumetric-fog/index.html) | **体积雾 ★** | Raymarching 体积雾着色器，密度采样衰减，真实雾效 |
+| [180](./180-motion-blur/index.html) | **Motion Blur ★** | 累积缓冲时域采样，速度向量驱动方向模糊 |
+| [181](./181-water-caustics/index.html) | **水面焦散 ★** | GLSL 焦散着色器，波纹折射光纹，水下光影效果 |
+| [182](./182-subsurface-scatter/index.html) | **次表面散射 ★** | MeshPhysicalMaterial 次表面散射，半透明材质光透射效果 |
+| [183](./183-procedural-city/index.html) | **程序化城市 ★** | 程序化城市建模，建筑生成，道路网络，日夜切换 |
+| [184](./184-crowd-simulation/index.html) | **群体模拟 ★** | Boids 群体行为模拟，分离/聚集/对齐，拥挤人群渲染 |
+| [185](./185-quantum-viz/index.html) | **量子计算可视化 ★** | 量子比特门操作可视化，叠加态与纠缠态演示 |

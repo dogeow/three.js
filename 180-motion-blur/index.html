@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<!--
+====================================================================
+Title:        Three.js Motion Blur — Accumulation Buffer Technique
+Description:  Real-time motion blur using GPU accumulation buffer.
+              Multiple temporal samples are blended to simulate
+              per-frame exposure capturing fast-moving geometry.
+Technical:    - WebGL2 render targets (HalfFloat RGBA)
+              - Ping-pong framebuffer pair for temporal history
+              - Blend current + history buffer each frame
+              - lil-gui for blur intensity (0–1) and sample count (2–32)
+How to Run:   Serve this file with any static HTTP server, e.g.:
+                python3 -m http.server 8080
+              Then open http://localhost:8080/180-motion-blur/index.html
+              No build step required — fully self-contained.
+====================================================================
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Three.js Motion Blur — Accumulation Buffer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; width: 100% !important; height: 100% !important; }
+  </style>
+</head>
+<body>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass }      from 'three/addons/postprocessing/ShaderPass.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Renderer & Scene Setup
+// ─────────────────────────────────────────────────────────────────────────────
+const canvas = document.createElement('canvas');
+document.body.appendChild(canvas);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 500);
+camera.position.set(0, 5, 18);
+camera.lookAt(0, 0, 0);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lights
+// ─────────────────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x111122, 1.5));
+
+const sun = new THREE.DirectionalLight(0xffffff, 3);
+sun.position.set(10, 20, 10);
+scene.add(sun);
+
+const rim = new THREE.PointLight(0x00eeff, 4, 40);
+rim.position.set(-8, 4, -6);
+scene.add(rim);
+
+const warm = new THREE.PointLight(0xff4400, 3, 30);
+warm.position.set(8, -3, -4);
+scene.add(warm);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ground Grid
+// ─────────────────────────────────────────────────────────────────────────────
+const grid = new THREE.GridHelper(60, 40, 0x1133aa, 0x081535);
+grid.position.y = -5;
+scene.add(grid);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Turbine Blade Geometry
+// ─────────────────────────────────────────────────────────────────────────────
+function makeBladeProfile() {
+  // Tapered swept blade profile extruded along a curve
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0.12);
+  shape.lineTo(2.8, 0.04);
+  shape.lineTo(3.0, 0.0);
+  shape.lineTo(2.8, -0.04);
+  shape.lineTo(0, -0.12);
+  shape.closePath();
+  return shape;
+}
+
+function buildBlade() {
+  const shape = makeBladeProfile();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.18,
+    bevelEnabled: true,
+    bevelThickness: 0.04,
+    bevelSize: 0.04,
+    bevelSegments: 2
+  });
+  geo.translate(0.4, 0, -0.09); // pivot near root
+  return geo;
+}
+
+const bladeGeo = buildBlade();
+const bladeMat = new THREE.MeshStandardMaterial({
+  color: 0xccccdd,
+  metalness: 0.85,
+  roughness: 0.15,
+  envMapIntensity: 1.0
+});
+
+const hubMat = new THREE.MeshStandardMaterial({
+  color: 0x222244,
+  metalness: 0.95,
+  roughness: 0.1
+});
+
+const hubGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.7, 32);
+const hubMesh = new THREE.Mesh(hubGeo, hubMat);
+hubMesh.rotation.x = Math.PI / 2;
+scene.add(hubMesh);
+
+// 12 blades at 30° intervals, slightly angled for realism
+const NUM_BLADES = 12;
+const bladeGroup = new THREE.Group();
+for (let i = 0; i < NUM_BLADES; i++) {
+  const mesh = new THREE.Mesh(bladeGeo, bladeMat);
+  const angle = (i / NUM_BLADES) * Math.PI * 2;
+  mesh.rotation.z = angle;
+  // Slight pitch tilt
+  mesh.rotation.x = 0.22;
+  bladeGroup.add(mesh);
+}
+scene.add(bladeGroup);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Projectile — high-speed sphere flying through scene
+// ─────────────────────────────────────────────────────────────────────────────
+const projGeo = new THREE.SphereGeometry(0.4, 16, 16);
+const projMat = new THREE.MeshStandardMaterial({
+  color: 0xff2200,
+  emissive: 0xff1100,
+  emissiveIntensity: 2,
+  metalness: 0.3,
+  roughness: 0.4
+});
+const projectile = new THREE.Mesh(projGeo, projMat);
+scene.add(projectile);
+
+// Glow aura around projectile
+const glowGeo = new THREE.SphereGeometry(0.65, 16, 16);
+const glowMat = new THREE.MeshBasicMaterial({
+  color: 0xff6600,
+  transparent: true,
+  opacity: 0.18,
+  side: THREE.BackSide
+});
+const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+projectile.add(glowMesh);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Floating Debris / Particles for added motion context
+// ─────────────────────────────────────────────────────────────────────────────
+const particleCount = 400;
+const particleGeo = new THREE.BufferGeometry();
+const positions = new Float32Array(particleCount * 3);
+for (let i = 0; i < particleCount; i++) {
+  positions[i * 3]     = (Math.random() - 0.5) * 50;
+  positions[i * 3 + 1]  = (Math.random() - 0.5) * 30;
+  positions[i * 3 + 2]  = (Math.random() - 0.5) * 50;
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+const particleMat = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.08, sizeAttenuation: true });
+scene.add(new THREE.Points(particleGeo, particleMat));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Post-Processing — Accumulation Buffer Motion Blur
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Ping-pong render targets
+function makeRT() {
+  return new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.HalfFloatType
+  });
+}
+
+let rtCurrent  = makeRT();
+let rtHistory  = makeRT();
+let firstFrame = true;
+
+// Full-screen quad for accumulation compositing
+const accumScene  = new THREE.Scene();
+const accumCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const quadGeo = new THREE.PlaneGeometry(2, 2);
+const quadMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tCurrent:    { value: null },
+    tHistory:    { value: null },
+    uBlend:      { value: 0.5 },   // 0 = full current, 1 = full history
+    uMix:        { value: 0.0 }    // blend result with original
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position.xy, 0.0, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    uniform sampler2D tCurrent;
+    uniform sampler2D tHistory;
+    uniform float uBlend;
+    varying vec2 vUv;
+
+    void main() {
+      vec4 current = texture2D(tCurrent, vUv);
+      vec4 history = texture2D(tHistory, vUv);
+      // Blend current frame with accumulated history
+      gl_FragColor = mix(current, history, uBlend);
+    }
+  `,
+  depthWrite: false,
+  depthTest: false
+});
+accumScene.add(new THREE.Mesh(quadGeo, quadMat));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GUI Controls
+// ─────────────────────────────────────────────────────────────────────────────
+const params = {
+  blurIntensity:  0.70,   // 0 = no blur, 1 = max blur
+  numSamples:     16,    // number of temporal accumulation samples
+  turbineRPM:     3600,  // visual only, affects rotation speed
+  projectileSpeed: 22,
+  autoRotate:     true
+};
+
+const gui = new GUI({ title: '🎛 Motion Blur Controls' });
+gui.add(params, 'blurIntensity', 0.0, 0.95, 0.01).name('Blur Intensity');
+gui.add(params, 'numSamples',    2,   32,   1).name('Accum Samples');
+gui.add(params, 'turbineRPM',  100, 7200,  50).name('Turbine RPM');
+gui.add(params, 'projectileSpeed', 5, 60, 1).name('Projectile Speed');
+gui.add(params, 'autoRotate').name('Auto Camera');
+
+const folder = gui.addFolder('Display');
+folder.add({ wireframe: false }, 'wireframe').name('Wireframe').onChange(v => {
+  bladeMat.wireframe = v;
+  hubMat.wireframe   = v;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Resize Handler
+// ─────────────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const w = innerWidth, h = innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+
+  rtCurrent.dispose();
+  rtHistory.dispose();
+  rtCurrent = makeRT();
+  rtHistory = makeRT();
+  firstFrame = true;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Projectile orbit state
+// ─────────────────────────────────────────────────────────────────────────────
+let projAngle = 0;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Animation Loop
+// ─────────────────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.elapsedTime;
+
+  // ── Rotate turbine ──
+  const rpm     = params.turbineRPM;
+  const radPerSec = (rpm / 60) * Math.PI * 2;
+  bladeGroup.rotation.z += radPerSec * dt;
+  hubMesh.rotation.z    += radPerSec * dt;
+
+  // ── Orbit projectile ──
+  projAngle += params.projectileSpeed * dt;
+  projectile.position.set(
+    Math.cos(projAngle) * 10,
+    Math.sin(projAngle * 0.4) * 2.5,
+    Math.sin(projAngle) * 10
+  );
+
+  // ── Auto camera drift ──
+  if (params.autoRotate) {
+    camera.position.x = Math.sin(t * 0.12) * 4;
+    camera.position.z = 18 + Math.sin(t * 0.07) * 3;
+    camera.lookAt(0, 0, 0);
+  }
+
+  // ── Rim light pulse ──
+  rim.intensity = 4 + Math.sin(t * 3) * 1;
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // 1. Render scene → current RT
+  // ────────────────────────────────────────────────────────────────────────────
+  renderer.setRenderTarget(rtCurrent);
+  renderer.render(scene, camera);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // 2. Accumulation blend: mix current + history → quad, output → history RT
+  // ────────────────────────────────────────────────────────────────────────────
+  quadMat.uniforms.tCurrent.value = rtCurrent.texture;
+  quadMat.uniforms.tHistory.value = rtHistory.texture;
+
+  // Blend factor: higher blurIntensity → more weight on history
+  // numSamples governs how quickly history decays
+  const blend = firstFrame ? 0.0 : params.blurIntensity * (1.0 - 1.0 / params.numSamples);
+  quadMat.uniforms.uBlend.value = Math.min(blend, 0.95);
+
+  renderer.setRenderTarget(rtHistory);
+  renderer.render(accumScene, accumCamera);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // 3. Display history buffer on screen
+  // ────────────────────────────────────────────────────────────────────────────
+  quadMat.uniforms.tCurrent.value = rtHistory.texture;
+  quadMat.uniforms.tHistory.value = rtHistory.texture;
+  quadMat.uniforms.uBlend.value    = 0.0;
+  renderer.setRenderTarget(null);
+  renderer.render(accumScene, accumCamera);
+
+  firstFrame = false;
+}
+
+animate();
+</script>
+</body>
+</html>
