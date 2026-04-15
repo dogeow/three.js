@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **heat-equation-diffusion-3d** — [3347](./3347-heat-equation-diffusion-3d/index.html)
+- **voronoi-foam-plateau** — [3348](./3348-voronoi-foam-plateau/index.html)
+- **stock-market-candlestick-3d** — [3349](./3349-stock-market-candlestick-3d/index.html)
+- **medical-volume-cast** — [3350](./3350-medical-volume-cast/index.html)
+- **molecular-dynamics-3d** — [3351](./3351-molecular-dynamics-3d/index.html)
+- **acoustic-room-impulse** — [3352](./3352-acoustic-room-impulse/index.html)
+- **simulated-annealing-opt** — [3353](./3353-simulated-annealing-opt/index.html)
+
 - **electromagnetic-wave-antenna-radiation** — [3341](./3341-electromagnetic-wave-antenna-radiation/index.html)
 - **gpu-computational-fluid-dynamics** — [3342](./3342-gpu-computational-fluid-dynamics/index.html)
 - **sintering-grain-growth-material** — [3343](./3343-sintering-grain-growth-material/index.html)
