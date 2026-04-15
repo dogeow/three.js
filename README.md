@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **conways-game-of-life-3d** — [3198](./3198-conways-game-of-life-3d/index.html)
+- **ray-optics-simulation** — [3199](./3199-ray-optics-simulation/index.html)
+- **supply-demand-3d-chart** — [3200](./3200-supply-demand-3d-chart/index.html)
+- **heat-equation-diffusion** — [3201](./3201-heat-equation-diffusion/index.html)
+- **turing-pattern-generator** — [3202](./3202-turing-pattern-generator/index.html)
+- **parametric-surface-visualizer** — [3203](./3203-parametric-surface-visualizer/index.html)
+
 - **physarum-slime-mold-network** — [3190](./3190-physarum-slime-mold-network/index.html)
 - **viscoelastic-fluid-sim** — [3191](./3191-viscoelastic-fluid-sim/index.html)
 - **ant-colony-optimization-3d** — [3192](./3192-ant-colony-optimization-3d/index.html)
