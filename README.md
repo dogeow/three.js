@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **{typ}** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **boids-flocking-sim** — [3063](./3063-boids-flocking-sim/index.html)
+- **reaction-diffusion-turing-gpu** — [3064](./3064-reaction-diffusion-turing-gpu/index.html)
+- **procedural-cave-dungeon-gem** — [3065](./3065-procedural-cave-dungeon-gem/index.html)
+- **origa-folding-physics** — [3066](./3066-origa-folding-physics/index.html)
+- **mpm-material-point-method** — [3067](./3067-mpm-material-point-method/index.html)
+- **clebsch-cubic-surface** — [3069](./3069-clebsch-cubic-surface/index.html)
+- **l-system-botanical-growth** — [3070](./3070-l-system-botanical-growth/index.html)
+
 - **sph-fluid-water** — [3057](./3057-sph-fluid-water/index.html)
 - **fourier-transform-visualizer** — [3058](./3058-fourier-transform-visualizer/index.html)
 - **voxel-chunk-engine** — [3059](./3059-voxel-chunk-engine/index.html)
