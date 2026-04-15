@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **solar-system-kepler-orbits** — [3490](./3490-solar-system-kepler-orbits/index.html)
+- **eulerian-fluid-naviers-stokes** — [3491](./3491-eulerian-fluid-naviers-stokes/index.html)
+- **wave-function-collapse-dungeon** — [3492](./3492-wave-function-collapse-dungeon/index.html)
+- **volumetric-cloud-raymarching** — [3493](./3493-volumetric-cloud-raymarching/index.html)
+- **lotka-volterra-predator-prey** — [3494](./3494-lotka-volterra-predator-prey/index.html)
+- **hydraulic-erosion-terrain** — [3495](./3495-hydraulic-erosion-terrain/index.html)
+
 - **vortex-filament-reconnection** — [3482](./3482-vortex-filament-reconnection/index.html)
 - **splash-droplet-dynamics** — [3483](./3483-splash-droplet-dynamics/index.html)
 - **sand-dune-morphodynamics** — [3484](./3484-sand-dune-morphodynamics/index.html)
