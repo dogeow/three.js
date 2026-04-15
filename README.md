@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **vortex-filament-reconnection** — [3482](./3482-vortex-filament-reconnection/index.html)
+- **splash-droplet-dynamics** — [3483](./3483-splash-droplet-dynamics/index.html)
+- **sand-dune-morphodynamics** — [3484](./3484-sand-dune-morphodynamics/index.html)
+- **quantum-spin-hall-effect** — [3485](./3485-quantum-spin-hall-effect/index.html)
+- **snow-avalanche-granular** — [3486](./3486-snow-avalanche-granular/index.html)
+- **viscous-fingering-hele-shaw** — [3487](./3487-viscous-fingering-hele-shaw/index.html)
+- **topological-data-analysis-persistent-homology** — [3488](./3488-topological-data-analysis-persistent-homology/index.html)
+- **fracture-mechanics-dynamic-crack** — [3489](./3489-fracture-mechanics-dynamic-crack/index.html)
+
 - **procedural-watercolor-shader** — [3477](./3477-procedural-watercolor-shader/index.html)
 - **spring-rope-chain-sim** — [3478](./3478-spring-rope-chain-sim/index.html)
 - **underwater-acoustic-propagation** — [3478](./3478-underwater-acoustic-propagation/index.html)
