@@ -26,7 +26,7 @@ controls.maxDistance = 400
 const TERRAIN_SIZE = 200
 const TERRAIN_SEGMENTS = 128
 
-// Simplex噪声函数
+// 单纯形噪声函数
 function noise2D(x, y) {
   const X = Math.floor(x) & 255
   const Y = Math.floor(y) & 255

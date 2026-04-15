@@ -61,7 +61,7 @@ const terrainMats = [
 
 const terrainGroup = new THREE.Group()
 
-// LOD levels: detail decreases as distance increases
+// LOD等级: detail decreases as distance increases
 const terrainHigh = new THREE.Mesh(buildTerrain(200, 18, 0), terrainMats[0])
 const terrainMid = new THREE.Mesh(buildTerrain(100, 18, 0), terrainMats[1])
 const terrainLow = new THREE.Mesh(buildTerrain(50, 18, 0), terrainMats[2])

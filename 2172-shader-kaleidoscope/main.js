@@ -114,7 +114,7 @@ const kaleidoMat = new THREE.ShaderMaterial({
       vec2 uv = (vUv - 0.5) * 2.0;
       uv.x *= uResolution.x / uResolution.y;
 
-      // Mouse influence
+      // 鼠标影响
       vec2 mouse = (uMouse - 0.5) * 2.0;
       uv += mouse * uMouseInfluence * sin(uTime * 0.5);
 

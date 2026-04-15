@@ -81,7 +81,7 @@ clothGeo.setAttribute('normal', new THREE.BufferAttribute(norArr, 3))
 clothGeo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2))
 clothGeo.setIndex(idxArr)
 
-// Cloth materials
+// 布料材质
 const clothMat = new THREE.MeshPhongMaterial({
   color: 0xcc3344,
   side: THREE.DoubleSide,

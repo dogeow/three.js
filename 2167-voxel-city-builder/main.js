@@ -1,5 +1,5 @@
 // 2167. 体素城市构建器 — Enhanced Edition
-// Procedural voxel city with Three.js post-processing, mouse interaction & animations
+// 程序化体素城市 with Three.js post-processing, mouse interaction & animations
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'

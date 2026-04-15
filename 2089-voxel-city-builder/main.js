@@ -18,7 +18,7 @@ camera.position.set(70, 100, 70)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-// PCFSoftShadowMap：柔和阴影边缘
+// 柔和阴影贴图：柔和阴影边缘
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 // 色调映射，让灯光更有氛围

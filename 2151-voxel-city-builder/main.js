@@ -91,7 +91,7 @@ function animate() {
   const elapsed = clock.getElapsedTime()
   controls.update()
 
-  // Raycast hover
+  // 射线检测悬停
   raycaster.setFromCamera(mouse, camera)
   const hits = raycaster.intersectObjects(buildings)
   if (hoveredBuilding) hoveredBuilding.material.emissiveIntensity = 0.3

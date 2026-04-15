@@ -67,7 +67,7 @@ const fillLight = new THREE.PointLight(0x4488ff, 1.0, 150)
 fillLight.position.set(-40, 30, -40)
 scene.add(fillLight)
 
-// City glow lights
+// 城市光效
 const cityLights = []
 const LIGHT_COLORS = [0xff6622, 0x22aaff, 0xff4488, 0x44ffcc, 0xffcc22]
 for (let i = 0; i < 25; i++) {

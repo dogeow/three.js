@@ -143,7 +143,7 @@ function animate() {
   controls.update()
   water.material.uniforms.time.value = t * 0.4
 
-  // Animate sun orbit
+  // 太阳轨道动画
   const angle = t * 0.05
   const dynSun = new THREE.Vector3(Math.cos(angle) * 500, Math.sin(angle * 0.3 + 1) * 300 + 200, Math.sin(angle) * 500)
   sunLight.position.copy(dynSun)

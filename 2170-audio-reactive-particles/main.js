@@ -32,7 +32,7 @@ function initAudio() {
   analyser.fftSize = 256
   dataArray = new Uint8Array(analyser.frequencyBinCount)
 
-  // Create oscillator-based synthetic audio for demo
+  // 创建振荡器-based synthetic audio for demo
   const osc1 = audioCtx.createOscillator()
   const osc2 = audioCtx.createOscillator()
   const gain = audioCtx.createGain()

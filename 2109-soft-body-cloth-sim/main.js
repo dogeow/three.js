@@ -265,7 +265,7 @@ window.addEventListener('keydown', (e) => {
   }
 })
 
-// Verlet积分更新布料
+// 韦尔莱积分更新布料
 const gravity = -0.0008
 const damping = 0.98
 const windStrength = 0.0003
@@ -301,7 +301,7 @@ function updateCloth() {
     }
   })
   
-  // Verlet积分
+  // 韦尔莱积分
   particles.forEach(p => {
     if (p.pinned) return
     

@@ -40,7 +40,7 @@ controls.minDistance = 20
 controls.maxDistance = 300
 
 // ─────────────────────────────────────────────
-// Simplex Noise 实现（内联，无依赖）
+// 单纯形 Noise 实现（内联，无依赖）
 // ─────────────────────────────────────────────
 class SimplexNoise {
   constructor(seed = 1) {

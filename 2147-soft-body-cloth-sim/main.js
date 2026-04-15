@@ -178,7 +178,7 @@ function updateCloth() {
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -sphere.position.y)
   raycaster.ray.intersectPlane(plane, mouseWorld)
   
-  // Verlet 积分
+  // 韦尔莱 积分
   for (const p of particles) {
     if (p.pinned) continue
     const vx = (p.x - p.ox) * damping
