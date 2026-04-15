@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **physics-simulation** — [3106](./3106-physics-simulation/index.html)
+- **organic-shapes** — [3107](./3107-organic-shapes/index.html)
+- **particle-system** — [3108](./3108-particle-system/index.html)
+- **audio-visualization** — [3109](./3109-audio-visualization/index.html)
+- **shader-art** — [3110](./3110-shader-art/index.html)
+- **fractal-geometry** — [3111](./3111-fractal-geometry/index.html)
+
 - **economic-supply-demand-sim** — [3098](./3098-economic-supply-demand-sim/index.html)
 - **archaeological-stratigraphy-layer** — [3099](./3099-archaeological-stratigraphy-layer/index.html)
 - **morphogenetic-turing-pattern** — [3100](./3100-morphogenetic-turing-pattern/index.html)
