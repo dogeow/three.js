@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **impossible-geometry** — [3130](./3130-impossible-geometry/index.html)
+- **penrose** — [3131](./3131-penrose/index.html)
+- **voronoi-bone-tissue** — [3132](./3132-voronoi-bone-tissue/index.html)
+- **turing-machine-visual** — [3133](./3133-turing-machine-visual/index.html)
+- **morphogenesis-cell-division** — [3134](./3134-morphogenesis-cell-division/index.html)
+- **procedural-highway-system** — [3135](./3135-procedural-highway-system/index.html)
+
 - **gravitational-lensing-gr** — [3123](./3123-gravitational-lensing-gr/index.html)
 - **ocean-wave-spectrum-sim** — [3124](./3124-ocean-wave-spectrum-sim/index.html)
 - **quantum-circuit-3d** — [3125](./3125-quantum-circuit-3d/index.html)
