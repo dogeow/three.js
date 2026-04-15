@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **agent-based-schelling-segregation** — [3419](./3419-agent-based-schelling-segregation/index.html)
+- **interactive-physics-lab** — [3420](./3420-interactive-physics-lab/index.html)
+- **abstract-expressionism-pollock** — [3421](./3421-abstract-expressionism-pollock/index.html)
+- **lattice-gas-automaton-fhp** — [3422](./3422-lattice-gas-automaton-fhp/index.html)
+- **boolean-logic-propagation** — [3423](./3423-boolean-logic-propagation/index.html)
+- **procedural-calligraphy** — [3424](./3424-procedural-calligraphy/index.html)
+- **pcr-gel-electrophoresis** — [3425](./3425-pcr-gel-electrophoresis/index.html)
+
 - **pencil-sketch-npr** — [3413](./3413-pencil-sketch-npr/index.html)
 - **point-cloud-kinect** — [3414](./3414-point-cloud-kinect/index.html)
 - **robot-arm-kinematics** — [3415](./3415-robot-arm-kinematics/index.html)
@@ -1687,7 +1695,19 @@ animate()
 - **topology** — [3324](./3324-topology/index.html)
 - **rossler-attractor** — [3325](./3325-rossler-attractor/index.html)
 
-## 三十三、RTS与游戏系统（3121~3122）
+## 三十三、自动生成示例（3419~3425）
+
+| # | 章节 | 技术点 |
+|---|------|-------|
+| [3419](./3419-agent-based-schelling-segregation/index.html) | **Schelling隔离模型 ★** | 元胞自动机种族隔离、阈值驱动的空间分离、lil-gui参数调节 |
+| [3420](./3420-interactive-physics-lab/index.html) | **交互物理实验室 ★** | 抛体运动/单摆/弹簧振子、实时轨迹图、lil-gui参数调节 |
+| [3421](./3421-abstract-expressionism-pollock/index.html) | **波洛克抽象表现主义 ★** | Verlet滴落物理、颜料飞溅画布、点击交互绘制 |
+| [3422](./3422-lattice-gas-automaton-fhp/index.html) | **格子气自动机 FHP ★** | 六角网格流体、碰撞传播规则、障碍物流场可视化 |
+| [3423](./3423-boolean-logic-propagation/index.html) | **布尔逻辑电路 ★** | 交互逻辑门、信号传播延迟、真值表显示 |
+| [3424](./3424-procedural-calligraphy/index.html) | **程序化书法 ★** | 弹簧毛笔物理、墨水晕染、康熙永字八法 |
+| [3425](./3425-pcr-gel-electrophoresis/index.html) | **PCR凝胶电泳 ★** | DNA片段电场驱动、凝胶条带、紫外线荧光可视化 |
+
+## 三十四、RTS与游戏系统（3121~3122）
 
 | # | 章节 | 技术点 |
 |---|------|-------|
