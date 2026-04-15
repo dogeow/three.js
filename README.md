@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 
+- **ferrofluid-spikes** — [2942](./2942-ferrofluid-spikes/index.html)
+- **soliton-wave** — [2943](./2943-soliton-wave/index.html)
+- **morphogenesis-sim** — [2944](./2944-morphogenesis-sim/index.html)
+- **stellar-evolution** — [2945](./2945-stellar-evolution/index.html)
+- **acoustic-levitation** — [2946](./2946-acoustic-levitation/index.html)
+- **topological-insulator** — [2947](./2947-topological-insulator/index.html)
+
 - **diffusion-limited-aggregation-gen** — [2936](./2936-diffusion-limited-aggregation-gen/index.html)
 - **cellular-automata-wolfram** — [2937](./2937-cellular-automata-wolfram/index.html)
 - **ecosystem-predator-prey** — [2938](./2938-ecosystem-predator-prey/index.html)
