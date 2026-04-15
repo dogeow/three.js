@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 
+- **geodesic-dome-architecture** — [3036](./3036-geodesic-dome-architecture/index.html)
+- **string-art-harmonograph** — [3037](./3037-string-art-harmonograph/index.html)
+- **muscle-tendon-biomechanics** — [3038](./3038-muscle-tendon-biomechanics/index.html)
+- **dna-basepair-helix** — [3039](./3039-dna-basepair-helix/index.html)
+- **archimedean-solids** — [3040](./3040-archimedean-solids/index.html)
+
 - **procedural-rock-garden-sandbox** — [3028](./3028-procedural-rock-garden-sandbox/index.html)
 - **nbody-gravitational-galaxy-form** — [3029](./3029-nbody-gravitational-galaxy-form/index.html)
 - **volumetric-cloud-formation** — [3030](./3030-volumetric-cloud-formation/index.html)
