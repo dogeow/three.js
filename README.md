@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 
+- **diffusion-limited-aggregation-gen** — [2936](./2936-diffusion-limited-aggregation-gen/index.html)
+- **cellular-automata-wolfram** — [2937](./2937-cellular-automata-wolfram/index.html)
+- **ecosystem-predator-prey** — [2938](./2938-ecosystem-predator-prey/index.html)
+- **wang-tiles-procedural** — [2939](./2939-wang-tiles-procedural/index.html)
+- **generative-mosaic-art** — [2940](./2940-generative-mosaic-art/index.html)
+- **beam-physics-sim** — [2941](./2941-beam-physics-sim/index.html)
+
 - **traffic-flow-sim** — [2930](./2930-traffic-flow-sim/index.html)
 - **pyroclastic-flow** — [2931](./2931-pyroclastic-flow/index.html)
 - **magnetic-levitation** — [2932](./2932-magnetic-levitation/index.html)
