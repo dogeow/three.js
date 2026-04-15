@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **klein-bottle** — [3216](./3216-klein-bottle/index.html)
+- **pid-controller-3d** — [3217](./3217-pid-controller-3d/index.html)
+- **fourier-series-3d** — [3218](./3218-fourier-series-3d/index.html)
+- **lotka-volterra-population** — [3219](./3219-lotka-volterra-population/index.html)
+- **penrose-tiling** — [3220](./3220-penrose-tiling/index.html)
+- **electrostatic-field** — [3221](./3221-electrostatic-field/index.html)
+- **ratchet-mechanism** — [3222](./3222-ratchet-mechanism/index.html)
+- **harmonograph-3d** — [3223](./3223-harmonograph-3d/index.html)
+
 - **hatching-npr-sketch** — [3210](./3210-hatching-npr-sketch/index.html)
 - **voronoi-foam-bubble** — [3211](./3211-voronoi-foam-bubble/index.html)
 - **subsurface-scattering-wax** — [3212](./3212-subsurface-scattering-wax/index.html)
