@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **chladni-plate-cymatics** — [3237](./3237-chladni-plate-cymatics/index.html)
+- **gravity-slingshot-orbit** — [3238](./3238-gravity-slingshot-orbit/index.html)
+- **black-scholes-options-surface** — [3239](./3239-black-scholes-options-surface/index.html)
+- **fm-synthesis-visualizer** — [3240](./3240-fm-synthesis-visualizer/index.html)
+- **merkle-tree-data-structure** — [3241](./3241-merkle-tree-data-structure/index.html)
+- **lagrange-points-orbit** — [3242](./3242-lagrange-points-orbit/index.html)
+- **isometric-city-builder** — [3243](./3243-isometric-city-builder/index.html)
+
 - **double-slit-quantum-interference** — [3230](./3230-double-slit-quantum-interference/index.html)
 - **neural-network-training-3d-visualization** — [3231](./3231-neural-network-training-3d-visualization/index.html)
 - **protein-folding-alpha-helix-sim** — [3232](./3232-protein-folding-alpha-helix-sim/index.html)
