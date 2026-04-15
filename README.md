@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **acoustic-room-sim** — [3332](./3332-acoustic-room-sim/index.html)
+- **brewster-angle-polarization** — [3333](./3333-brewster-angle-polarization/index.html)
+- **phonon-crystal-lattice** — [3334](./3334-phonon-crystal-lattice/index.html)
+- **el-nino-ocean-current** — [3335](./3335-el-nino-ocean-current/index.html)
+
 - **stress-fiber-cell** — [3326](./3326-stress-fiber-cell/index.html)
 - **haptic-soft-touch** — [3327](./3327-haptic-soft-touch/index.html)
 - **metamaterial-inversion** — [3328](./3328-metamaterial-inversion/index.html)
