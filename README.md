@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **double-slit-quantum-interference** — [3230](./3230-double-slit-quantum-interference/index.html)
+- **neural-network-training-3d-visualization** — [3231](./3231-neural-network-training-3d-visualization/index.html)
+- **protein-folding-alpha-helix-sim** — [3232](./3232-protein-folding-alpha-helix-sim/index.html)
+- **hadley-cell-atmospheric-circulation** — [3233](./3233-hadley-cell-atmospheric-circulation/index.html)
+- **double-pendulum-chaos-attractor** — [3234](./3234-double-pendulum-chaos-attractor/index.html)
+- **tsunami-shallow-water-propagation** — [3235](./3235-tsunami-shallow-water-propagation/index.html)
+- **hiv-progression-immune-response** — [3236](./3236-hiv-progression-immune-response/index.html)
+
 - **cochlear-frequency-mapping** — [3224](./3224-cochlear-frequency-mapping/index.html)
 - **jet-stream-atmospheric-circulation** — [3225](./3225-jet-stream-atmospheric-circulation/index.html)
 - **cortical-folding-gyri-sulci** — [3226](./3226-cortical-folding-gyri-sulci/index.html)
