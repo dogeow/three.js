@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **meander-river-erosion** — [3179](./3179-meander-river-erosion/index.html)
+- **transformer-attention-3d** — [3180](./3180-transformer-attention-3d/index.html)
+- **bonsai-procedural-growth** — [3181](./3181-bonsai-procedural-growth/index.html)
+- **implied-volatility-surface** — [3182](./3182-implied-volatility-surface/index.html)
+- **evacuation-social-force** — [3183](./3183-evacuation-social-force/index.html)
+- **parametric-space-frame** — [3184](./3184-parametric-space-frame/index.html)
+
 - **belousov-zhabotinsky-reaction** — [3171](./3171-belousov-zhabotinsky-reaction/index.html)
 - **traffic-flow-intersection** — [3173](./3173-traffic-flow-intersection/index.html)
 - **acoustic-levitation-physics** — [3174](./3174-acoustic-levitation-physics/index.html)
