@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quantum Circuit Visualization</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d0d1a; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+
+    #tip {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(15, 15, 35, 0.88);
+      border: 1px solid rgba(100, 120, 255, 0.3);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: #c8d0ff;
+      font-size: 13px;
+      line-height: 1.65;
+      max-width: 290px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    #tip b { color: #a0b4ff; font-size: 14px; display: block; margin-bottom: 6px; }
+    #tip span { color: #7a8ccc; font-size: 11px; display: block; margin-top: 8px; }
+
+    #title {
+      position: absolute;
+      top: 16px;
+      right: 20px;
+      color: rgba(160,180,255,0.7);
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+<div id="tip">
+  <b>&#9886; Quantum Circuit Basics</b>
+  Qubits are horizontal wires. Gates are 3D shapes that transform qubit states.
+  <br><br>
+  <b>H</b> &#8594; Hadamard (creates superposition)<br>
+  <b>X</b> &#8594; Pauli-X (bit flip)<br>
+  <b>Y</b> &#8594; Pauli-Y<br>
+  <b>Z</b> &#8594; Pauli-Z (phase flip)<br>
+  <b>CNOT</b> &#8594; Controlled-NOT (entangles control+target)<br>
+  <span>Use lil-gui (top-right) to switch circuits. Drag to orbit.</span>
+</div>
+<div id="title">Quantum Circuit</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ── Scene ─────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d1a);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 3, 16);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 0, 0);
+
+// ── Lights ────────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x4040a0, 0.6));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(5, 10, 8);
+scene.add(dirLight);
+const rimLight = new THREE.DirectionalLight(0x3060ff, 0.5);
+rimLight.position.set(-5, -3, -5);
+scene.add(rimLight);
+
+// ── Colors ────────────────────────────────────────────────────────────────────
+const GATE_COLORS = {
+  H:    0x00e5ff,
+  X:    0xff3d3d,
+  Y:    0x00e676,
+  Z:    0xffab00,
+  CNOT: 0xea80fc,
+  WIRE: 0x334466,
+};
+
+// ── Gate mesh factories ────────────────────────────────────────────────────────
+function makeH() {
+  // Octahedron (H = "Hadamard box")
+  const geo = new THREE.OctahedronGeometry(0.38, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: GATE_COLORS.H, metalness: 0.3, roughness: 0.25, emissive: GATE_COLORS.H, emissiveIntensity: 0.2 });
+  return new THREE.Mesh(geo, mat);
+}
+
+function makeX() {
+  // Box with rounded-ish look (Pauli-X = bit flip)
+  const geo = new THREE.BoxGeometry(0.55, 0.55, 0.55);
+  const mat = new THREE.MeshStandardMaterial({ color: GATE_COLORS.X, metalness: 0.35, roughness: 0.2, emissive: GATE_COLORS.X, emissiveIntensity: 0.2 });
+  return new THREE.Mesh(geo, mat);
+}
+
+function makeY() {
+  // Tetrahedron (Pauli-Y)
+  const geo = new THREE.TetrahedronGeometry(0.48, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: GATE_COLORS.Y, metalness: 0.3, roughness: 0.25, emissive: GATE_COLORS.Y, emissiveIntensity: 0.2 });
+  return new THREE.Mesh(geo, mat);
+}
+
+function makeZ() {
+  // Cone (Pauli-Z = phase)
+  const geo = new THREE.ConeGeometry(0.32, 0.65, 6);
+  const mat = new THREE.MeshStandardMaterial({ color: GATE_COLORS.Z, metalness: 0.3, roughness: 0.25, emissive: GATE_COLORS.Z, emissiveIntensity: 0.2 });
+  return new THREE.Mesh(geo, mat);
+}
+
+function makeCNOT(controlY, targetY) {
+  const g = new THREE.Group();
+
+  // Control dot
+  const dotGeo = new THREE.SphereGeometry(0.18, 16, 16);
+  const dotMat = new THREE.MeshStandardMaterial({ color: GATE_COLORS.CNOT, metalness: 0.3, roughness: 0.2, emissive: GATE_COLORS.CNOT, emissiveIntensity: 0.3 });
+  const dot = new THREE.Mesh(dotGeo, dotMat);
+  dot.position.set(0, controlY, 0);
+  g.add(dot);
+
+  // Target (X gate with cross)
+  const xMesh = makeX();
+  xMesh.position.set(0, targetY, 0);
+  xMesh.scale.setScalar(0.75);
+  g.add(xMesh);
+
+  // Vertical connector line between control and target
+  const lineGeo = new THREE.CylinderGeometry(0.04, 0.04, Math.abs(targetY - controlY), 8);
+  const lineMat = new THREE.MeshStandardMaterial({ color: GATE_COLORS.CNOT, emissive: GATE_COLORS.CNOT, emissiveIntensity: 0.3 });
+  const line = new THREE.Mesh(lineGeo, lineMat);
+  line.position.set(0, (controlY + targetY) / 2, 0);
+  g.add(line);
+
+  return g;
+}
+
+function makeWire(x, y) {
+  const geo = new THREE.CylinderGeometry(0.05, 0.05, 12, 8);
+  geo.rotateZ(Math.PI / 2);
+  const mat = new THREE.MeshStandardMaterial({ color: GATE_COLORS.WIRE, metalness: 0.5, roughness: 0.4 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, 0);
+  return mesh;
+}
+
+// ── Circuit data ──────────────────────────────────────────────────────────────
+// Each circuit: { numQubits, gates: [{ type, qubit, x?, target? }] }
+const CIRCUITS = {
+  'Bell State': {
+    numQubits: 2,
+    gates: [
+      { type: 'H', qubit: 0, x: -2 },
+      { type: 'CNOT', qubit: 0, target: 1, x: 0 },
+    ],
+  },
+  'GHZ State': {
+    numQubits: 3,
+    gates: [
+      { type: 'H', qubit: 0, x: -3 },
+      { type: 'CNOT', qubit: 0, target: 1, x: -1 },
+      { type: 'CNOT', qubit: 1, target: 2, x: 1 },
+    ],
+  },
+  'Teleportation': {
+    numQubits: 3,
+    gates: [
+      { type: 'H', qubit: 1, x: -3 },
+      { type: 'CNOT', qubit: 1, target: 2, x: -1 },
+      { type: 'CNOT', qubit: 0, target: 1, x: 1 },
+      { type: 'H', qubit: 0, x: 3 },
+    ],
+  },
+  'QFT (4 qubits)': {
+    numQubits: 4,
+    gates: [
+      { type: 'H', qubit: 0, x: -4.5 },
+      { type: 'Z', qubit: 1, x: -2.5 },
+      { type: 'H', qubit: 1, x: -1.5 },
+      { type: 'CNOT', qubit: 1, target: 2, x: 0 },
+      { type: 'H', qubit: 2, x: 1.5 },
+      { type: 'CNOT', qubit: 2, target: 3, x: 3 },
+      { type: 'H', qubit: 3, x: 4.5 },
+    ],
+  },
+  'Random Circuit': {
+    numQubits: 3,
+    gates: [
+      { type: 'H', qubit: 0, x: -4 },
+      { type: 'X', qubit: 1, x: -4 },
+      { type: 'H', qubit: 2, x: -4 },
+      { type: 'CNOT', qubit: 0, target: 1, x: -1.5 },
+      { type: 'Y', qubit: 2, x: -1.5 },
+      { type: 'Z', qubit: 0, x: 1 },
+      { type: 'CNOT', qubit: 2, target: 1, x: 3 },
+      { type: 'H', qubit: 1, x: 4 },
+    ],
+  },
+};
+
+// ── Build circuit scene ───────────────────────────────────────────────────────
+let circuitGroup = new THREE.Group();
+scene.add(circuitGroup);
+
+function buildCircuit(name) {
+  circuitGroup.children.forEach(c => {
+    c.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+  });
+  circuitGroup.clear();
+
+  const def = CIRCUITS[name];
+  if (!def) return;
+
+  const { numQubits, gates } = def;
+  const spacing = 2.2;
+  const qubitYs = [];
+  for (let i = 0; i < numQubits; i++) {
+    qubitYs.push((numQubits - 1) / 2 * spacing - i * spacing);
+  }
+
+  // Draw wires
+  qubitYs.forEach(y => {
+    circuitGroup.add(makeWire(0, y));
+  });
+
+  // Draw gates
+  gates.forEach(g => {
+    const y = qubitYs[g.qubit];
+    const x = g.x !== undefined ? g.x : 0;
+
+    let mesh;
+    switch (g.type) {
+      case 'H':   mesh = makeH(); break;
+      case 'X':   mesh = makeX(); break;
+      case 'Y':   mesh = makeY(); break;
+      case 'Z':   mesh = makeZ(); break;
+      case 'CNOT': {
+        const ty = qubitYs[g.target];
+        mesh = makeCNOT(y, ty);
+        break;
+      }
+    }
+
+    if (mesh) {
+      mesh.position.set(x, mesh instanceof THREE.Group ? 0 : y, 0);
+      mesh.userData = { gateType: g.type, baseY: y };
+      circuitGroup.add(mesh);
+    }
+  });
+
+  // Store qubit Ys for animation
+  circuitGroup.userData.qubitYs = qubitYs;
+  circuitGroup.userData.numQubits = numQubits;
+}
+
+buildCircuit('Bell State');
+
+// ── GUI ───────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '&#9881; Circuit Selector' });
+gui.add({ circuit: 'Bell State' }, 'circuit', Object.keys(CIRCUITS))
+  .name('Circuit')
+  .onChange(v => buildCircuit(v));
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  circuitGroup.children.forEach(child => {
+    if (child.userData.gateType) {
+      // Gentle float + rotate for single gates
+      if (!(child instanceof THREE.Group)) {
+        child.position.y = child.userData.baseY + Math.sin(t * 1.4 + child.position.x * 0.4) * 0.08;
+        child.rotation.y = t * 0.6;
+        child.rotation.z = Math.sin(t * 0.8 + child.position.x) * 0.15;
+      }
+    }
+  });
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

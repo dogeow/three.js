@@ -1,0 +1,411 @@
+<!-- Example 336: WebGPU Renderer Demo -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Example 336: WebGPU Renderer Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050510; overflow: hidden; font-family: 'Courier New', monospace; }
+    canvas { display: block; }
+
+    #notice-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: rgba(255, 140, 0, 0.15);
+      border-bottom: 1px solid rgba(255, 140, 0, 0.4);
+      color: #ffaa44;
+      text-align: center;
+      padding: 8px 16px;
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      z-index: 10;
+      display: none;
+      backdrop-filter: blur(4px);
+    }
+    #notice-banner.show { display: block; }
+
+    #renderer-label {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      color: rgba(100, 220, 255, 0.5);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      pointer-events: none;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="notice-banner">WebGPU not supported — WebGL mode</div>
+  <div id="renderer-label"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+    // ─── Config ───────────────────────────────────────────────
+    const config = {
+      sphereCount: 5000,
+      innerColor: '#00aaff',
+      outerColor: '#ff00cc',
+      animationSpeed: 1.0,
+    };
+
+    // ─── Renderer ────────────────────────────────────────────
+    let renderer;
+    let isWebGPU = false;
+
+    function tryWebGPU() {
+      if (typeof navigator === 'undefined' || !navigator.gpu) return false;
+      return true;
+    }
+
+    if (tryWebGPU()) {
+      // WebGPU is available — use it
+      isWebGPU = true;
+      document.getElementById('renderer-label').textContent = 'WebGPU';
+      renderer = new THREE.WebGPURenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setClearColor(0x050510);
+      document.body.appendChild(renderer.domElement);
+    } else {
+      // Fallback to WebGL
+      document.getElementById('notice-banner').classList.add('show');
+      document.getElementById('renderer-label').textContent = 'WebGL';
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setClearColor(0x050510);
+      document.body.appendChild(renderer.domElement);
+    }
+
+    // ─── Scene & Camera ──────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x050510, 0.0008);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
+    camera.position.set(0, 30, 80);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxDistance = 400;
+    controls.minDistance = 10;
+
+    // ─── Lighting ────────────────────────────────────────────
+    const ambientLight = new THREE.AmbientLight(0x111122, 1.0);
+    scene.add(ambientLight);
+
+    const pointLight = new THREE.PointLight(0x00aaff, 3.0, 200);
+    pointLight.position.set(0, 0, 0);
+    scene.add(pointLight);
+
+    const pointLight2 = new THREE.PointLight(0xff00cc, 1.5, 150);
+    pointLight2.position.set(40, 20, 0);
+    scene.add(pointLight2);
+
+    // ─── Grid Floor ──────────────────────────────────────────
+    const gridHelper = new THREE.GridHelper(400, 60, 0x003366, 0x001133);
+    gridHelper.material.opacity = 0.4;
+    gridHelper.material.transparent = true;
+    scene.add(gridHelper);
+
+    // ─── Shaders ──────────────────────────────────────────────
+    const vertexShader = /* glsl */`
+      uniform float uTime;
+      uniform float uAnimationSpeed;
+      uniform float uCount;
+
+      attribute float aOffset;
+      attribute float aRadius;
+      attribute float aAngle;
+
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      varying float vFresnel;
+
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+
+        float t = uTime * uAnimationSpeed + aOffset;
+
+        // Pulsing scale
+        float pulse = 0.85 + 0.15 * sin(t * 2.0 + aOffset * 6.28);
+        vec3 scaled = position * pulse;
+
+        // Animate Y with sin wave
+        float yWave = sin(t * 1.5 + aRadius * 0.5) * 3.0;
+        vec3 animated = scaled;
+        animated.y += yWave;
+
+        vec4 mvPosition = modelViewMatrix * vec4(animated, 1.0);
+        vViewPosition = -mvPosition.xyz;
+
+        // Fresnel in vertex for performance
+        vec3 viewDir = normalize(vViewPosition);
+        float cosTheta = clamp(dot(viewDir, vNormal), 0.0, 1.0);
+        vFresnel = pow(1.0 - cosTheta, 3.0);
+
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `;
+
+    const fragmentShader = /* glsl */`
+      uniform vec3 uInnerColor;
+      uniform vec3 uOuterColor;
+
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      varying float vFresnel;
+
+      void main() {
+        // Core color
+        vec3 core = uInnerColor;
+
+        // Fresnel edge glow
+        vec3 edge = uOuterColor;
+        vec3 color = mix(core, edge, vFresnel);
+
+        // Add emissive boost at edges
+        color += edge * vFresnel * 0.6;
+
+        // Slight transparency at edge for glow illusion
+        float alpha = 0.7 + 0.3 * (1.0 - vFresnel);
+
+        gl_FragColor = vec4(color, alpha);
+      }
+    `;
+
+    // ─── Orbital Ring Spheres ─────────────────────────────────
+    const centralOrbGeometry = new THREE.SphereGeometry(6, 64, 64);
+
+    const centralOrbMaterial = new THREE.ShaderMaterial({
+      vertexShader: /* glsl */`
+        uniform float uTime;
+        varying vec3 vNormal;
+        varying vec3 vViewPosition;
+        varying float vFresnel;
+        varying float vPulse;
+
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          float t = uTime;
+          float pulse = 1.0 + 0.08 * sin(t * 3.0) + 0.04 * sin(t * 7.3);
+          vPulse = pulse;
+          vec3 scaled = position * pulse;
+          vec4 mvPosition = modelViewMatrix * vec4(scaled, 1.0);
+          vViewPosition = -mvPosition.xyz;
+          vec3 viewDir = normalize(vViewPosition);
+          float cosTheta = clamp(dot(viewDir, vNormal), 0.0, 1.0);
+          vFresnel = pow(1.0 - cosTheta, 2.5);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform vec3 uInnerColor;
+        uniform vec3 uOuterColor;
+        varying vec3 vNormal;
+        varying vec3 vViewPosition;
+        varying float vFresnel;
+        varying float vPulse;
+
+        void main() {
+          vec3 core = uInnerColor * vPulse;
+          vec3 edge = uOuterColor;
+          vec3 color = mix(core, edge, vFresnel);
+          color += edge * vFresnel * 1.2;
+          float alpha = 0.8 + 0.2 * (1.0 - vFresnel);
+          gl_FragColor = vec4(color, alpha);
+        }
+      `,
+      uniforms: {
+        uTime: { value: 0 },
+        uInnerColor: { value: new THREE.Color(config.innerColor) },
+        uOuterColor: { value: new THREE.Color(config.outerColor) },
+      },
+      transparent: true,
+      side: THREE.FrontSide,
+      depthWrite: false,
+    });
+
+    const centralOrb = new THREE.Mesh(centralOrbGeometry, centralOrbMaterial);
+    scene.add(centralOrb);
+
+    // Inner glow shell
+    const glowShellGeo = new THREE.SphereGeometry(7.5, 32, 32);
+    const glowShellMat = new THREE.ShaderMaterial({
+      vertexShader: /* glsl */`
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform vec3 uOuterColor;
+        varying vec3 vNormal;
+        void main() {
+          float intensity = pow(0.6 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.5);
+          gl_FragColor = vec4(uOuterColor, intensity * 0.35);
+        }
+      `,
+      uniforms: {
+        uOuterColor: { value: new THREE.Color(config.outerColor) },
+      },
+      transparent: true,
+      side: THREE.BackSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const glowShell = new THREE.Mesh(glowShellGeo, glowShellMat);
+    scene.add(glowShell);
+
+    // ─── Orbiting Spheres System ──────────────────────────────
+    let orbitingGroup = new THREE.Group();
+    scene.add(orbitingGroup);
+
+    const orbitRadius = 22;
+    const orbitHeight = 0;
+
+    function buildOrbitingSpheres(count) {
+      // Clear old
+      while (orbitingGroup.children.length > 0) {
+        const child = orbitingGroup.children[0];
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose());
+        } else {
+          child.material.dispose();
+        }
+        orbitingGroup.remove(child);
+      }
+
+      const geometry = new THREE.SphereGeometry(0.7, 16, 16);
+      const material = new THREE.ShaderMaterial({
+        vertexShader,
+        fragmentShader,
+        uniforms: {
+          uTime: { value: 0 },
+          uAnimationSpeed: { value: config.animationSpeed },
+          uInnerColor: { value: new THREE.Color(config.innerColor) },
+          uOuterColor: { value: new THREE.Color(config.outerColor) },
+          uCount: { value: count },
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+
+      const dummy = new THREE.Object3D();
+      const maxRings = 12;
+      const spheresPerRing = Math.ceil(count / maxRings);
+
+      for (let i = 0; i < count; i++) {
+        const ring = Math.floor(i / spheresPerRing);
+        const idxInRing = i - ring * spheresPerRing;
+        const ringSphereCount = Math.min(spheresPerRing, count - ring * spheresPerRing);
+
+        const angle = (idxInRing / ringSphereCount) * Math.PI * 2;
+        const radiusVariance = ring * 3.0;
+        const r = orbitRadius + radiusVariance + Math.sin(angle * 3) * 2;
+        const y = orbitHeight + Math.sin(angle * 2 + ring) * 4;
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(
+          Math.cos(angle) * r,
+          y,
+          Math.sin(angle) * r
+        );
+
+        // Store orbital data as attributes
+        const offset = (i / count) * Math.PI * 2;
+        const radius = r;
+        const baseAngle = angle;
+
+        mesh.userData = { offset, radius, baseAngle, ring };
+        orbitingGroup.add(mesh);
+      }
+    }
+
+    buildOrbitingSpheres(config.sphereCount);
+
+    // ─── GUI ─────────────────────────────────────────────────
+    const gui = new GUI({ title: '⚙ Sphere Controls' });
+    gui.add(config, 'sphereCount', 100, 10000, 100).name('Sphere Count').onChange(() => {
+      buildOrbitingSpheres(config.sphereCount);
+    });
+    gui.addColor(config, 'innerColor').name('Inner Glow').onChange(v => {
+      centralOrbMaterial.uniforms.uInnerColor.value.set(v);
+      glowShellMat.uniforms.uOuterColor.value.set(v);
+    });
+    gui.addColor(config, 'outerColor').name('Outer Glow').onChange(v => {
+      centralOrbMaterial.uniforms.uOuterColor.value.set(v);
+    });
+    gui.add(config, 'animationSpeed', 0.1, 5.0, 0.1).name('Anim Speed');
+
+    // ─── Resize ──────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ─── Animation Loop ──────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const elapsed = clock.getElapsedTime();
+
+      // Update central orb
+      centralOrbMaterial.uniforms.uTime.value = elapsed * config.animationSpeed;
+      glowShellMat.uniforms.uOuterColor.value.set(config.outerColor);
+
+      // Orbit the group around center
+      orbitingGroup.rotation.y = elapsed * 0.08 * config.animationSpeed;
+
+      // Update each sphere's shader uniforms
+      // We share one material across all orbiting spheres for efficiency
+      const sharedMat = orbitingGroup.children[0]?.material;
+      if (sharedMat) {
+        sharedMat.uniforms.uTime.value = elapsed;
+        sharedMat.uniforms.uAnimationSpeed.value = config.animationSpeed;
+        sharedMat.uniforms.uInnerColor.value.set(config.innerColor);
+        sharedMat.uniforms.uOuterColor.value.set(config.outerColor);
+      }
+
+      // Animate central orb scale
+      const orbPulse = 1.0 + 0.08 * Math.sin(elapsed * 2.0) + 0.04 * Math.sin(elapsed * 5.7);
+      centralOrb.scale.setScalar(orbPulse);
+
+      // Glow shell pulse
+      glowShell.scale.setScalar(orbPulse * 1.1);
+
+      // Slowly rotate central orb
+      centralOrb.rotation.y = elapsed * 0.3;
+      glowShell.rotation.y = elapsed * 0.3;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

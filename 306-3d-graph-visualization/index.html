@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>306 — 3D Force-Directed Graph</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0f; }
+    canvas { display: block; }
+
+    #overlay {
+      position: fixed; top: 18px; left: 18px;
+      background: rgba(8,8,18,0.82);
+      border: 1px solid rgba(100,120,255,0.22);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: #c8cce8;
+      font-family: 'Courier New', monospace;
+      font-size: 12.5px;
+      line-height: 2;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+      max-width: 280px;
+    }
+    #overlay strong { color: #9ab4ff; }
+    #overlay .sep { border-top: 1px solid rgba(100,120,255,0.14); margin: 6px 0; }
+
+    #title {
+      position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+      color: rgba(160,180,255,0.55);
+      font-family: 'Courier New', monospace;
+      font-size: 11px; letter-spacing: 3px;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    #controls-hint {
+      position: fixed; bottom: 18px; right: 18px;
+      background: rgba(8,8,18,0.82);
+      border: 1px solid rgba(100,120,255,0.18);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #7078a8;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      line-height: 1.8;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+    }
+
+    .lil-gui { --width: 240px !important; }
+
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono&display=swap');
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+<div id="title">Example 306 &mdash; 3D Force-Directed Graph</div>
+
+<div id="overlay">
+  <strong>Controls</strong>
+  <div class="sep"></div>
+  <strong>Drag</strong> &mdash; move nodes<br>
+  <strong>Double-click</strong> &mdash; highlight connections<br>
+  <strong>Space</strong> &mdash; toggle physics<br>
+  <strong>Scroll</strong> &mdash; zoom<br>
+  <strong>Right-drag</strong> &mdash; pan<br>
+  <div class="sep"></div>
+  <strong>Nodes:</strong> 60 &nbsp; <strong>Edges:</strong> ~180<br>
+  <strong>Communities:</strong> 5 &nbsp; <strong>Colors:</strong> k-means
+</div>
+
+<div id="controls-hint">
+  lil-gui &rarr; top-right corner
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { DragControls } from 'three/addons/controls/DragControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const NUM_COMMUNITIES = 5;
+const COMMUNITY_COLORS = [
+  new THREE.Color(0xff4f79), // coral red
+  new THREE.Color(0x3fffb8), // mint
+  new THREE.Color(0x3f9fff), // sky blue
+  new THREE.Color(0xffc83f), // amber
+  new THREE.Color(0xb83fff), // violet
+];
+const SPHERE_RADIUS = 8;
+
+// ── GUI params ─────────────────────────────────────────────────────────────
+const params = {
+  nodeCount: 60,
+  linkStrength: 0.08,
+  repulsionForce: 18,
+  showLabels: true,
+  autoRun: false,
+  resetLayout: () => resetPositions(),
+};
+
+// ── Scene ───────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(0, 4, 26);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// CSS2D renderer for node labels
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.style.position = 'fixed';
+labelRenderer.domElement.style.top = '0';
+labelRenderer.domElement.style.left = '0';
+labelRenderer.domElement.style.pointerEvents = 'none';
+document.body.appendChild(labelRenderer.domElement);
+
+// ── Controls ────────────────────────────────────────────────────────────────
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true;
+orbit.dampingFactor = 0.06;
+
+const drag = new DragControls([], camera, renderer.domElement);
+let draggedNode = null;
+let isDragging = false;
+
+drag.addEventListener('dragstart', e => {
+  draggedNode = e.object;
+  isDragging = true;
+  orbit.enabled = false;
+});
+drag.addEventListener('dragend', () => {
+  draggedNode = null;
+  isDragging = false;
+  orbit.enabled = true;
+});
+drag.addEventListener('drag', e => {
+  if (draggedNode) {
+    const n = nodeData[e.object.userData.idx];
+    n.px = e.object.position.x;
+    n.py = e.object.position.y;
+    n.pz = e.object.position.z;
+    n.fx = 0; n.fy = 0; n.fz = 0;
+  }
+});
+
+// Double-click to highlight connections
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let highlightedNode = null;
+
+renderer.domElement.addEventListener('dblclick', e => {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(nodeObjects);
+  if (hits.length > 0) {
+    const clicked = hits[0].object;
+    if (highlightedNode === clicked) {
+      // un-highlight
+      resetEdgeAppearance();
+      highlightedNode = null;
+    } else {
+      highlightedNode = clicked;
+      highlightConnections(clicked.userData.idx);
+    }
+  } else {
+    resetEdgeAppearance();
+    highlightedNode = null;
+  }
+});
+
+function highlightConnections(idx) {
+  const n = nodeData[idx];
+  edgesMesh.geometry.attributes.color.needsUpdate = true;
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const isConn = e.source === idx || e.target === idx;
+    if (isConn) {
+      edgesMesh.geometry.attributes.color.setXYZ(i,
+        COMMUNITY_COLORS[n.community].r,
+        COMMUNITY_COLORS[n.community].g,
+        COMMUNITY_COLORS[n.community].b
+      );
+      edgesMesh.geometry.attributes.alpha.setX(i, 1.0);
+    } else {
+      edgesMesh.geometry.attributes.alpha.setX(i, 0.04);
+    }
+  }
+  edgesMesh.geometry.attributes.color.needsUpdate = true;
+  edgesMesh.geometry.attributes.alpha.needsUpdate = true;
+}
+
+function resetEdgeAppearance() {
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const c = COMMUNITY_COLORS[nodeData[e.source].community];
+    edgesMesh.geometry.attributes.color.setXYZ(i, c.r, c.g, c.b);
+    edgesMesh.geometry.attributes.alpha.setX(i, e.weight * 0.7 + 0.15);
+  }
+  edgesMesh.geometry.attributes.color.needsUpdate = true;
+  edgesMesh.geometry.attributes.alpha.needsUpdate = true;
+}
+
+// Space to toggle autoRun
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    params.autoRun = !params.autoRun;
+    gui.controllers.forEach(c => c.updateDisplay());
+  }
+});
+
+// ── Data structures ────────────────────────────────────────────────────────
+let nodeData = []; // { px, py, pz, vx, vy, vz, fx, fy, fz, community }
+let edges   = []; // { source, target, weight }
+let nodeObjects = [];
+let nodeLabels = [];
+let labelObjects = [];
+let edgesMesh;
+let edgePositions;
+let edgeColors;
+let edgeAlphas;
+
+function resetPositions() {
+  for (let i = 0; i < nodeData.length; i++) {
+    const n = nodeData[i];
+    // random inside sphere
+    const r   = SPHERE_RADIUS * Math.cbrt(Math.random());
+    const phi = Math.acos(2 * Math.random() - 1);
+    const th  = Math.random() * Math.PI * 2;
+    n.px = r * Math.sin(phi) * Math.cos(th);
+    n.py = r * Math.sin(phi) * Math.sin(th);
+    n.pz = r * Math.cos(phi);
+    n.vx = 0; n.vy = 0; n.vz = 0;
+    n.fx = 0; n.fy = 0; n.fz = 0;
+    if (nodeObjects[i]) {
+      nodeObjects[i].position.set(n.px, n.py, n.pz);
+    }
+  }
+  highlightedNode = null;
+  resetEdgeAppearance();
+  updateEdgePositions();
+}
+
+// ── K-means-like community assignment ─────────────────────────────────────
+function assignCommunities(positions, k) {
+  // Simple Lloyd's algorithm, few iterations
+  const centroids = [];
+  for (let i = 0; i < k; i++) {
+    const r = SPHERE_RADIUS * 0.6;
+    centroids.push({
+      x: (Math.random() - 0.5) * 2 * r,
+      y: (Math.random() - 0.5) * 2 * r,
+      z: (Math.random() - 0.5) * 2 * r,
+    });
+  }
+
+  const assignments = new Array(positions.length).fill(0);
+
+  for (let iter = 0; iter < 8; iter++) {
+    // assign
+    for (let i = 0; i < positions.length; i++) {
+      let best = 0, bestD = Infinity;
+      for (let c = 0; c < k; c++) {
+        const dx = positions[i].x - centroids[c].x;
+        const dy = positions[i].y - centroids[c].y;
+        const dz = positions[i].z - centroids[c].z;
+        const d = dx*dx + dy*dy + dz*dz;
+        if (d < bestD) { bestD = d; best = c; }
+      }
+      assignments[i] = best;
+    }
+    // recompute centroids
+    for (let c = 0; c < k; c++) {
+      let sx=0, sy=0, sz=0, cnt=0;
+      for (let i = 0; i < positions.length; i++) {
+        if (assignments[i] === c) { sx+=positions[i].x; sy+=positions[i].y; sz+=positions[i].z; cnt++; }
+      }
+      if (cnt > 0) { centroids[c].x = sx/cnt; centroids[c].y = sy/cnt; centroids[c].z = sz/cnt; }
+    }
+  }
+  return assignments;
+}
+
+// ── Build graph ─────────────────────────────────────────────────────────────
+function buildGraph(n) {
+  // Clear old
+  for (const o of nodeObjects) scene.remove(o);
+  for (const l of labelObjects) scene.remove(l);
+  nodeObjects = [];
+  nodeLabels = [];
+  labelObjects = [];
+
+  // Random positions in sphere
+  const positions = [];
+  for (let i = 0; i < n; i++) {
+    const r   = SPHERE_RADIUS * Math.cbrt(Math.random());
+    const phi = Math.acos(2 * Math.random() - 1);
+    const th  = Math.random() * Math.PI * 2;
+    positions.push({
+      x: r * Math.sin(phi) * Math.cos(th),
+      y: r * Math.sin(phi) * Math.sin(th),
+      z: r * Math.cos(phi),
+    });
+  }
+
+  const communities = assignCommunities(positions, NUM_COMMUNITIES);
+
+  nodeData = positions.map((p, i) => ({
+    px: p.x, py: p.y, pz: p.z,
+    vx: 0, vy: 0, vz: 0,
+    fx: 0, fy: 0, fz: 0,
+    community: communities[i],
+  }));
+
+  // Edges: each node connects to 2-5 neighbours (prefer same community)
+  edges = [];
+  const edgeSet = new Set();
+  for (let i = 0; i < n; i++) {
+    const deg = 2 + Math.floor(Math.random() * 4);
+    for (let d = 0; d < deg; d++) {
+      let j = Math.floor(Math.random() * n);
+      if (j === i) continue;
+      const key = i < j ? `${i},${j}` : `${j},${i}`;
+      if (edgeSet.has(key)) continue;
+      edgeSet.add(key);
+      const sameComm = nodeData[i].community === nodeData[j].community ? 1 : 0;
+      edges.push({ source: i, target: j, weight: 0.3 + Math.random() * 0.7 });
+    }
+  }
+
+  // Node spheres
+  const geo = new THREE.SphereGeometry(0.28, 20, 20);
+  for (let i = 0; i < n; i++) {
+    const color = COMMUNITY_COLORS[nodeData[i].community];
+    const mat = new THREE.MeshPhongMaterial({
+      color,
+      emissive: color.clone().multiplyScalar(0.35),
+      shininess: 90,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(nodeData[i].px, nodeData[i].py, nodeData[i].pz);
+    mesh.userData.idx = i;
+    scene.add(mesh);
+    nodeObjects.push(mesh);
+
+    // CSS2D label
+    const lbl = document.createElement('div');
+    lbl.textContent = i;
+    lbl.style.cssText = `
+      color: rgba(200,210,255,0.75);
+      font-family: 'Courier New', monospace;
+      font-size: 9px;
+      pointer-events: none;
+      text-shadow: 0 0 4px #000;
+    `;
+    const lblObj = new CSS2DObject(lbl);
+    lblObj.position.set(0.38, 0.38, 0.38);
+    mesh.add(lblObj);
+    lblObj.visible = params.showLabels;
+    labelObjects.push(lblObj);
+    nodeLabels.push(lbl);
+  }
+
+  // Edge geometry
+  const edgeCount = edges.length;
+  edgePositions = new Float32Array(edgeCount * 6);
+  edgeColors    = new Float32Array(edgeCount * 6);
+  edgeAlphas    = new Float32Array(edgeCount);
+
+  const edgeGeo = new THREE.BufferGeometry();
+  edgeGeo.setAttribute('position', new THREE.BufferAttribute(edgePositions, 3));
+  edgeGeo.setAttribute('color',    new THREE.BufferAttribute(edgeColors,    3));
+  edgeGeo.setAttribute('alpha',    new THREE.BufferAttribute(edgeAlphas,    1));
+
+  const edgeMat = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+  });
+
+  edgesMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+  scene.add(edgesMesh);
+
+  // Initial colours
+  for (let i = 0; i < edges.length; i++) {
+    const c = COMMUNITY_COLORS[nodeData[edges[i].source].community];
+    edgeColors[i*6  ] = c.r;
+    edgeColors[i*6+1] = c.g;
+    edgeColors[i*6+2] = c.b;
+    edgeAlphas[i] = edges[i].weight * 0.7 + 0.15;
+  }
+  edgesMesh.geometry.attributes.color.needsUpdate = true;
+  edgesMesh.geometry.attributes.alpha.needsUpdate = true;
+
+  drag.setObjects(nodeObjects);
+
+  updateEdgePositions();
+  highlightedNode = null;
+}
+
+function updateEdgePositions() {
+  for (let i = 0; i < edges.length; i++) {
+    const s = nodeData[edges[i].source];
+    const t = nodeData[edges[i].target];
+    edgePositions[i*6  ] = s.px;
+    edgePositions[i*6+1] = s.py;
+    edgePositions[i*6+2] = s.pz;
+    edgePositions[i*6+3] = t.px;
+    edgePositions[i*6+4] = t.py;
+    edgePositions[i*6+5] = t.pz;
+  }
+  edgesMesh.geometry.attributes.position.needsUpdate = true;
+}
+
+// ── Physics ─────────────────────────────────────────────────────────────────
+function simulate(iterations) {
+  const n = nodeData.length;
+  const k = params.linkStrength;
+  const rep = params.repulsionForce;
+  const DAMPING = 0.88;
+  const MAX_V = 2.5;
+  const SPHERE_CONFINEMENT = 0.18;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    // Reset forces
+    for (let i = 0; i < n; i++) {
+      const nd = nodeData[i];
+      nd.fx = 0; nd.fy = 0; nd.fz = 0;
+    }
+
+    // Coulomb repulsion (O(n²))
+    for (let i = 0; i < n; i++) {
+      for (let j = i+1; j < n; j++) {
+        const a = nodeData[i], b = nodeData[j];
+        let dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
+        const distSq = dx*dx + dy*dy + dz*dz + 0.001;
+        const dist   = Math.sqrt(distSq);
+        const f      = rep / distSq;
+        const fx = f * dx / dist, fy = f * dy / dist, fz = f * dz / dist;
+        a.fx -= fx; a.fy -= fy; a.fz -= fz;
+        b.fx += fx; b.fy += fy; b.fz += fz;
+      }
+    }
+
+    // Spring attraction along edges
+    for (let e = 0; e < edges.length; e++) {
+      const { source, target, weight } = edges[e];
+      const a = nodeData[source], b = nodeData[target];
+      let dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) + 0.001;
+      const f = k * dist * (0.4 + weight * 0.6);
+      const fx = f * dx / dist, fy = f * dy / dist, fz = f * dz / dist;
+      a.fx += fx; a.fy += fy; a.fz += fz;
+      b.fx -= fx; b.fy -= fy; b.fz -= fz;
+    }
+
+    // Verlet integration + sphere confinement
+    for (let i = 0; i < n; i++) {
+      const nd = nodeData[i];
+      if (isDragging && nodeObjects[i] === draggedNode) continue;
+
+      nd.vx = (nd.vx + nd.fx) * DAMPING;
+      nd.vy = (nd.vy + nd.fy) * DAMPING;
+      nd.vz = (nd.vz + nd.fz) * DAMPING;
+
+      // clamp velocity
+      const spd = Math.sqrt(nd.vx*nd.vx + nd.vy*nd.vy + nd.vz*nd.vz);
+      if (spd > MAX_V) { const s = MAX_V/spd; nd.vx*=s; nd.vy*=s; nd.vz*=s; }
+
+      nd.px += nd.vx;
+      nd.py += nd.vy;
+      nd.pz += nd.vz;
+
+      // Soft sphere confinement
+      const r = Math.sqrt(nd.px*nd.px + nd.py*nd.py + nd.pz*nd.pz);
+      if (r > SPHERE_RADIUS * 1.1) {
+        const inv = SPHERE_RADIUS * 1.1 / r;
+        nd.px *= inv; nd.py *= inv; nd.pz *= inv;
+        nd.vx *= -0.3; nd.vy *= -0.3; nd.vz *= -0.3;
+      }
+    }
+  }
+
+  // Sync meshes
+  for (let i = 0; i < n; i++) {
+    nodeObjects[i].position.set(nodeData[i].px, nodeData[i].py, nodeData[i].pz);
+  }
+  updateEdgePositions();
+}
+
+// ── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: 'Graph Controls', width: 220 });
+gui.add(params, 'nodeCount', 20, 100, 1).name('Node Count').onChange(v => {
+  buildGraph(Math.round(v));
+});
+gui.add(params, 'linkStrength', 0.01, 0.3, 0.005).name('Link Strength');
+gui.add(params, 'repulsionForce', 2, 40, 0.5).name('Repulsion');
+gui.add(params, 'showLabels').name('Show Labels').onChange(v => {
+  labelObjects.forEach(l => { l.visible = v; });
+});
+gui.add(params, 'autoRun').name('Auto Physics');
+gui.add(params, 'resetLayout').name('Reset Layout');
+
+// ── Lighting ────────────────────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0x334466, 1.2);
+scene.add(ambient);
+const dirLight = new THREE.DirectionalLight(0x8899ff, 1.8);
+dirLight.position.set(10, 20, 15);
+scene.add(dirLight);
+const backLight = new THREE.DirectionalLight(0x220033, 0.8);
+backLight.position.set(-15, -10, -20);
+scene.add(backLight);
+
+// ── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Animation loop ──────────────────────────────────────────────────────────
+let lastNodeCount = params.nodeCount;
+buildGraph(params.nodeCount);
+
+(function animate() {
+  requestAnimationFrame(animate);
+
+  if (params.autoRun) {
+    simulate(60);
+  } else {
+    // gentle settle even when paused
+    simulate(8);
+  }
+
+  orbit.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

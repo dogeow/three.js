@@ -575,9 +575,9 @@ animate()
 | [212](./212-shader-graph-visualizer/index.html) | **着色器函数图像 ★** | GLSL动态编译、实时函数可视化、ShaderMaterial |
 | [213](./213-diffusion-limited-aggregation/index.html) | **DLA分形生长 ★** | 随机游走粒子聚集、分形树生长、InstancedMesh |
 | [214](./214-marching-squares-contour/index.html) | **等值线图 Marching Squares ★** | 标量场等值线、噪声高度场、交互式场编辑 |
-| [215](./215-planck-scale-universe/index.html) | **普朗克尺度宇宙 ★** | 微观粒子层级缩放、宇宙宏观尺度模拟、指数级缩放动画 |
-| [216](./216-music-visualizer-3d/index.html) | **3D音乐可视化器 ★** | Web Audio API频谱、3D波形渲染、粒子节拍响应 |
-| [217](./217-topological-data-analysis/index.html) | **拓扑数据分析可视化 ★** | 持续同调、零点分析、条形码可视化、数据拓扑分析 |
+| [215](./215-planck-scale-universe/index.html) | **普朗克尺度到宇宙 ★** | 宇宙尺度对比、指数级缩放、25个数量级 |
+| [216](./216-music-visualizer-3d/index.html) | **3D音乐可视化器 ★** | Web Audio API频谱分析、3D柱图森林、节拍检测 |
+| [217](./217-topological-data-analysis/index.html) | **拓扑数据分析 TDA ★** | 持续同调、Vietoris-Rips复形、拓扑特征可视化 |
 | [218](./218-quantum-entanglement/index.html) | **量子纠缠可视化 ★** | 量子纠缠态、Bell态、粒子对关联、纠缠度量 |
 | [219](./219-plasma-physics/index.html) | **等离子体物理模拟 ★** | 等离子体粒子模拟、电磁场渲染、Lorentz力、粒子轨迹 |
 | [220](./220-procedural-coral/index.html) | **程序化珊瑚礁 ★** | 程序化珊瑚生成、递归分支算法、水下焦散、气泡粒子 |
@@ -599,6 +599,9 @@ animate()
 | [231](./231-reaction-diffusion/index.html) | **反应扩散系统 ★** | Gray-Scott模型、化学反应扩散、图灵斑图、Pattern生成 |
 | [232](./232-particle-sandglider/index.html) | **粒子沙盒滑块 ★** | 3D网格空间哈希、粒子碰撞、InstancedMesh渲染、24万粒子 |
 | [233](./233-spline-railroad/index.html) | **铁路过山车 ★** | CatmullRomCurve3铁轨生成、火车车厢跟随、Matrix4轨道铺设、预设轨道形状 |
+| [234](./234-particle-physics/index.html) | **粒子物理引擎 ★** | Verlet积分、弹簧约束、刚体碰撞、摩擦力 |
+| [235](./235-procedural-canyon/index.html) | **程序化峡谷地形 ★** | 程序化地形生成、侵蚀模拟、顶点着色器位移、岩层纹理 |
+| [236](./236-holographic-shader/index.html) | **全息着色器 ★** | 扫描线着色、菲涅尔发光、透明折射、RGB色散、全息干扰图纹 |
 
 ---
 
@@ -614,3 +617,103 @@ animate()
 | [particles.html](./examples/particles.html) | Points粒子系统 |
 | [post-processing.html](./examples/post-processing.html) | EffectComposer后期处理 |
 | [texture-mapping.html](./examples/texture-mapping.html) | 纹理加载与配置 |
+
+## 三十一、高级视觉与物理（237~339）
+
+| # | 章节 | 技术点 |
+|---|------|-------|
+| [237](./237-skeletal-animation-blend/index.html) | **骨骼动画混合 ★** | 骨骼动画、动画混合、关键帧插值、IK/FK切换 |
+| [238](./238-volumetric-smoke/index.html) | **体积烟雾渲染 ★** | GPU烟雾模拟、体积渲染、粒子系统、光线步进 |
+| [239](./239-galaxy-merger/index.html) | **星系碰撞合并 ★** | N-body模拟、引力交互、星系碰撞、粒子动力学 |
+| [240](./240-spatial-hash-grid/index.html) | **空间哈希网格 ★** | 空间分割算法、网格单元着色、InstancedMesh、实时碰撞检测 |
+| [241](./240-quantum-circuit/index.html) | **量子电路可视化 ★** | 量子门电路、量子比特可视化、量子计算 |
+| [242](./242-voxel-maze-generator/index.html) | **体素迷宫生成器 ★** | 递归回溯、Prim、Kruskal算法、InstancedMesh渲染 |
+| [243](./240-3d-histogram/index.html) | **3D数据柱图可视化 ★** | 3D柱状图、交互式数据可视化、实时更新 |
+| [244](./244-procedural-planet-erosion/index.html) | **程序化行星侵蚀 ★** | 水力侵蚀模拟、FBM地形、顶点颜色、大气辉光 |
+| [245](./240-isosurface/index.html) | **等值面可视化 ★** | Marching Cubes算法、三维标量场、表面重建、隐式曲面 |
+| [246](./243-skybox-procedural/index.html) | **程序化天空盒 ★** | 大气散射、Rayleigh/Mie散射、FBM云朵着色、Three.js Sky |
+| [247](./240-spatial-hash/index.html) | **空间哈希表 ★** | 空间哈希表可视化、O(1)查找、点击高亮、时间复杂度对比 |
+| [248](./248-fluid-shader-ink/index.html) | **墨水扩散流体 ★** | Navier-Stokes GPU流体、ping-pong FBO、墨水染料、鼠标拖拽注入 |
+| [249](./240-fluid-sim/index.html) | **GPU流体模拟 ★** | Navier-Stokes GPU求解、涡度约束、压力投影、ping-pong FBO、鼠标染料注入 |
+| [250](./240-spline-interpolation/index.html) | **样条插值动画 ★** | CatmullRom插值、路径动画、摄像机运动、粒子轨迹 |
+| [250](./250-audio-dsp-equalizer/index.html) | **音频DSP均衡器 ★** | 频谱可视化、音频DSP、实时均衡、FFT音频处理 |
+| [251](./251-particle-sandstorm/index.html) | **粒子沙尘暴 ★** | GPU粒子风暴、粒子扩散、摩擦力场、沙漠效果 |
+| [252](./252-shader-kaleidoscope/index.html) | **着色器万花筒 ★** | GLSL着色器、对称变换、颜色混合、程序化图案 |
+| [253](./253-physics-rigid-stack/index.html) | **刚体堆叠物理 ★** | cannon-es物理引擎、刚体堆叠、碰撞检测、堆塔物理 |
+| [254](./254-geographic-heatmap/index.html) | **地理热力图 ★** | 地理数据可视化、热力图叠加、GIS数据映射 |
+| [255](./255-molecular-dynamics/index.html) | **分子动力学 ★** | 原子弹簧系统、Verlet积分、Lennard-Jones势、UnrealBloom发光 |
+| [256](./256-generative-art-forest/index.html) | **生成式艺术森林 ★** | L-system植物生长、程序化森林、分形几何 |
+| [257](./257-performance-gpu-batching/index.html) | **GPU批量渲染 ★** | InstancedMesh批量渲染、Draw Call优化、GPU实例化 |
+| [260](./260-particle-storm/index.html) | **粒子风暴 ★** | 湍流粒子场、GPU实例化、噪声速度场、鼠标扰动 |
+| [261](./261-voronoi-shattering/index.html) | **Voronoi破碎效果 ★** | Voronoi碎片、爆炸物理模拟、Verlet积分、碰撞检测、火花粒子 |
+| [262](./262-soft-body-water/index.html) | **软体水球模拟 ★** | 软体弹簧系统、浮力模拟、透明材质、水面着色器 |
+| [263](./263-soft-body-cube/index.html) | **软体方块模拟 ★** | 软体物理、弹簧质点系统、形变着色器、弹性碰撞 |
+| [264](./264-particle-vortex/index.html) | **粒子漩涡 ★** | GPU粒子漩涡、角动量速度场、AdditiveBlending、鼠标爆炸力 |
+| [265](./265-sdf-spheres/index.html) | **SDF多球体渲染 ★** | SDE渲染、距离场着色、smooth union、ray marching |
+| [266](./266-neural-gas/index.html) | **神经气算法 ★** | 神经气聚类、自组织映射、拓扑保持、竞争学习 |
+| [267](./267-portal-sphere/index.html) | **传送门球体 ★** | 传送门特效、空间扭曲着色器、能量漩涡 |
+| [268](./268-terrain-hydraulic-erosion/index.html) | **地形水力侵蚀 ★** | 水力侵蚀模拟、地形生成、顶点击穿、冲积扇 |
+| [269](./269-wave-surface/index.html) | **波浪表面模拟 ★** | Gerstner波、海浪模拟、水面交互、水花粒子 |
+| [270](./270-voxel-painter/index.html) | **体素画笔 ★** | 32³体素编辑、InstancedMesh、JSON导出、16色彩色板 |
+| [271](./271-particle-sandbox/index.html) | **粒子沙盒 ★** | 粒子物珄编辑器、GPU粒子、交互控制、参数实时调节 |
+| [272](./272-wave-particle/index.html) | **波动粒子系统 ★** | 波动方程、粒子同步振荡、群落行为、干涉图样 |
+| [274](./274-fourier-series/index.html) | **傅里叶级数可视化 ★** | 傅里叶级数、频域分解、正弦波叠加、圆频运动 |
+| [275](./275-mesh-fluid/index.html) | **网格流体模拟 ★** | 欧拉网格流体、Navier-Stokes、表面张力、网格变形 |
+| [276](./276-koch-snowflake/index.html) | **科赫雪花分形 ★** | Koch雪花算法、分形几何、迭代细分、LineSegments顶点颜色 |
+| [277](./277-kerning-glyph/index.html) | **字距调整可视化 ★** | 字体字距调整、TextGeometry、字间间距可视化、排版微调 |
+| [278](./278-spring-lattice/index.html) | **弹簧晶格振子 ★** | 弹簧晶格物理、耦合振子、波传播、驻波模拟 |
+| [273](./273-spherical-harmonics/index.html) | **球谐函数可视化 ★** | 球谐函数Y_lm、缔合Legendre多项式、量子数(l,m)、 lobe可视化 |
+| [279](./279-particle-sph/index.html) | **粒子SPH流体 ★** | SPH光滑粒子流体、粒子间作用力、密度计算、 Navier-Stokes |
+| [280](./280-webxr-grab/index.html) | **WebXR抓取交互 ★** | WebXR手势抓取、VR控制器、沉浸式3D交互 |
+| [281](./281-procedural-clouds-volumetric/index.html) | **程序化体积云 ★** | 体积云渲染、光线步进、散射模拟、FBM噪声 |
+| [282](./282-shader-water-caustic/index.html) | **焦散水面着色器 ★** | 实时焦散着色器、光线折射、水面波纹、水下光斑 |
+| [283](./283-particle-constellation/index.html) | **粒子星座图 ★** | 粒子连线星座、3D星空、视差效果、星座连线 |
+| [284](./284-sdf-raymarcher-advanced/index.html) | **高级SDF光线步进 ★** | 高级SDF渲染、smin/smax融合、软阴影、AO、三种预设场景 |
+| [285](./285-procedural-terrain-erosion/index.html) | **程序化地形侵蚀 ★** | 地形生成、河流侵蚀模拟、沉积物传输、热侵蚀 |
+| [286](./286-audio-visualizer-reactive/index.html) | **音频可视化反应 ★** | 音频频谱反应、实时FFT、粒子色彩响应、节拍检测 |
+| [287](./287-sdf-boolean/index.html) | **SDF布尔运算 ★** | SDF联合/相减/相交、smooth blend、CSG几何 |
+| [288](./288-gpu-ray-trace/index.html) | **GPU光线追踪 ★** | CubeCamera实时反射、菲涅尔反射、玻璃折射、 UnrealBloom |
+| [289](./289-procedural-lava/index.html) | **程序化熔岩流 ★** | GPU粒子熔岩、温度着色、热力扭曲后处理、 InstancedMesh |
+| [290](./290-interactive-water-fountain/index.html) | **交互水舞喷泉 ★** | Verlet粒子物理、音频反应、焦散光斑、MeshPhysicalMaterial水滴 |
+| [291](./291-holographic-audio/index.html) | **全息音频可视化 ★** | 音频全息投影、波形渲染、三维频谱 |
+| [292](./292-procedural-bonsai/index.html) | **程序化盆景树 ★** | L-system盆景、程序化植物、修剪模拟 |
+| [293](./293-skeletal-rig/index.html) | **骨骼绑定系统 ★** | 骨骼动画、IK/FK、蒙皮权重、关键帧 |
+| [294](./294-world-painter/index.html) | **世界画笔编辑器 ★** | 3D地形编辑、笔刷系统、实时渲染 |
+| [295](./295-quantum-wave-function/index.html) | **量子波函数 ★** | 量子力学波函数、概率密度、3D可视化 |
+| [296](./296-diffraction-grating/index.html) | **衍射光栅 ★** | 光栅衍射、光波干涉、光谱分解 |
+| [297](./297-particle-beam/index.html) | **粒子束流 ★** | 高能粒子束、束流物理、光线追踪 |
+| [298](./298-gravitational-lensing/index.html) | **引力透镜 ★** | 广义相对论、引力透镜、光线偏折 |
+| [303](./303-gpu-particle-storm/index.html) | **GPU粒子风暴 ★** | 20万粒子、FBM湍流、UnrealBloom、鼠标力场 |
+| [304](./304-webxr-hand-tracking/index.html) | **WebXR手势追踪 ★** | WebXR手势追踪、骨骼网格、VR交互 |
+| [305](./305-procedural-terrain-biomes/index.html) | **程序化地形生物群落 ★** | 地形生物群落、气候带、程序化生态 |
+| [306](./306-3d-graph-visualization/index.html) | **3D图形可视化 ★** | 3D图表、图形理论、网络可视化 |
+| [307](./307-sdf-raymarching-scene/index.html) | **SDF光线步进场景 ★** | SDF场景构建、光线步进、距离场渲染 |
+| [308](./308-soft-body-cloth/index.html) | **软体布料模拟 ★** | 布料物理、弹簧质点、碰撞检测 |
+| [309](./309-particle-beam/index.html) | **粒子束流 ★** | 高能粒子束、CatmullRom曲线、UnrealBloom、鼠标点击粒子爆发 |
+| [310](./310-gravitational-lensing/index.html) | **引力透镜 ★** | 黑洞透镜、吸积盘、爱因斯坦环、相对论喷流 |
+| [311](./311-abel-inversion/index.html) | **Abel逆变换 ★** | Abel反演、轴对称可视化、等离子体诊断 |
+| [312](./312-holographic-interference/index.html) | **全息干涉图样 ★** | 全息干涉、衍射光栅、光学干涉 |
+| [313](./247-snowflake-crystal-generator/index.html) | **雪花晶体生成器 ★** | Koch雪花晶体、六重对称、递归细分、UnrealBloom发光、点击生成 |
+| [259](./259-voxel-carving-terrain/index.html) | **体素地形雕刻 ★** | 32³体素编辑、InstancedMesh、噪声地形生成、左右键放/删体素 |
+| [258](./258-sound-reactive-particles/index.html) | **音频反应粒子 ★** | FFT频谱驱动粒子、低/中/高频分层响应、AdditiveBlending、UnrealBloom |
+| [314](./246-spherical-mesh-deformation/index.html) | **球面网格变形 ★** | 球谐函数Y_lm、Rodrigues公式、21个模式滑块、网格变形动画 |
+| [315](./245-surface-tension-fluid/index.html) | **表面张力流体 ★** | Metaballs融合、smin平滑联合、表面张力物理、鼠标拖拽、Fresnel |
+| [316](./249-mesh-wind-field/index.html) | **3D风场可视化 ★** | Simplex噪声风场、InstancedMesh箭头、点击阵风、速度颜色编码 |
+| [321](./321-plasma-ball/index.html) | **等离子球 ★** | 等离子球闪电、电弧模拟、鼠标交互、UnrealBloom |
+| [322](./322-soap-bubble/index.html) | **肥皂泡模拟 ★** | 薄膜干涉、彩虹色、MeshPhysicalMaterial、透明材质 |
+| [323](./323-particle-sandpile/index.html) | **沙堆粒子模拟 ★** | 自组织临界、沙堆模型、粒子堆积、BTW模型 |
+| [324](./324-knot-torus/index.html) | **结环面几何 ★** | 打结环面、拓扑结、三维曲线可视化 |
+| [325](./325-wave-pendulum/index.html) | **波动摆模拟 ★** | 耦合摆波动、拍频现象、混沌摆 |
+| [326](./326-shader-confetti/index.html) | **着色器彩屑 ★** | GLSL彩屑动画、粒子洒落、彩虹配色 |
+| [327](./327-rorschach-inkblot/index.html) | **罗夏墨迹 ★** | 对称墨迹生成、随机图形、心理学投影 |
+| [328](./328-mobius-strip/index.html) | **莫比乌斯环 ★** | 莫比乌斯带、非定向曲面、拓扑学 |
+| [329](./329-spherical-harmonics-lighting/index.html) | **球谐光照 ★** | 球谐函数光照、PRT光照传输、环境光照 |
+| [331](./331-particle-sandglider/index.html) | **粒子滑翔模拟 ★** | 粒子地形滑翔、SPH交互、粒子地形交互 |
+| [332](./332-spline-railroad/index.html) | **程序化铁路轨道 ★** | CatmullRomCurve3铁轨生成、火车动画、Frenet帧 |
+| [333](./333-voxel-maze-generator/index.html) | **体素迷宫生成器 ★** | 递归回溯迷宫、InstancedMesh渲染 |
+| [334](./334-snowflake-generator/index.html) | **雪花生成器 ★** | 六重对称分形、Koch雪花 |
+| [335](./335-fluid-shader-ink/index.html) | **着色器墨水 ★** | GPU墨水扩散、Navier-Stokes流体、ping-pong FBO |
+| [336](./336-webgpu-renderer/index.html) | **WebGPU渲染器 ★** | WebGPU API、下一代Web图形、ComputeShader |
+| [337](./337-procedural-architecture/index.html) | **程序化建筑学 ★** | 建筑程序生成、Algorithmic AIA、结构优化 |
+| [338](./338-soft-body-physics/index.html) | **软体物理模拟 ★** | 软体物理、弹簧系统、形变动画 |
+| [339](./339-audio-reactive-shader/index.html) | **音频反应着色器 ★** | 音频着色器、FFT频谱、实时图形渲染 |

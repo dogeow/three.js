@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spatial Hash Grid — Three.js</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0d0f; overflow: hidden; font-family: 'Courier New', monospace; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 18px;
+      left: 20px;
+      color: rgba(255,255,255,0.55);
+      font-size: 12px;
+      line-height: 1.7;
+      pointer-events: none;
+      user-select: none;
+    }
+    #stats-bar {
+      position: absolute;
+      top: 18px;
+      right: 20px;
+      color: rgba(255,255,255,0.45);
+      font-size: 11px;
+      line-height: 1.9;
+      text-align: right;
+      pointer-events: none;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="info">
+  <strong>Spatial Hash Grid</strong><br>
+  Left-click / drag → add particle<br>
+  Right-click → remove last<br>
+  Scroll → zoom &nbsp;|&nbsp; Middle-drag → pan
+</div>
+<div id="stats-bar">
+  <div id="particle-count">Particles: 0</div>
+  <div id="cell-count">Active cells: 0</div>
+  <div id="density-range">Density range: 0 – 0</div>
+</div>
+
+<!-- ── Import map: Three.js + addons ─────────────────────────────────────── -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPATIAL HASH GRID — core data structure
+   ═══════════════════════════════════════════════════════════════════════════ */
+class SpatialHashGrid {
+  /**
+   * @param {number} cellSize  world-space size of each hash cell
+   */
+  constructor(cellSize = 10) {
+    this.cellSize  = cellSize;
+    this.invCell   = 1.0 / cellSize;
+    this.map       = new Map();          // key(string) → Particle[]
+    this.cellInfo  = new Map();          // key(string) → { count, density }
+  }
+
+  // ------------------------------------------------------------------
+  // Convert a 3-D integer triple into a unique string key
+  // ------------------------------------------------------------------
+  _key(ix, iy, iz) {
+    return `${ix},${iy},${iz}`;
+  }
+
+  // ------------------------------------------------------------------
+  // Map world position → cell integer index
+  // ------------------------------------------------------------------
+  _index(x, y, z) {
+    return {
+      x: Math.floor(x * this.invCell),
+      y: Math.floor(y * this.invCell),
+      z: Math.floor(z * this.invCell),
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Insert a particle (stores ref)
+  // ------------------------------------------------------------------
+  insert(particle) {
+    const { x, y, z } = this._index(particle.x, particle.y, particle.z);
+    const k = this._key(x, y, z);
+    if (!this.map.has(k)) this.map.set(k, []);
+    this.map.get(k).push(particle);
+    this._rebuildCellInfo(k);
+  }
+
+  // ------------------------------------------------------------------
+  // Remove a particle by reference (O(n) within cell)
+  // ------------------------------------------------------------------
+  remove(particle) {
+    const { x, y, z } = this._index(particle.x, particle.y, particle.z);
+    const k = this._key(x, y, z);
+    const cell = this.map.get(k);
+    if (!cell) return;
+    const idx = cell.indexOf(particle);
+    if (idx !== -1) cell.splice(idx, 1);
+    if (cell.length === 0) this.map.delete(k);
+    this._rebuildCellInfo(k);
+  }
+
+  // ------------------------------------------------------------------
+  // Query all particles within a sphere
+  // ------------------------------------------------------------------
+  querySphere(cx, cy, cz, radius) {
+    const r   = Math.ceil(radius * this.invCell);
+    const { x: cx0, y: cy0, z: cz0 } = this._index(cx, cy, cz);
+    const r2  = radius * radius;
+    const out = [];
+
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dz = -r; dz <= r; dz++) {
+          const cell = this.map.get(this._key(cx0 + dx, cy0 + dy, cz0 + dz));
+          if (!cell) continue;
+          for (const p of cell) {
+            const vx = p.x - cx, vy = p.y - cy, vz = p.z - cz;
+            if (vx * vx + vy * vy + vz * vz <= r2) out.push(p);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------
+  // Update particle position (re-insert if cell changed)
+  // ------------------------------------------------------------------
+  updatePosition(particle, nx, ny, nz) {
+    const oldIdx = this._index(particle.x, particle.y, particle.z);
+    const newIdx = this._index(nx, ny, nz);
+    if (oldIdx.x === newIdx.x && oldIdx.y === newIdx.y && oldIdx.z === newIdx.z) {
+      particle.x = nx; particle.y = ny; particle.z = nz;
+      return;
+    }
+    this.remove(particle);
+    particle.x = nx; particle.y = ny; particle.z = nz;
+    this.insert(particle);
+  }
+
+  // ------------------------------------------------------------------
+  // Rebuild density metadata for a single cell (and its 3×3×3 neighbours
+  // so the visualisation stays coherent)
+  // ------------------------------------------------------------------
+  _rebuildCellInfo(key) {
+    this.cellInfo.delete(key);
+    const count = this.map.get(key)?.length ?? 0;
+    if (count > 0) this.cellInfo.set(key, { count, density: count / (this.cellSize ** 3) });
+    // also refresh neighbours for smoother visual transitions
+    const [cx, cy, cz] = key.split(',').map(Number);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const nk = this._key(cx + dx, cy + dy, cz + dz);
+          const nc = this.map.get(nk)?.length ?? 0;
+          if (nc > 0) this.cellInfo.set(nk, { count: nc, density: nc / (this.cellSize ** 3) });
+          else this.cellInfo.delete(nk);
+        }
+  }
+
+  // ------------------------------------------------------------------
+  // Return all cell keys currently occupied
+  // ------------------------------------------------------------------
+  occupiedCells() {
+    return [...this.cellInfo.entries()].map(([k, v]) => {
+      const [cx, cy, cz] = k.split(',').map(Number);
+      return { key: k, x: cx, y: cy, z: cz, count: v.count, density: v.density };
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PARTICLE
+   ═══════════════════════════════════════════════════════════════════════════ */
+class Particle {
+  constructor(x, y, z) {
+    this.x = x; this.y = y; this.z = z;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RENDERER / SCENE / CAMERA
+   ═══════════════════════════════════════════════════════════════════════════ */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d0f);
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 3000);
+camera.position.set(0, 60, 130);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.minDistance   = 10;
+controls.maxDistance   = 600;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COLOR MAPPING — thermal palette (blue → cyan → green → yellow → red)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const THERMAL_STOPS = [
+  new THREE.Color(0x0d0d1a),   // near-black  — empty
+  new THREE.Color(0x002244),   // deep blue
+  new THREE.Color(0x0066cc),   // blue
+  new THREE.Color(0x00bbdd),   // cyan
+  new THREE.Color(0x00ee88),   // green
+  new THREE.Color(0xccff00),   // lime
+  new THREE.Color(0xffaa00),   // orange
+  new THREE.Color(0xff3300),   // red
+  new THREE.Color(0xffffff),   // white-hot
+];
+const THERMAL_POSITIONS = [0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 0.95, 1.0];
+const thermalGradient = new THREE.LinearGradient();
+THERMAL_STOPS.forEach((c, i) => thermalGradient.setColor(THERMAL_POSITIONS[i], c));
+const thermalTex = new THREE.CanvasTexture(
+  (() => {
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 1;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 512, 0);
+    THERMAL_STOPS.forEach((c, i) => g.addColorStop(THERMAL_POSITIONS[i], `#${c.getHexString()}`));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 1);
+    return cv;
+  })()
+);
+thermalTex.needsUpdate = true;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPATIAL HASH + PARTICLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+const params = {
+  cellSize:   12,
+  maxParticles: 3000,
+  particleSpeed: 0.4,
+  autoSpawn:  true,
+  spawnRate:  8,       // particles per frame when autoSpawn=true
+};
+
+let hashGrid  = new SpatialHashGrid(params.cellSize);
+let particles = [];    // Particle[]
+let dummy     = new THREE.Object3D();
+let color     = new THREE.Color();
+
+// ── InstancedMesh for particles ──────────────────────────────────────────
+const particleGeom = new THREE.SphereGeometry(0.35, 8, 6);
+const particleMat  = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 });
+const particleMesh = new THREE.InstancedMesh(particleGeom, particleMat, params.maxParticles);
+particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+particleMesh.count = 0;
+scene.add(particleMesh);
+
+// ── InstancedMesh for grid cell boxes (density heatmap) ──────────────────
+const boxGeom   = new THREE.BoxGeometry(1, 1, 1);
+const boxMat    = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.22 });
+const MAX_CELLS = 5000;
+const cellMesh  = new THREE.InstancedMesh(boxGeom, boxMat, MAX_CELLS);
+cellMesh.count  = 0;
+scene.add(cellMesh);
+
+// ── Wireframe outlines for occupied cells ─────────────────────────────────
+const wireMat    = new THREE.LineBasicMaterial({ color: 0x334466, transparent: true, opacity: 0.5 });
+const wireGeom   = new THREE.BoxGeometry(1, 1, 1);
+const wireHelper = new THREE.LineSegments(
+  new THREE.EdgesGeometry(wireGeom),
+  wireMat
+);
+const wireMesh = new THREE.InstancedMesh(wireGeom, wireMat, MAX_CELLS);
+wireMesh.count = 0;
+scene.add(wireMesh);
+
+// ── Coordinate axis helper (small) ────────────────────────────────────────
+const axisHelper = new THREE.AxesHelper(8);
+scene.add(axisHelper);
+
+// ── Ground grid ────────────────────────────────────────────────────────────
+const gridHelper = new THREE.GridHelper(300, 30, 0x1a1a2e, 0x1a1a2e);
+scene.add(gridHelper);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GUI
+   ═══════════════════════════════════════════════════════════════════════════ */
+const gui = new GUI({ title: 'Spatial Hash Grid' });
+gui.add(params, 'cellSize',     4, 40, 1).name('Cell Size').onChange(v => {
+  // Rebuild grid when cell size changes
+  const saved = particles.slice();
+  hashGrid = new SpatialHashGrid(v);
+  clearAll();
+  saved.forEach(p => {
+    hashGrid.insert(p);
+    particles.push(p);
+  });
+  updateMeshes();
+});
+gui.add(params, 'maxParticles', 100, 10000, 50).name('Max Particles');
+gui.add(params, 'autoSpawn').name('Auto Spawn');
+gui.add(params, 'spawnRate',    1, 60, 1).name('Spawn / frame');
+gui.add(params, 'particleSpeed', 0, 3, 0.05).name('Particle Speed');
+gui.add({ clearAll }, 'clearAll').name('Clear All');
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+function clearAll() {
+  particles.forEach(p => hashGrid.remove(p));
+  particles = [];
+  updateMeshes();
+}
+
+function spawnParticle(x, y, z) {
+  if (particles.length >= params.maxParticles) return null;
+  const p = new Particle(
+    (x ?? (Math.random() - 0.5) * 120),
+    (y ?? (Math.random() - 0.5) * 60),
+    (z ?? (Math.random() - 0.5) * 120)
+  );
+  particles.push(p);
+  hashGrid.insert(p);
+  return p;
+}
+
+function removeLastParticle() {
+  if (!particles.length) return;
+  const p = particles.pop();
+  hashGrid.remove(p);
+  updateMeshes();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UPDATE INSTANCED MESHES
+   ═══════════════════════════════════════════════════════════════════════════ */
+function updateMeshes() {
+  // ── Particle instances ────────────────────────────────────────────────────
+  particleMesh.count = particles.length;
+  particles.forEach((p, i) => {
+    dummy.position.set(p.x, p.y, p.z);
+    dummy.updateMatrix();
+    particleMesh.setMatrixAt(i, dummy.matrix);
+  });
+  particleMesh.instanceMatrix.needsUpdate = true;
+
+  // ── Cell box heatmap ─────────────────────────────────────────────────────
+  const cells      = hashGrid.occupiedCells();
+  const maxCount   = Math.max(...cells.map(c => c.count), 1);
+  const maxVisible = Math.min(cells.length, MAX_CELLS);
+
+  // colour map for boxes
+  const colors = new Float32Array(MAX_CELLS * 3 * 8); // 8 verts per box
+
+  cells.slice(0, MAX_CELLS).forEach((cell, idx) => {
+    const t   = cell.count / maxCount;
+    const col = THERMAL_STOPS[Math.min(Math.floor(t * (THERMAL_STOPS.length - 1)), THERMAL_STOPS.length - 1)];
+
+    dummy.position.set(
+      (cell.x + 0.5) * hashGrid.cellSize,
+      (cell.y + 0.5) * hashGrid.cellSize,
+      (cell.z + 0.5) * hashGrid.cellSize
+    );
+    dummy.scale.setScalar(hashGrid.cellSize * 0.96);
+    dummy.updateMatrix();
+    cellMesh.setMatrixAt(idx, dummy.matrix);
+
+    for (let v = 0; v < 8; v++) {
+      colors[(idx * 8 + v) * 3 + 0] = col.r;
+      colors[(idx * 8 + v) * 3 + 1] = col.g;
+      colors[(idx * 8 + v) * 3 + 2] = col.b;
+    }
+
+    // wireframe
+    wireMesh.setMatrixAt(idx, dummy.matrix);
+  });
+
+  cellMesh.count = maxVisible;
+  cellMesh.instanceMatrix.needsUpdate = true;
+  cellMesh.geometry.setAttribute('color', new THREE.InstancedBufferAttribute(colors.slice(0, maxVisible * 8 * 3), 3));
+  cellMesh.geometry.attributes.color.needsUpdate = true;
+
+  wireMesh.count = maxVisible;
+  wireMesh.instanceMatrix.needsUpdate = true;
+
+  // ── HUD ───────────────────────────────────────────────────────────────────
+  const counts = cells.map(c => c.count).sort((a, b) => a - b);
+  document.getElementById('particle-count').textContent  = `Particles: ${particles.length}`;
+  document.getElementById('cell-count').textContent      = `Active cells: ${cells.length}`;
+  document.getElementById('density-range').textContent   =
+    `Density range: ${counts[0] ?? 0} – ${counts[counts.length - 1] ?? 0}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INPUT — mouse click to add particles
+   ═══════════════════════════════════════════════════════════════════════════ */
+const raycaster = new THREE.Raycaster();
+const mouse     = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const hitPoint  = new THREE.Vector3();
+
+renderer.domElement.addEventListener('click', e => {
+  if (e.button !== 0) return;
+  mouse.x = (e.clientX / window.innerWidth)  *  2 - 1;
+  mouse.y = (e.clientY / window.innerHeight)  * -2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  if (raycaster.ray.intersectPlane(groundPlane, hitPoint)) {
+    spawnParticle(hitPoint.x, 0, hitPoint.z);
+    updateMeshes();
+  }
+});
+
+renderer.domElement.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  removeLastParticle();
+  updateMeshes();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ANIMATION LOOP
+   ═══════════════════════════════════════════════════════════════════════════ */
+let frame = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  frame++;
+
+  // Auto-spawn
+  if (params.autoSpawn && particles.length < params.maxParticles) {
+    const n = Math.min(params.spawnRate, params.maxParticles - particles.length);
+    for (let i = 0; i < n; i++) {
+      const p = new Particle(
+        (Math.random() - 0.5) * 120,
+        (Math.random() - 0.5) * 60,
+        (Math.random() - 0.5) * 120
+      );
+      particles.push(p);
+      hashGrid.insert(p);
+    }
+    updateMeshes();
+  }
+
+  // Gentle random walk for existing particles
+  if (params.particleSpeed > 0 && frame % 2 === 0) {
+    const speed = params.particleSpeed;
+    particles.forEach(p => {
+      const nx = p.x + (Math.random() - 0.5) * speed;
+      const ny = p.y + (Math.random() - 0.5) * speed;
+      const nz = p.z + (Math.random() - 0.5) * speed;
+      hashGrid.updatePosition(p, nx, ny, nz);
+    });
+    updateMeshes();
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESIZE
+   ═══════════════════════════════════════════════════════════════════════════ */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INIT — seed with some particles so the visualisation isn't empty on load
+   ═══════════════════════════════════════════════════════════════════════════ */
+for (let i = 0; i < 120; i++) spawnParticle();
+updateMeshes();
+
+animate();
+</script>
+</body>
+</html>

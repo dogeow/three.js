@@ -1,0 +1,8 @@
+基于 Three.js GPU 粒子的流体火焰模拟示例，通过自定义顶点与片元着色器实现火焰的湍流上升运动、颜色梯度（白黄→橙→红）及加法混合发光效果，点击鼠标可在任意位置生成火焰爆发。
+
+核心技术：
+- GPU 粒子系统（BufferGeometry + Points）配合自定义 ShaderMaterial
+- 3D Simplex 噪声驱动粒子湍流运动，多层噪声叠加模拟真实火焰形态
+- 加法混合（AdditiveBlending）实现火焰叠加发光效果
+- 基于生命周期的颜色插值与透明度衰减
+- OrbitControls 轨道控制器 + lil-gui 参数实时调控

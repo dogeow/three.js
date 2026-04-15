@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Example 240: 3D Histogram</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #1a1a2e; font-family: sans-serif; }
+    canvas { display: block; }
+    #tooltip {
+      position: fixed;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+    }
+    #legend {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: #ccc;
+      font-size: 13px;
+      line-height: 1.8;
+    }
+    #legend span { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  </style>
+</head>
+<body>
+<!-- Example 240: 3D Histogram - Interactive data bars, smooth animation, axis grid -->
+<div id="tooltip"></div>
+<div id="legend"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// Scene setup
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(12, 14, 18);
+camera.lookAt(0, 2, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 2, 0);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+dirLight.position.set(10, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 50;
+dirLight.shadow.camera.left = -15;
+dirLight.shadow.camera.right = 15;
+dirLight.shadow.camera.top = 15;
+dirLight.shadow.camera.bottom = -15;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x4488ff, 0.3);
+fillLight.position.set(-10, 10, -10);
+scene.add(fillLight);
+
+// Floor
+const floorGeo = new THREE.PlaneGeometry(30, 30);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x16213e, roughness: 0.9, metalness: 0.1 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = 0;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Grid on floor
+const gridHelper = new THREE.GridHelper(30, 30, 0x2a2a5e, 0x2a2a5e);
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+// Data and bar management
+const MAX_BARS = 20;
+const BAR_WIDTH = 0.8;
+const SPACING = 1.2;
+
+const data = [
+  { label: 'A', value: 3.5, color: new THREE.Color(0x00b4d8) },
+  { label: 'B', value: 5.2, color: new THREE.Color(0x0077b6) },
+  { label: 'C', value: 2.8, color: new THREE.Color(0x00b4d8) },
+  { label: 'D', value: 7.1, color: new THREE.Color(0x48cae4) },
+  { label: 'E', value: 4.0, color: new THREE.Color(0x0077b6) },
+  { label: 'F', value: 6.3, color: new THREE.Color(0x00b4d8) },
+];
+
+let bars = [];
+let instancedMesh = null;
+let maxValue = 8;
+
+// Color schemes
+const colorSchemes = {
+  'Ocean Blue':   [0x00b4d8, 0x0077b6, 0x48cae4, 0x90e0ef, 0xcaf0f8],
+  'Sunset':      [0xff6b6b, 0xffa07a, 0xffd93d, 0x6bcb77, 0x4d96ff],
+  'Forest':      [0x2d6a4f, 0x40916c, 0x52b788, 0x74c69d, 0x95d5b2],
+  'Neon':        [0xff00ff, 0x00ffff, 0xffff00, 0x00ff00, 0xff0080],
+  'Warm':        [0xe63946, 0xf4a261, 0xe9c46a, 0x2a9d8f, 0x264653],
+};
+
+let currentScheme = 'Ocean Blue';
+
+function buildInstancedMesh() {
+  if (instancedMesh) {
+    scene.remove(instancedMesh);
+    instancedMesh.geometry.dispose();
+    instancedMesh.material.dispose();
+    instancedMesh = null;
+  }
+
+  if (data.length === 0) return;
+
+  const geo = new THREE.BoxGeometry(BAR_WIDTH, 1, BAR_WIDTH);
+  const mat = new THREE.MeshStandardMaterial({
+    roughness: 0.3,
+    metalness: 0.2,
+    vertexColors: false,
+  });
+
+  instancedMesh = new THREE.InstancedMesh(geo, mat, MAX_BARS);
+  instancedMesh.castShadow = true;
+  instancedMesh.receiveShadow = true;
+
+  // Dummy for matrix transforms
+  const dummy = new THREE.Object3D();
+
+  for (let i = 0; i < MAX_BARS; i++) {
+    dummy.position.set(0, 0, 0);
+    dummy.scale.set(1, 0.001, 1);
+    dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, dummy.matrix);
+    instancedMesh.setColorAt(i, new THREE.Color(0x333333));
+  }
+
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  instancedMesh.count = data.length;
+  scene.add(instancedMesh);
+}
+
+buildInstancedMesh();
+
+function getSchemeColor(idx) {
+  const scheme = colorSchemes[currentScheme];
+  return scheme[idx % scheme.length];
+}
+
+function updateBars() {
+  if (!instancedMesh) return;
+
+  maxValue = Math.max(...data.map(d => d.value), 1);
+  const dummy = new THREE.Object3D();
+  const totalWidth = data.length * SPACING;
+  const startX = -totalWidth / 2 + SPACING / 2;
+
+  for (let i = 0; i < MAX_BARS; i++) {
+    if (i < data.length) {
+      const d = data[i];
+      const x = startX + i * SPACING;
+      const targetHeight = (d.value / maxValue) * 8;
+
+      dummy.position.set(x, targetHeight / 2, 0);
+      dummy.scale.set(1, Math.max(targetHeight, 0.01), 1);
+      dummy.updateMatrix();
+      instancedMesh.setMatrixAt(i, dummy.matrix);
+
+      const col = new THREE.Color(getSchemeColor(i));
+      instancedMesh.setColorAt(i, col);
+    } else {
+      dummy.position.set(0, 0, 0);
+      dummy.scale.set(1, 0.001, 1);
+      dummy.updateMatrix();
+      instancedMesh.setMatrixAt(i, dummy.matrix);
+      instancedMesh.setColorAt(i, new THREE.Color(0x000000));
+    }
+  }
+
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+  instancedMesh.count = Math.max(data.length, 1);
+
+  updateLegend();
+  updateAxis();
+}
+
+// Animation state per bar
+const animStates = data.map(() => ({ current: 0, target: 0 }));
+
+function initAnimStates() {
+  animStates.length = 0;
+  data.forEach(d => {
+    animStates.push({ current: d.value, target: d.value });
+  });
+}
+initAnimStates();
+
+function animateBars() {
+  if (!instancedMesh || data.length === 0) return;
+
+  const dummy = new THREE.Object3D();
+  const totalWidth = data.length * SPACING;
+  const startX = -totalWidth / 2 + SPACING / 2;
+  let allDone = true;
+
+  for (let i = 0; i < data.length; i++) {
+    const state = animStates[i];
+    if (state) {
+      const diff = state.target - state.current;
+      if (Math.abs(diff) > 0.001) {
+        state.current += diff * 0.08;
+        allDone = false;
+      } else {
+        state.current = state.target;
+      }
+
+      const x = startX + i * SPACING;
+      const h = Math.max((state.current / maxValue) * 8, 0.01);
+      dummy.position.set(x, h / 2, 0);
+      dummy.scale.set(1, h, 1);
+      dummy.updateMatrix();
+      instancedMesh.setMatrixAt(i, dummy.matrix);
+    }
+  }
+
+  for (let i = data.length; i < MAX_BARS; i++) {
+    dummy.position.set(0, 0, 0);
+    dummy.scale.set(1, 0.001, 1);
+    dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, dummy.matrix);
+  }
+
+  instancedMesh.instanceMatrix.needsUpdate = true;
+
+  if (!allDone) requestAnimationFrame(animateBars);
+}
+
+// Axis labels
+const axisGroup = new THREE.Group();
+scene.add(axisGroup);
+
+const yAxisGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-5, 0, 0),
+  new THREE.Vector3(-5, 8.5, 0),
+]);
+const yAxis = new THREE.Line(yAxisGeo, new THREE.LineBasicMaterial({ color: 0x888888 }));
+axisGroup.add(yAxis);
+
+const xAxisGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-5, 0, 0),
+  new THREE.Vector3(15, 0, 0),
+]);
+const xAxis = new THREE.Line(xAxisGeo, new THREE.LineBasicMaterial({ color: 0x888888 }));
+axisGroup.add(xAxis);
+
+// Y axis tick marks and labels
+const yLabels = [];
+for (let v = 0; v <= 8; v += 2) {
+  const tickGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-5.2, v, 0),
+    new THREE.Vector3(-4.8, v, 0),
+  ]);
+  axisGroup.add(new THREE.Line(tickGeo, new THREE.LineBasicMaterial({ color: 0x888888 })));
+}
+
+function updateAxis() {
+  // Remove old x-axis labels
+  axisGroup.children = axisGroup.children.filter(c => !c.userData.isXLabel);
+
+  const totalWidth = data.length * SPACING;
+  const startX = -totalWidth / 2 + SPACING / 2;
+
+  data.forEach((d, i) => {
+    const x = startX + i * SPACING;
+
+    const tickGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, -0.05, 0),
+      new THREE.Vector3(x, 0.05, 0),
+    ]);
+    const tick = new THREE.Line(tickGeo, new THREE.LineBasicMaterial({ color: 0x888888 }));
+    tick.userData.isXLabel = true;
+    axisGroup.add(tick);
+
+    // X label
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = 'bold 36px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.label, 64, 40);
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMat = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.position.set(x, -0.5, 0);
+    sprite.scale.set(1.2, 0.6, 1);
+    sprite.userData.isXLabel = true;
+    axisGroup.add(sprite);
+  });
+}
+
+function makeYLabel(value) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#aaaaaa';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(value.toFixed(0), 60, 38);
+  const texture = new THREE.CanvasTexture(canvas);
+  const spriteMat = new THREE.SpriteMaterial({ map: texture });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.position.set(-6.5, value, 0);
+  sprite.scale.set(0.9, 0.45, 1);
+  return sprite;
+}
+
+function updateYAxisLabels() {
+  axisGroup.children = axisGroup.children.filter(c => !c.userData.isYLabel);
+  for (let v = 0; v <= 8; v += 2) {
+    const lbl = makeYLabel(v);
+    lbl.userData.isYLabel = true;
+    axisGroup.add(lbl);
+  }
+}
+
+updateAxis();
+updateYAxisLabels();
+
+// Legend
+function updateLegend() {
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '<strong>3D Histogram</strong><br>';
+  data.forEach((d, i) => {
+    const col = '#' + getSchemeColor(i).toString(16).padStart(6, '0');
+    legend.innerHTML += `<span style="background:${col}"></span>${d.label}: ${d.value.toFixed(1)}<br>`;
+  });
+}
+updateLegend();
+
+// Raycasting for click
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const tooltip = document.getElementById('tooltip');
+
+function onMouseMove(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  if (instancedMesh) {
+    const hits = raycaster.intersectObject(instancedMesh);
+    if (hits.length > 0 && hits[0].instanceId !== undefined && hits[0].instanceId < data.length) {
+      const idx = hits[0].instanceId;
+      const d = data[idx];
+      const col = '#' + getSchemeColor(idx).toString(16).padStart(6, '0');
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY - 12) + 'px';
+      tooltip.innerHTML = `<strong>${d.label}</strong><br>Value: ${d.value.toFixed(2)}<br><em>Click to change value</em>`;
+    } else {
+      tooltip.style.display = 'none';
+    }
+  }
+}
+
+function onClick(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  if (instancedMesh) {
+    const hits = raycaster.intersectObject(instancedMesh);
+    if (hits.length > 0 && hits[0].instanceId !== undefined && hits[0].instanceId < data.length) {
+      const idx = hits[0].instanceId;
+      // Randomize the value
+      const newVal = Math.random() * 7 + 1;
+      data[idx].value = Math.round(newVal * 10) / 10;
+      animStates[idx].target = data[idx].value;
+      updateLegend();
+      requestAnimationFrame(animateBars);
+    }
+  }
+}
+
+window.addEventListener('mousemove', onMouseMove);
+window.addEventListener('click', onClick);
+
+// GUI
+const gui = new GUI({ title: '3D Histogram Controls' });
+
+const params = {
+  addBar: () => {
+    if (data.length >= MAX_BARS) return;
+    const labels = 'GHIJKLMNOPQRSTUVWXYZ'.split('');
+    const newLabel = labels[data.length - 6] || `B${data.length - 5}`;
+    const newVal = Math.round((Math.random() * 7 + 1) * 10) / 10;
+    data.push({ label: newLabel, value: newVal });
+    animStates.push({ current: 0, target: newVal });
+    buildInstancedMesh();
+    updateBars();
+    animStates[data.length - 1].current = 0;
+    animStates[data.length - 1].target = newVal;
+    requestAnimationFrame(animateBars);
+  },
+  removeBar: () => {
+    if (data.length <= 1) return;
+    data.pop();
+    animStates.pop();
+    buildInstancedMesh();
+    updateBars();
+  },
+  colorScheme: currentScheme,
+  randomizeAll: () => {
+    data.forEach((d, i) => {
+      const newVal = Math.round((Math.random() * 7 + 1) * 10) / 10;
+      d.value = newVal;
+      if (animStates[i]) animStates[i].target = newVal;
+    });
+    updateLegend();
+    requestAnimationFrame(animateBars);
+  },
+  barWidth: BAR_WIDTH,
+  spacing: SPACING,
+};
+
+gui.add(params, 'addBar').name('Add Bar');
+gui.add(params, 'removeBar').name('Remove Bar');
+gui.add(params, 'randomizeAll').name('Randomize All Values');
+gui.add(params, 'colorScheme', Object.keys(colorSchemes)).name('Color Scheme').onChange(v => {
+  currentScheme = v;
+  updateBars();
+});
+gui.add(params, 'barWidth', 0.2, 2, 0.1).name('Bar Width').onChange(v => {
+  // rebuild needed for width change — just trigger a visual update
+  updateBars();
+});
+gui.add(params, 'spacing', 0.5, 3, 0.1).name('Bar Spacing').onChange(v => {
+  updateBars();
+});
+
+// Initial animation
+data.forEach((d, i) => {
+  if (animStates[i]) {
+    animStates[i].current = 0.01;
+    animStates[i].target = d.value;
+  }
+});
+requestAnimationFrame(animateBars);
+
+// Resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Render loop
+function render() {
+  requestAnimationFrame(render);
+  controls.update();
+  renderer.render(scene, camera);
+}
+render();
+</script>
+</body>
+</html>

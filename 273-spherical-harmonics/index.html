@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spherical Harmonics Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #0a0a0a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #ffffff;
+            font-size: 18px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #tip {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #aaa;
+            font-size: 13px;
+            max-width: 380px;
+            line-height: 1.6;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #tip strong {
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">l = <span id="lval">0</span>, m = <span id="mval">0</span></div>
+    <div id="tip">
+        <strong>Spherical Harmonics (Y_lm)</strong><br><br>
+        Mathematical functions on a sphere surface used in quantum mechanics (electron orbitals) and computer graphics (global illumination approximation, ambient occlusion).<br><br>
+        <span style="color:#888;font-size:12px;">Drag to rotate • Scroll to zoom</span>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/dist/lil-gui.umd.min.js"></script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Spherical Harmonics Math ---
+        function factorial(n) {
+            if (n <= 1) return 1;
+            let result = 1;
+            for (let i = 2; i <= n; i++) result *= i;
+            return result;
+        }
+
+        function factorialRatio(a, b) {
+            return factorial(a) / factorial(b);
+        }
+
+        // Associated Legendre polynomial P_l^m(x)
+        function legendreP(l, m, x) {
+            if (m < 0 || m > l) return 0;
+            if (l === 0) return 1;
+            if (l === 1 && m === 0) return x;
+            if (l === 1 && m === 1) return Math.sqrt(1 - x * x);
+
+            const pmm = Math.pow(-1, m) * factorialRatio(2 * m - 1, factorial(m)) * Math.pow(1 - x * x, m / 2);
+
+            if (l === m) return pmm;
+
+            let pmmp1 = x * (2 * m + 1) * pmm;
+            if (l === m + 1) return pmmp1;
+
+            let pll = 0;
+            for (let i = m + 2; i <= l; i++) {
+                pll = ((2 * i - 1) * x * pmmp1 - (i + m - 1) * pmm) / (i - m);
+                pmm = pmmp1;
+                pmmp1 = pll;
+            }
+            return pll;
+        }
+
+        // Spherical harmonic Y_l^m(theta, phi)
+        function Ylm(l, m, theta, phi) {
+            const sqrt2 = Math.sqrt(2);
+            const N = Math.sqrt((2 * l + 1) / (4 * Math.PI) * factorialRatio(l - Math.abs(m), l + Math.abs(m)));
+            let y = N * legendreP(l, Math.abs(m), Math.cos(theta));
+            if (m > 0) {
+                y *= sqrt2 * Math.cos(m * phi);
+            } else if (m < 0) {
+                y *= sqrt2 * Math.sin(Math.abs(m) * phi);
+            }
+            return y;
+        }
+
+        // --- Color schemes ---
+        function getColor(value, scheme) {
+            const t = (value + 1) / 2; // normalize to [0,1]
+            const col = new THREE.Color();
+            switch (scheme) {
+                case 'diverging': // red-blue
+                    col.setHSL(0.33 * t, 0.85, 0.5);
+                    break;
+                case 'thermal': // blue-red-yellow-white
+                    col.setHSL(0.7 * t, 1.0, 0.5);
+                    break;
+                case 'monochrome':
+                    col.setRGB(t, t, t);
+                    break;
+                case 'rainbow':
+                    col.setHSL(t, 1.0, 0.5);
+                    break;
+                case 'viridis':
+                    col.setHSL(0.26 * t + 0.58, 0.9, 0.5 + t * 0.1);
+                    break;
+            }
+            return col;
+        }
+
+        // --- Scene Setup ---
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a0a);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 0, 3.5);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // --- Lighting ---
+        scene.add(new THREE.AmbientLight(0x404040, 2));
+        const dir = new THREE.DirectionalLight(0xffffff, 2);
+        dir.position.set(5, 3, 5);
+        scene.add(dir);
+        const dir2 = new THREE.DirectionalLight(0x8888ff, 1);
+        dir2.position.set(-5, -3, -5);
+        scene.add(dir2);
+
+        // --- Sphere with vertex colors ---
+        const SEGS = 160;
+        const geo = new THREE.SphereGeometry(1, SEGS, SEGS);
+        const origPos = geo.attributes.position.array.slice();
+        const vc = new Float32Array(origPos.length / 3 * 3);
+        geo.setAttribute('color', new THREE.BufferAttribute(vc, 3));
+
+        const mat = new THREE.MeshPhongMaterial({
+            vertexColors: true,
+            side: THREE.DoubleSide,
+            shininess: 60
+        });
+
+        const sphere = new THREE.Mesh(geo, mat);
+        scene.add(sphere);
+
+        // --- Parameters ---
+        const params = {
+            l: 2,
+            m: 0,
+            animationSpeed: 1.0,
+            colorScheme: 'diverging',
+            displacement: 0.35,
+            rotationSpeed: 1.0
+        };
+
+        // --- Update sphere ---
+        function updateSphere(time) {
+            const pos = geo.attributes.position.array;
+            const col = geo.attributes.color.array;
+            const count = geo.attributes.position.count;
+
+            for (let i = 0; i < count; i++) {
+                const ox = origPos[i * 3];
+                const oy = origPos[i * 3 + 1];
+                const oz = origPos[i * 3 + 2];
+
+                const r = Math.sqrt(ox * ox + oy * oy + oz * oz);
+                const theta = Math.acos(Math.max(-1, Math.min(1, oy / r)));
+                const phi = Math.atan2(oz, ox);
+
+                const ylm = Ylm(params.l, params.m, theta, phi + time * params.rotationSpeed);
+
+                const disp = 1.0 + ylm * params.displacement;
+                pos[i * 3]     = ox * disp;
+                pos[i * 3 + 1] = oy * disp;
+                pos[i * 3 + 2] = oz * disp;
+
+                const c = getColor(ylm, params.colorScheme);
+                col[i * 3]     = c.r;
+                col[i * 3 + 1] = c.g;
+                col[i * 3 + 2] = c.b;
+            }
+
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate = true;
+            geo.computeVertexNormals();
+        }
+
+        // --- GUI ---
+        const gui = new lil.GUI({ title: 'Spherical Harmonics' });
+
+        gui.add(params, 'l', 0, 4, 1).name('l (degree)').onChange(v => {
+            params.m = Math.min(Math.abs(params.m), v);
+            if (params.m > v) params.m = v;
+            updateM();
+            updateSphere(clock.getElapsedTime());
+        });
+
+        let mCtrl;
+        gui.add(params, 'm').name('m (order)').onChange(() => updateSphere(clock.getElapsedTime()));
+
+        function updateM() {
+            if (mCtrl) gui.remove(mCtrl);
+            mCtrl = gui.add(params, 'm', -params.l, params.l, 1).name('m (order)').onChange(() => updateSphere(clock.getElapsedTime()));
+        }
+        updateM();
+
+        gui.add(params, 'animationSpeed', 0.1, 3).name('Anim Speed');
+        gui.add(params, 'rotationSpeed', 0.0, 2).name('Rotation Speed');
+        gui.add(params, 'displacement', 0.1, 1.0).name('Displacement').onChange(() => updateSphere(clock.getElapsedTime()));
+        gui.add(params, 'colorScheme', ['diverging', 'thermal', 'monochrome', 'rainbow', 'viridis']).name('Color Scheme').onChange(() => updateSphere(clock.getElapsedTime()));
+
+        // --- Text overlay ---
+        const lEl = document.getElementById('lval');
+        const mEl = document.getElementById('mval');
+        function updateInfo() {
+            lEl.textContent = params.l;
+            mEl.textContent = params.m;
+        }
+
+        // --- Resize ---
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        window.addEventListener('resize', onResize);
+
+        // --- Animation loop ---
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const t = clock.getElapsedTime() * params.animationSpeed;
+            updateSphere(t);
+            updateInfo();
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

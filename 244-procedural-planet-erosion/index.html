@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>程序化行星侵蚀 | Procedural Planet Erosion</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000008; }
+    canvas { display: block; }
+    .info {
+      position: absolute; top: 14px; left: 16px;
+      color: #00ffcc; font: 13px/1.6 'Courier New', monospace;
+      text-shadow: 0 0 8px #00ffcc88;
+      pointer-events: none;
+    }
+    .tip {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      color: #ffffff44; font: 11px/1 'Courier New', monospace;
+      pointer-events: none; text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="info">程序化行星侵蚀 | Procedural Planet Erosion — 水力侵蚀模拟，地形演化</div>
+<div class="tip">水力侵蚀 · FBM地形 · 大气辉光</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js';
+
+// ============================================================
+// 场景
+// ============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000008);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(0, 4, 10);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.minDistance = 4;
+controls.maxDistance = 20;
+
+// ============================================================
+// 灯光
+// ============================================================
+const ambient = new THREE.AmbientLight(0x223355, 0.4);
+scene.add(ambient);
+
+const sunLight = new THREE.DirectionalLight(0xfff5e0, 2.2);
+sunLight.position.set(8, 4, 6);
+sunLight.castShadow = true;
+scene.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0x4488cc, 0.3);
+fillLight.position.set(-5, -2, -4);
+scene.add(fillLight);
+
+// ============================================================
+// 星空背景
+// ============================================================
+(function createStars() {
+  const geo = new THREE.BufferGeometry();
+  const count = 3000;
+  const pos = new Float32Array(count * 3);
+  const col = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const r = 200 + Math.random() * 300;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    pos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+    pos[i*3+2] = r * Math.cos(phi);
+    const t = Math.random();
+    col[i*3]   = 0.7 + t * 0.3;
+    col[i*3+1] = 0.7 + t * 0.2;
+    col[i*3+2] = 0.8 + t * 0.2;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({ size: 0.5, vertexColors: true, sizeAttenuation: true });
+  scene.add(new THREE.Points(geo, mat));
+})();
+
+// ============================================================
+// FBM 噪声
+// ============================================================
+function hash3(x, y, z) {
+  let n = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function noise3D(x, y, z) {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  const fx = x - ix, fy = y - iy, fz = z - iz;
+  const ux = fx*fx*(3-2*fx), uy = fy*fy*(3-2*fy), uz = fz*fz*(3-2*fz);
+  const lerp = (a,b,t) => a + (b-a)*t;
+  return lerp(
+    lerp(lerp(hash3(ix,iy,iz),   hash3(ix+1,iy,iz),   ux),
+         lerp(hash3(ix,iy+1,iz), hash3(ix+1,iy+1,iz), ux), uy),
+    lerp(lerp(hash3(ix,iy,iz+1),   hash3(ix+1,iy,iz+1),   ux),
+         lerp(hash3(ix,iy+1,iz+1), hash3(ix+1,iy+1,iz+1), ux), uy),
+    uz
+  );
+}
+
+function fbm(x, y, z, octaves = 6) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * noise3D(x * freq, y * freq, z * freq);
+    amp *= 0.5; freq *= 2;
+  }
+  return val;
+}
+
+// ============================================================
+// 行星几何体 + 水力侵蚀
+// ============================================================
+const params = {
+  planetRadius: 3.0,
+  resolution: 128,
+  noiseScale: 2.5,
+  octaves: 6,
+  erosionIterations: 2000,
+  sedimentCapacity: 0.08,
+  depositionRate: 0.03,
+  erosionRate: 0.002,
+  evapoRate: 0.001,
+  seed: 42,
+  showAtmosphere: true,
+  autoRotate: true,
+  regenerate: buildPlanet,
+};
+
+let planetMesh = null;
+let heightMap = null;
+let sedimentMap = null;
+const WATER_LEVEL = 0.0; // 顶点色标，0.5 = 海平面
+
+function buildPlanet() {
+  if (planetMesh) { scene.remove(planetMesh); planetMesh.geometry.dispose(); }
+  const R = params.planetRadius;
+  const res = params.resolution;
+  const geo = new THREE.SphereGeometry(R, res, res);
+  const pos = geo.attributes.position;
+  const count = pos.count;
+
+  // 高度图
+  heightMap = new Float32Array(count);
+  sedimentMap = new Float32Array(count);
+
+  const rng = (function(s) {
+    return function() { s = (s * 16807) % 2147483647; return (s-1)/2147483646; };
+  })(params.seed);
+
+  for (let i = 0; i < count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const nx = x/R, ny = y/R, nz = z/R;
+
+    // FBM 高度
+    const h = fbm(nx * params.noiseScale + params.seed * 0.1,
+                   ny * params.noiseScale,
+                   nz * params.noiseScale, params.octaves);
+    const displacement = (h - 0.4) * 0.8;
+
+    pos.setXYZ(i, x + nx * displacement, y + ny * displacement, z + nz * displacement);
+    heightMap[i] = displacement;
+  }
+
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+
+  // 顶点颜色
+  const colors = new Float32Array(count * 3);
+  const bbox = geo.boundingBox;
+  const minH = bbox.min.y, maxH = bbox.max.y;
+  const rangeH = maxH - minH || 1;
+
+  for (let i = 0; i < count; i++) {
+    const y = pos.getY(i);
+    const t = (y - minH) / rangeH; // 0 = 最低, 1 = 最高
+
+    let r, g, b;
+    if (t < 0.15) {
+      // 深海蓝
+      const s = t / 0.15;
+      r = 0.05 + s * 0.1; g = 0.1 + s * 0.2; b = 0.4 + s * 0.3;
+    } else if (t < 0.25) {
+      // 浅海
+      const s = (t - 0.15) / 0.1;
+      r = 0.15 + s * 0.1; g = 0.3 + s * 0.1; b = 0.7 + s * 0.1;
+    } else if (t < 0.35) {
+      // 沙滩
+      const s = (t - 0.25) / 0.1;
+      r = 0.76 + s * 0.04; g = 0.70 + s * 0.04; b = 0.5 - s * 0.1;
+    } else if (t < 0.55) {
+      // 草地
+      const s = (t - 0.35) / 0.2;
+      r = 0.2 - s * 0.05; g = 0.65 + s * 0.1; b = 0.2;
+    } else if (t < 0.72) {
+      // 森林/山地
+      const s = (t - 0.55) / 0.17;
+      r = 0.35 + s * 0.1; g = 0.55 - s * 0.15; b = 0.2;
+    } else if (t < 0.88) {
+      // 岩石
+      const s = (t - 0.72) / 0.16;
+      r = 0.5 + s * 0.2; g = 0.45 + s * 0.15; b = 0.4 + s * 0.2;
+    } else {
+      // 雪
+      const s = (t - 0.88) / 0.12;
+      r = 0.8 + s * 0.2; g = 0.85 + s * 0.15; b = 0.9 + s * 0.1;
+    }
+    colors[i*3]   = r;
+    colors[i*3+1] = g;
+    colors[i*3+2] = b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.85,
+    metalness: 0.05,
+  });
+
+  planetMesh = new THREE.Mesh(geo, mat);
+  planetMesh.castShadow = true;
+  planetMesh.receiveShadow = true;
+  scene.add(planetMesh);
+
+  // 运行侵蚀
+  runErosion(pos, count);
+  updateVertexColors(geo, pos);
+}
+
+function runErosion(pos, count) {
+  const R = params.planetRadius;
+  const iter = params.erosionIterations;
+
+  for (let drop = 0; drop < iter; drop++) {
+    // 随机起点（在球面上）
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    let px = R * Math.sin(phi) * Math.cos(theta);
+    let py = R * Math.sin(phi) * Math.sin(theta);
+    let pz = R * Math.cos(phi);
+
+    let vx = 0, vy = 0, vz = 0;
+    let sediment = 0;
+    const gravity = 0.01;
+    const capacity = params.sedimentCapacity;
+    const depR = params.depositionRate;
+    const eroR = params.erosionRate;
+    const evapR = params.evapoRate;
+
+    for (let step = 0; step < 80; step++) {
+      // 找到最近顶点索引
+      let bestIdx = 0, bestDist = Infinity;
+      for (let i = 0; i < count; i++) {
+        const dx = pos.getX(i) - px, dy = pos.getY(i) - py, dz = pos.getZ(i) - pz;
+        const d = dx*dx + dy*dy + dz*dz;
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+
+      const idx = bestIdx;
+      const terrainH = heightMap[idx];
+      const totalH = terrainH + R;
+      const vel = Math.sqrt(vx*vx + vy*vy + vz*vz);
+
+      // 携带能力
+      const carrying = vel * capacity;
+
+      if (sediment > carrying) {
+        // 沉积
+        sediment -= depR * (sediment - carrying);
+        heightMap[idx] += depR * 0.01;
+        sedimentMap[idx] += depR * 0.005;
+      } else {
+        // 侵蚀
+        const ero = eroR * (carrying - sediment);
+        heightMap[idx] -= ero;
+        sediment += ero;
+      }
+
+      // 沿地形梯度流动
+      let gradX = 0, gradY = 0, gradZ = 0;
+      for (let j = 0; j < Math.min(count, 50); j++) {
+        const dx = pos.getX(j) - px, dy = pos.getY(j) - py, dz = pos.getZ(j) - pz;
+        const d = Math.sqrt(dx*dx+dy*dy+dz*dz) + 0.001;
+        const dh = heightMap[j] - terrainH;
+        gradX += dx * dh / d;
+        gradY += dy * dh / d;
+        gradZ += dz * dh / d;
+      }
+      const gLen = Math.sqrt(gradX*gradX + gradY*gradY + gradZ*gradZ) + 0.001;
+      gradX /= gLen; gradY /= gLen; gradZ /= gLen;
+
+      // 速度更新
+      vx -= gradX * gravity;
+      vy -= gradY * gravity;
+      vz -= gradZ * gravity;
+
+      // 向下流动
+      const nLen = Math.sqrt(px*px+py*py+pz*pz);
+      const nx = px/nLen, ny = py/nLen, nz = pz/nLen;
+      vx -= nx * gravity * 0.5;
+      vy -= ny * gravity * 0.5;
+      vz -= nz * gravity * 0.5;
+
+      // 位置更新
+      px += vx; py += vy; pz += vz;
+
+      // 蒸发
+      sediment *= (1 - evapR);
+
+      // 脱离球面则停止
+      if (Math.sqrt(px*px+py*py+pz*pz) > R + 1.5) break;
+    }
+  }
+}
+
+function updateVertexColors(geo, pos) {
+  const count = pos.count;
+  const colors = geo.attributes.color.array;
+  const bbox = geo.boundingBox;
+  const minH = bbox.min.y, maxH = bbox.max.y;
+  const rangeH = maxH - minH || 1;
+
+  for (let i = 0; i < count; i++) {
+    const y = pos.getY(i);
+    const t = (y - minH) / rangeH;
+    let r, g, b;
+    if (t < 0.15) {
+      const s = t/0.15;
+      r=0.05+s*0.1; g=0.1+s*0.2; b=0.4+s*0.3;
+    } else if (t < 0.25) {
+      const s=(t-0.15)/0.1;
+      r=0.15+s*0.1; g=0.3+s*0.1; b=0.7+s*0.1;
+    } else if (t < 0.35) {
+      const s=(t-0.25)/0.1;
+      r=0.76+s*0.04; g=0.70+s*0.04; b=0.5-s*0.1;
+    } else if (t < 0.55) {
+      const s=(t-0.35)/0.2;
+      r=0.2-s*0.05; g=0.65+s*0.1; b=0.2;
+    } else if (t < 0.72) {
+      const s=(t-0.55)/0.17;
+      r=0.35+s*0.1; g=0.55-s*0.15; b=0.2;
+    } else if (t < 0.88) {
+      const s=(t-0.72)/0.16;
+      r=0.5+s*0.2; g=0.45+s*0.15; b=0.4+s*0.2;
+    } else {
+      const s=(t-0.88)/0.12;
+      r=0.8+s*0.2; g=0.85+s*0.15; b=0.9+s*0.1;
+    }
+    colors[i*3]=r; colors[i*3+1]=g; colors[i*3+2]=b;
+  }
+  geo.attributes.color.needsUpdate = true;
+}
+
+// ============================================================
+// 大气辉光
+// ============================================================
+let atmosphereMesh = null;
+
+function createAtmosphere() {
+  if (atmosphereMesh) scene.remove(atmosphereMesh);
+  const geo = new THREE.SphereGeometry(params.planetRadius * 1.12, 48, 48);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uSunDir: { value: new THREE.Vector3(1, 0.5, 0.8).normalize() },
+      uTime: { value: 0 },
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec4 worldPos = modelViewMatrix * vec4(position, 1.0);
+        vViewDir = normalize(-worldPos.xyz);
+        gl_Position = projectionMatrix * worldPos;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uSunDir;
+      uniform float uTime;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        float rim = 1.0 - max(0.0, dot(vNormal, vViewDir));
+        rim = pow(rim, 3.5);
+        float sun = max(0.0, dot(vNormal, uSunDir));
+        vec3 dayCol = vec3(0.3, 0.6, 1.0);
+        vec3 nightCol = vec3(0.05, 0.1, 0.3);
+        vec3 col = mix(nightCol, dayCol, sun * 0.7 + 0.3);
+        float alpha = rim * 0.6;
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+  atmosphereMesh = new THREE.Mesh(geo, mat);
+  if (params.showAtmosphere) scene.add(atmosphereMesh);
+}
+
+// ============================================================
+// GUI
+// ============================================================
+const gui = new GUI();
+gui.add(params, 'planetRadius', 1, 6, 0.1).name('行星半径').onChange(buildPlanet);
+gui.add(params, 'noiseScale', 0.5, 8, 0.1).name('地形噪声').onChange(buildPlanet);
+gui.add(params, 'octaves', 1, 8, 1).name('噪声倍频').onChange(buildPlanet);
+gui.add(params, 'erosionIterations', 100, 5000, 100).name('侵蚀迭代').onChange(buildPlanet);
+gui.add(params, 'sedimentCapacity', 0.01, 0.3, 0.01).name('沉积能力').onChange(buildPlanet);
+gui.add(params, 'depositionRate', 0.001, 0.1, 0.005).name('沉积率').onChange(buildPlanet);
+gui.add(params, 'erosionRate', 0.0005, 0.01, 0.0005).name('侵蚀率').onChange(buildPlanet);
+gui.add(params, 'seed', 1, 999, 1).name('随机种子').onChange(buildPlanet);
+gui.add(params, 'showAtmosphere').name('大气辉光').onChange(() => createAtmosphere());
+gui.add(params, 'autoRotate').name('自动旋转');
+gui.add(params, 'regenerate').name('🔥 重新生成地形');
+
+// ============================================================
+// 响应式
+// ============================================================
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ============================================================
+// 初始化
+// ============================================================
+buildPlanet();
+createAtmosphere();
+
+// ============================================================
+// 动画
+// ============================================================
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  if (atmosphereMesh && params.showAtmosphere) {
+    atmosphereMesh.material.uniforms.uTime.value += dt;
+  }
+
+  if (params.autoRotate && planetMesh) {
+    planetMesh.rotation.y += dt * 0.05;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

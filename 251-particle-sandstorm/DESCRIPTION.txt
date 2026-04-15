@@ -1,0 +1,1 @@
+A swirling sandstorm simulation with 50,000 GPU-accelerated particles driven by a Perlin noise flow field, with desert ground, warm sun lighting, and lil-gui controls.

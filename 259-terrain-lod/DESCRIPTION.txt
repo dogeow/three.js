@@ -1,0 +1,13 @@
+本示例展示了一个程序化生成的地形，支持根据相机距离自动切换四个 LOD 层级（32×32 到 256×256），
+地形颜色根据高度分层渲染：低海拔为草地、中海拔为岩石、高海拔为积雪，并可通过 lil-gui 实时调节噪声缩放、起伏幅度和 LOD 切换距离。
+
+关键 Three.js 技术：
+- PlaneGeometry + 顶点法线计算（computeVertexNormals）
+- 顶点颜色（vertexColors）和 MeshStandardMaterial
+- 多层正弦波叠加模拟 Perlin 噪声地形
+- DirectionalLight + PCFSoftShadowMap 阴影
+- OrbitControls 轨道控制器
+- THREE.LOD（手动实现多层级网格切换）
+- lil-gui 实时参数控制面板
+- 距离计算驱动的 LOD 自动切换逻辑
+- FogExp2 场景雾效

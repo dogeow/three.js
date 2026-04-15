@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wave Pendulum</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; overflow: hidden; }
+  canvas { display: block; }
+  #info {
+    position: fixed;
+    top: 20px;
+    left: 24px;
+    color: rgba(255,255,255,0.85);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 12px rgba(100,200,255,0.5);
+  }
+  #info span {
+    display: block;
+    font-size: 10px;
+    color: rgba(150,200,255,0.5);
+    margin-top: 4px;
+    letter-spacing: 0.2em;
+  }
+</style>
+</head>
+<body>
+<div id="info">
+  Wave Pendulum
+  <span>Standing Wave Interference</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Scene Setup ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.018);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 2, 22);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+
+// ─── Lighting ─────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x334466, 0.8);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(10, 20, 10);
+scene.add(dirLight);
+
+const pointLight = new THREE.PointLight(0x4488ff, 0.6, 40);
+pointLight.position.set(0, 10, 8);
+scene.add(pointLight);
+
+// ─── Parameters ──────────────────────────────────────────────────────────────
+const params = {
+  numPendulums: 22,
+  damping: 0.00015,
+  gravity: 9.81,
+  initialAngleSpread: 0.35,
+  stringLengthVariance: 0.6,
+  cyclesForStandingWave: 30,
+  showTrails: true,
+  trailLength: 60,
+  bobRadius: 0.13,
+  stringThickness: 0.012,
+  autoRestart: false
+};
+
+// ─── Pendulum Data ────────────────────────────────────────────────────────────
+let pendulums = [];
+
+class PendulumBob {
+  constructor(index, totalCount) {
+    this.index = index;
+    this.phaseOffset = (index / totalCount) * Math.PI * 2;
+    this.angle = 0;
+    this.velocity = 0;
+    this.phase = 0;
+    this.trailPositions = [];
+
+    // Compute length so that after N cycles of the shortest pendulum,
+    // each pendulum completes (N - k) cycles where k is its index offset.
+    const n = params.cyclesForStandingWave;
+    // Length ratio for a harmonic series: L_k = L_0 / (1 - k/N)^2
+    // But we clamp to avoid extreme ratios
+    const k = index;
+    const baseRatio = Math.pow((n - k) / n, 2);
+    this.restLength = 5.0 * baseRatio * (1 + (Math.random() - 0.5) * 0.01);
+
+    this._buildMesh();
+  }
+
+  _buildMesh() {
+    // String as LineSegments
+    const stringGeo = new THREE.BufferGeometry();
+    const positions = new Float32Array(6); // 2 points × 3 coords
+    stringGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const stringMat = new THREE.LineBasicMaterial({
+      color: 0x667788,
+      transparent: true,
+      opacity: 0.7
+    });
+    this.stringLine = new THREE.LineSegments(stringGeo, stringMat);
+
+    // Bob sphere
+    const bobGeo = new THREE.SphereGeometry(params.bobRadius, 20, 16);
+    const bobMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0x4488ff,
+      emissiveIntensity: 0.6,
+      metalness: 0.3,
+      roughness: 0.4
+    });
+    this.bobMesh = new THREE.Mesh(bobGeo, bobMat);
+
+    // Pivot sphere (anchor)
+    const pivotGeo = new THREE.SphereGeometry(0.05, 8, 8);
+    const pivotMat = new THREE.MeshStandardMaterial({ color: 0x8899aa, metalness: 0.6, roughness: 0.3 });
+    this.pivotMesh = new THREE.Mesh(pivotGeo, pivotMat);
+    this.pivotMesh.position.set(0, 6, 0);
+
+    this.group = new THREE.Group();
+    this.group.add(this.stringLine);
+    this.group.add(this.bobMesh);
+    this.group.add(this.pivotMesh);
+    scene.add(this.group);
+  }
+
+  initAngle(angle) {
+    this.angle = angle + this.phaseOffset * 0.4;
+    this.velocity = 0;
+    this.trailPositions = [];
+  }
+
+  update(dt) {
+    const g = params.gravity;
+    const L = this.restLength;
+    // Simple pendulum: θ'' = -(g/L) * sin(θ)  [small angle → sin(θ) ≈ θ]
+    const acceleration = -(g / L) * Math.sin(this.angle);
+    this.velocity += acceleration * dt;
+    this.velocity *= (1 - params.damping);
+    this.angle += this.velocity * dt;
+
+    // Compute 3D position: pivot at (0, 6, 0), hangs in XZ plane
+    const pivotY = 6;
+    const bobX = Math.sin(this.angle) * L;
+    const bobY = pivotY - Math.cos(this.angle) * L;
+    const bobZ = 0;
+
+    // Update string geometry
+    const pos = this.stringLine.geometry.attributes.position;
+    pos.setXYZ(0, 0, pivotY, 0);           // pivot
+    pos.setXYZ(1, bobX, bobY, bobZ);       // bob
+    pos.needsUpdate = true;
+
+    // Update bob mesh
+    this.bobMesh.position.set(bobX, bobY, bobZ);
+
+    // Update pivot position (in case of future multi-column arrangement)
+    this.group.position.set(0, 0, 0);
+
+    // Phase = normalized angle mapped to [0, 1]
+    this.phase = (this.angle / (Math.PI * 2)) % 1;
+    if (this.phase < 0) this.phase += 1;
+
+    // Color: HSL hue from phase
+    const hue = this.phase;
+    const color = new THREE.Color().setHSL(hue, 0.9, 0.55);
+    this.bobMesh.material.color.copy(color);
+    this.bobMesh.material.emissive.copy(color);
+    this.bobMesh.material.emissiveIntensity = 0.5 + 0.5 * Math.abs(Math.sin(this.phase * Math.PI));
+
+    // Trail
+    if (params.showTrails) {
+      this.trailPositions.push(new THREE.Vector3(bobX, bobY, bobZ));
+      if (this.trailPositions.length > params.trailLength) {
+        this.trailPositions.shift();
+      }
+    }
+  }
+
+  updateTrail() {
+    if (!this.trail || !params.showTrails) return;
+    const points = this.trailPositions;
+    if (points.length < 2) return;
+    const posAttr = this.trail.geometry.attributes.position;
+    for (let i = 0; i < points.length; i++) {
+      posAttr.setXYZ(i, points[i].x, points[i].y, points[i].z);
+    }
+    posAttr.needsUpdate = true;
+    this.trail.geometry.setDrawRange(0, points.length);
+  }
+
+  buildTrail() {
+    if (this.trail) {
+      scene.remove(this.trail);
+      this.trail.geometry.dispose();
+      this.trail.material.dispose();
+    }
+    if (!params.showTrails) return;
+
+    const geo = new THREE.BufferGeometry();
+    const maxPts = params.trailLength;
+    const positions = new Float32Array(maxPts * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setDrawRange(0, 0);
+
+    const hue = (this.index / params.numPendulums) % 1;
+    const mat = new THREE.LineBasicMaterial({
+      color: new THREE.Color().setHSL(hue, 0.8, 0.5),
+      transparent: true,
+      opacity: 0.35
+    });
+    this.trail = new THREE.Line(geo, mat);
+    this.trail.frustumCulled = false;
+    scene.add(this.trail);
+  }
+
+  dispose() {
+    scene.remove(this.group);
+    this.group.traverse(obj => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    });
+    if (this.trail) {
+      scene.remove(this.trail);
+      this.trail.geometry.dispose();
+      this.trail.material.dispose();
+    }
+  }
+}
+
+// ─── Grid / Environment ───────────────────────────────────────────────────────
+function buildEnvironment() {
+  // Pivot ceiling bar
+  const barGeo = new THREE.CylinderGeometry(0.04, 0.04, params.numPendulums * 0.7 + 4, 8);
+  const barMat = new THREE.MeshStandardMaterial({ color: 0x445566, metalness: 0.7, roughness: 0.3 });
+  const bar = new THREE.Mesh(barGeo, barMat);
+  bar.rotation.z = Math.PI / 2;
+  bar.position.set(0, 6, 0);
+  bar.name = 'bar';
+  scene.add(bar);
+
+  // Subtle grid floor
+  const gridHelper = new THREE.GridHelper(60, 40, 0x1a2233, 0x0d1520);
+  gridHelper.position.y = -0.5;
+  scene.add(gridHelper);
+}
+buildEnvironment();
+
+// ─── Init / Reinit Pendulums ───────────────────────────────────────────────────
+function getSpacing() {
+  return Math.min(0.65, 14 / params.numPendulums);
+}
+
+function initPendulums() {
+  // Dispose old
+  pendulums.forEach(p => p.dispose());
+  pendulums = [];
+
+  const spacing = getSpacing();
+  const totalWidth = (params.numPendulums - 1) * spacing;
+  const startX = -totalWidth / 2;
+
+  for (let i = 0; i < params.numPendulums; i++) {
+    const bob = new PendulumBob(i, params.numPendulums);
+    const x = startX + i * spacing;
+    bob.group.position.set(x, 0, 0);
+    bob.pivotMesh.position.set(x, 6, 0);
+
+    // Initial angles spread in phase
+    const angle = params.initialAngleSpread * (i / params.numPendulums - 0.5) * 2;
+    bob.initAngle(angle);
+    bob.buildTrail();
+    pendulums.push(bob);
+  }
+}
+
+initPendulums();
+
+// ─── GUI ──────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: 'Wave Pendulum' });
+gui.add(params, 'numPendulums', 5, 40, 1).name('Pendulums').onChange(() => {
+  initPendulums();
+});
+gui.add(params, 'damping', 0, 0.005, 0.00005).name('Damping');
+gui.add(params, 'gravity', 1, 20, 0.01).name('Gravity');
+gui.add(params, 'initialAngleSpread', 0.05, 1.0, 0.01).name('Angle Spread');
+gui.add(params, 'stringLengthVariance', 0.1, 1.5, 0.01).name('Length Variance')
+  .onChange(() => initPendulums());
+gui.add(params, 'cyclesForStandingWave', 10, 60, 1).name('Wave Cycles')
+  .onChange(() => initPendulums());
+gui.add(params, 'showTrails').name('Show Trails').onChange(() => {
+  pendulums.forEach(p => p.buildTrail());
+});
+gui.add(params, 'trailLength', 20, 150, 1).name('Trail Length').onChange(() => {
+  pendulums.forEach(p => p.buildTrail());
+});
+gui.add(params, 'autoRestart').name('Auto Restart');
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+let lastTime = performance.now();
+let autoTimer = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  // Clamp dt to avoid spiral of death
+  dt = Math.min(dt, 0.05);
+
+  controls.update();
+
+  // Physics update
+  pendulums.forEach(p => p.update(dt));
+
+  // Trail update (separate pass to avoid partial updates mid-frame)
+  if (params.showTrails) {
+    pendulums.forEach(p => p.updateTrail());
+  }
+
+  // Auto restart: reset when all are nearly at rest
+  if (params.autoRestart) {
+    autoTimer += dt;
+    const avgAng = pendulums.reduce((s, p) => s + Math.abs(p.angle), 0) / pendulums.length;
+    if (autoTimer > 8 && avgAng < 0.002) {
+      autoTimer = 0;
+      const spacing = getSpacing();
+      const totalWidth = (params.numPendulums - 1) * spacing;
+      const startX = -totalWidth / 2;
+      pendulums.forEach((p, i) => {
+        const x = startX + i * spacing;
+        p.pivotMesh.position.set(x, 6, 0);
+        const angle = params.initialAngleSpread * (i / params.numPendulums - 0.5) * 2;
+        p.initAngle(angle);
+        p.buildTrail();
+      });
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

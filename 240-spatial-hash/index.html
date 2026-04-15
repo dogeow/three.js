@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spatial Hash Grid — Three.js</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d0d12;
+      overflow: hidden;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    canvas { display: block; }
+
+    #tip {
+      position: fixed;
+      top: 18px;
+      left: 18px;
+      background: rgba(13, 13, 18, 0.88);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: #c8c8d8;
+      font-size: 12.5px;
+      line-height: 1.7;
+      max-width: 270px;
+      backdrop-filter: blur(12px);
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #tip strong {
+      color: #7ee0c6;
+      font-weight: 600;
+    }
+
+    #tip .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e0e0ff;
+      margin-bottom: 6px;
+      display: block;
+      letter-spacing: 0.03em;
+    }
+
+    #info {
+      position: fixed;
+      bottom: 18px;
+      left: 18px;
+      background: rgba(13, 13, 18, 0.82);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 10px 16px;
+      color: #8888aa;
+      font-size: 11.5px;
+      line-height: 1.8;
+      backdrop-filter: blur(10px);
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #info span { color: #a0a0c0; }
+  </style>
+</head>
+<body>
+
+<div id="tip">
+  <span class="title">Spatial Hashing</span>
+  Objects are bucketed by grid cell — <strong>O(1)</strong> lookup instead of O(n²) brute force.
+  Click &amp; drag any object to see its hash cell highlight in real time.
+</div>
+
+<div id="info">
+  Grid cells: <span id="cellCount">—</span> &nbsp;|&nbsp;
+  Objects: <span id="objCount">—</span> &nbsp;|&nbsp;
+  Highlighted cell: <span id="hlCell">—</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// ─── Scene setup ─────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d12);
+scene.fog = new THREE.Fog(0x0d0d12, 60, 120);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(18, 14, 18);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 0, 0);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─── Lighting ────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x404060, 1.2));
+
+const sun = new THREE.DirectionalLight(0xffeedd, 1.4);
+sun.position.set(20, 30, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 120;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -40;
+sun.shadow.camera.right = sun.shadow.camera.top = 40;
+scene.add(sun);
+
+const rim = new THREE.DirectionalLight(0x3355ff, 0.5);
+rim.position.set(-15, 10, -15);
+scene.add(rim);
+
+// ─── Spatial Hash ─────────────────────────────────────────────────────────────
+class SpatialHash {
+  constructor(cellSize) {
+    this.cellSize = cellSize;
+    this.buckets = new Map();
+  }
+
+  _key(x, y, z) {
+    const cx = Math.floor(x / this.cellSize);
+    const cy = Math.floor(y / this.cellSize);
+    const cz = Math.floor(z / this.cellSize);
+    return `${cx},${cy},${cz}`;
+  }
+
+  clear() { this.buckets.clear(); }
+
+  insert(obj) {
+    const k = this._key(obj.position.x, obj.position.y, obj.position.z);
+    if (!this.buckets.has(k)) this.buckets.set(k, []);
+    this.buckets.get(k).push(obj);
+  }
+
+  getCell(x, y, z) { return this._key(x, y, z); }
+
+  getNeighbors(x, y, z) {
+    const cx = Math.floor(x / this.cellSize);
+    const cy = Math.floor(y / this.cellSize);
+    const cz = Math.floor(z / this.cellSize);
+    const result = [];
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const k = `${cx + dx},${cy + dy},${cz + dz}`;
+          if (this.buckets.has(k)) result.push(...this.buckets.get(k));
+        }
+    return result;
+  }
+}
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+const params = {
+  gridSize: 6,
+  cellSize: 4,
+  objectCount: 150,
+  objectType: 'Sphere',
+  speed: 0.6,
+  showGrid: true,
+  autoRotate: false,
+};
+
+const GRID_HALF = () => (params.gridSize * params.cellSize) / 2;
+
+// ─── Grid lines ───────────────────────────────────────────────────────────────
+let gridHelper;
+
+function buildGridLines() {
+  if (gridHelper) scene.remove(gridHelper);
+  const half = GRID_HALF();
+  const step = params.cellSize;
+  const points = [];
+
+  for (let x = -half; x <= half; x += step) {
+    points.push(new THREE.Vector3(x, 0, -half), new THREE.Vector3(x, 0, half));
+  }
+  for (let z = -half; z <= half; z += step) {
+    points.push(new THREE.Vector3(-half, 0, z), new THREE.Vector3(half, 0, z));
+  }
+
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({ color: 0x2a2a40, transparent: true, opacity: 0.6 });
+  gridHelper = new THREE.LineSegments(geo, mat);
+  scene.add(gridHelper);
+}
+
+buildGridLines();
+
+// ─── Cell highlight cubes ─────────────────────────────────────────────────────
+const cellHighlightMat = new THREE.MeshBasicMaterial({
+  color: 0x00ffc8,
+  transparent: true,
+  opacity: 0.18,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+});
+const cellHighlightEdge = new THREE.LineBasicMaterial({ color: 0x00ffc8, transparent: true, opacity: 0.7 });
+let cellHighlightMesh = null;
+let cellHighlightEdge2 = null;
+
+function showCellHighlight(cx, cy, cz) {
+  removeCellHighlight();
+  const s = params.cellSize;
+  const geo = new THREE.BoxGeometry(s, s * 0.08, s);
+  cellHighlightMesh = new THREE.Mesh(geo, cellHighlightMat);
+  cellHighlightMesh.position.set(cx * s + s / 2, 0, cz * s + s / 2);
+  scene.add(cellHighlightMesh);
+
+  const edgeGeo = new THREE.EdgesGeometry(geo);
+  cellHighlightEdge2 = new THREE.LineSegments(edgeGeo, cellHighlightEdge);
+  cellHighlightEdge2.position.copy(cellHighlightMesh.position);
+  scene.add(cellHighlightEdge2);
+}
+
+function removeCellHighlight() {
+  if (cellHighlightMesh) { scene.remove(cellHighlightMesh); cellHighlightMesh = null; }
+  if (cellHighlightEdge2) { scene.remove(cellHighlightEdge2); cellHighlightEdge2 = null; }
+}
+
+// ─── Objects ─────────────────────────────────────────────────────────────────
+let spatialHash = new SpatialHash(params.cellSize);
+const objects = [];
+let instancedMesh = null;
+const dummy = new THREE.Object3D();
+
+// Color palette for objects
+const palette = [
+  0xff6b6b, 0xffd93d, 0x6bcb77, 0x4d96ff,
+  0xc77dff, 0xff9a3c, 0x00d4ff, 0xff6eb4,
+];
+
+function buildInstancedMesh() {
+  if (instancedMesh) { scene.remove(instancedMesh); instancedMesh.geometry.dispose(); instancedMesh.material.dispose(); instancedMesh = null; }
+  if (objects.length === 0) return;
+
+  const geo = params.objectType === 'Sphere'
+    ? new THREE.SphereGeometry(0.38, 14, 10)
+    : new THREE.BoxGeometry(0.7, 0.7, 0.7);
+
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.25 });
+  instancedMesh = new THREE.InstancedMesh(geo, mat, objects.length);
+  instancedMesh.castShadow = true;
+  instancedMesh.receiveShadow = true;
+
+  objects.forEach((obj, i) => {
+    dummy.position.copy(obj.position);
+    dummy.quaternion.copy(obj.quaternion);
+    dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, dummy.matrix);
+    instancedMesh.setColorAt(i, new THREE.Color(obj.color));
+  });
+
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  instancedMesh.instanceColor.needsUpdate = true;
+  scene.add(instancedMesh);
+}
+
+function spawnObjects() {
+  objects.length = 0;
+  spatialHash = new SpatialHash(params.cellSize);
+  const half = GRID_HALF();
+
+  for (let i = 0; i < params.objectCount; i++) {
+    const x = (Math.random() - 0.5) * half * 1.8;
+    const y = (Math.random() - 0.5) * half * 0.5;
+    const z = (Math.random() - 0.5) * half * 1.8;
+    const vx = (Math.random() - 0.5) * params.speed;
+    const vy = (Math.random() - 0.5) * params.speed * 0.2;
+    const vz = (Math.random() - 0.5) * params.speed;
+
+    const obj = {
+      position: new THREE.Vector3(x, y, z),
+      velocity: new THREE.Vector3(vx, vy, vz),
+      rotation: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI),
+      rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02),
+      color: palette[Math.floor(Math.random() * palette.length)],
+      quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(
+        Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI
+      )),
+    };
+    objects.push(obj);
+    spatialHash.insert(obj);
+  }
+  buildInstancedMesh();
+  updateInfo();
+}
+
+function updateInfo() {
+  document.getElementById('cellCount').textContent = spatialHash.buckets.size;
+  document.getElementById('objCount').textContent = objects.length;
+}
+
+spawnObjects();
+
+// ─── Floor ────────────────────────────────────────────────────────────────────
+const floorGeo = new THREE.PlaneGeometry(80, 80);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x111118, roughness: 0.95, metalness: 0.05 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.05;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Subtle dot grid on floor
+const dotGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(0, 0.01, 0)
+]);
+const dotMat = new THREE.PointsMaterial({ color: 0x2a2a50, size: 0.06, sizeAttenuation: true });
+const dots = new THREE.Points(
+  new THREE.BufferGeometry().setFromPoints(
+    Array.from({ length: 1600 }, (_, i) => {
+      const x = ((i % 40) - 20) * 2;
+      const z = (Math.floor(i / 40) - 20) * 2;
+      return new THREE.Vector3(x, 0.01, z);
+    })
+  ),
+  dotMat
+);
+scene.add(dots);
+
+// ─── Raycasting / Drag ────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const intersectPt = new THREE.Vector3();
+let dragging = null;
+let dragOffset = new THREE.Vector3();
+
+function getMouseObj(e) {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  return raycaster.ray.intersectPlane(plane, intersectPt) ? intersectPt.clone() : null;
+}
+
+window.addEventListener('pointerdown', (e) => {
+  const pt = getMouseObj(e);
+  if (!pt) return;
+
+  let best = null, bestDist = 1.5;
+  for (const obj of objects) {
+    const d = pt.distanceTo(obj.position);
+    if (d < bestDist) { bestDist = d; best = obj; }
+  }
+  if (best) {
+    dragging = best;
+    dragOffset.copy(best.position).sub(pt);
+    controls.enabled = false;
+  }
+});
+
+window.addEventListener('pointermove', (e) => {
+  const pt = getMouseObj(e);
+  if (!pt) return;
+
+  if (dragging) {
+    dragging.position.copy(pt.clone().add(dragOffset));
+    dragging.position.y = Math.max(0, dragging.position.y);
+
+    // Highlight the cell this object is now in
+    const cx = Math.floor(dragging.position.x / params.cellSize);
+    const cz = Math.floor(dragging.position.z / params.cellSize);
+    showCellHighlight(cx, 0, cz);
+    document.getElementById('hlCell').textContent = `(${cx}, 0, ${cz})`;
+  }
+});
+
+window.addEventListener('pointerup', () => {
+  dragging = null;
+  controls.enabled = true;
+  removeCellHighlight();
+  document.getElementById('hlCell').textContent = '—';
+});
+
+renderer.domElement.addEventListener('pointerleave', () => {
+  dragging = null;
+  controls.enabled = true;
+  removeCellHighlight();
+});
+
+// ─── GUI ──────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: 'Spatial Hash Config', width: 240 });
+gui.domElement.style.setProperty('--bg-color', '#13131e');
+gui.domElement.style.setProperty('--widget-color', '#1e1e2e');
+gui.domElement.style.setProperty('--focus-color', '#2e2e4e');
+gui.domElement.style.setProperty('--hover-color', '#1a1a2e');
+gui.domElement.style.setProperty('--text-color', '#c0c0d8');
+gui.domElement.style.setProperty('--title-color', '#e0e0ff');
+gui.domElement.style.setProperty('--font-family', 'JetBrains Mono, monospace');
+
+const f1 = gui.addFolder('Grid');
+f1.add(params, 'gridSize', 2, 12, 1).name('Grid Cells (N×N)').onChange(() => {
+  buildGridLines();
+  // Clamp object positions
+  const half = GRID_HALF();
+  objects.forEach(o => {
+    o.position.clamp(new THREE.Vector3(-half, -half * 0.3, -half), new THREE.Vector3(half, half * 0.3, half));
+  });
+});
+f1.add(params, 'cellSize', 1, 10, 0.5).name('Cell Size').onChange(() => {
+  spatialHash.cellSize = params.cellSize;
+  buildGridLines();
+});
+f1.open();
+
+const f2 = gui.addFolder('Objects');
+f2.add(params, 'objectCount', 10, 800, 10).name('Count').onFinishChange(spawnObjects);
+f2.add(params, 'objectType', ['Sphere', 'Box']).name('Shape').onFinishChange(spawnObjects);
+f2.add(params, 'speed', 0, 3, 0.05).name('Speed');
+f2.open();
+
+const f3 = gui.addFolder('Display');
+f3.add(params, 'showGrid').name('Show Grid').onChange(v => { gridHelper.visible = v; });
+f3.add(params, 'autoRotate').name('Auto Rotate');
+
+gui.add({ reset: spawnObjects }, 'reset').name('🔄 Reset Objects');
+
+// ─── Animation loop ────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+const half = () => GRID_HALF();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  controls.autoRotate = params.autoRotate;
+  if (controls.autoRotate) controls.autoRotateSpeed = 0.6;
+
+  // Rebuild spatial hash each frame for accurate highlighting
+  spatialHash.clear();
+  objects.forEach(obj => {
+    if (obj === dragging) return;
+    obj.position.addScaledVector(obj.velocity, dt * 60);
+    obj.quaternion.multiplyQuaternions(
+      new THREE.Quaternion().setFromEuler(obj.rotSpeed.clone().multiplyScalar(dt * 60)),
+      obj.quaternion
+    );
+
+    const h2 = half();
+    ['x', 'z'].forEach(ax => {
+      if (obj.position[ax] > h2 || obj.position[ax] < -h2) obj.velocity[ax] *= -1;
+    });
+    obj.position.y = Math.max(0, obj.position.y);
+    if (obj.position.y > half() * 0.3 || obj.position.y < 0) obj.velocity.y *= -1;
+
+    spatialHash.insert(obj);
+  });
+
+  // Update instanced mesh matrices
+  if (instancedMesh) {
+    objects.forEach((obj, i) => {
+      dummy.position.copy(obj.position);
+      dummy.quaternion.copy(obj.quaternion);
+      dummy.updateMatrix();
+      instancedMesh.setMatrixAt(i, dummy.matrix);
+    });
+    instancedMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // Slowly pulse cell highlight
+  if (cellHighlightMesh) {
+    cellHighlightMat.opacity = 0.12 + Math.sin(clock.elapsedTime * 5) * 0.06;
+  }
+
+  updateInfo();
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

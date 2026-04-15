@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Soft Body Cloth Simulation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #111; font-family: sans-serif; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      background: rgba(0,0,0,0.6);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.6;
+      pointer-events: none;
+    }
+    #info kbd {
+      background: rgba(255,255,255,0.15);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+<div id="info">
+  <kbd>W</kbd> Toggle Wind &nbsp;
+  <kbd>R</kbd> Reset &nbsp;
+  <kbd>Space</kbd> Pause &nbsp;
+  <kbd>Drag</kbd> Pull cloth
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// --- Config ---
+const GRID = 30;
+const SPACING = 0.36;
+const START_Y = 10;
+const DAMPING = 0.99;
+const CONSTRAINT_ITERS = 10;
+const SPHERE_RADIUS = 2.8;
+const SPHERE_CENTER = new THREE.Vector3(0, 5, 0);
+
+// --- Scene ---
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111827);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 8, 22);
+camera.lookAt(0, 5, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 5, 0);
+
+// Lights
+const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambient);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(8, 16, 10);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+const pointLight = new THREE.PointLight(0x4488ff, 1, 40);
+pointLight.position.set(-6, 8, -4);
+scene.add(pointLight);
+
+// Grid helper
+const gridHelper = new THREE.GridHelper(30, 30, 0x333, 0x222);
+gridHelper.position.y = 0;
+scene.add(gridHelper);
+
+// --- Sphere obstacle ---
+const sphereGeo = new THREE.SphereGeometry(SPHERE_RADIUS, 32, 32);
+const sphereMat = new THREE.MeshStandardMaterial({
+  color: 0x334466,
+  metalness: 0.3,
+  roughness: 0.6,
+  transparent: true,
+  opacity: 0.7
+});
+const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+sphereMesh.position.copy(SPHERE_CENTER);
+sphereMesh.castShadow = true;
+sphereMesh.receiveShadow = true;
+scene.add(sphereMesh);
+
+// Wireframe overlay
+const wireGeo = new THREE.SphereGeometry(SPHERE_RADIUS + 0.01, 32, 32);
+const wireMat = new THREE.MeshBasicMaterial({ color: 0x88aaff, wireframe: true, transparent: true, opacity: 0.25 });
+const wireMesh = new THREE.Mesh(wireGeo, wireMat);
+wireMesh.position.copy(SPHERE_CENTER);
+scene.add(wireMesh);
+
+// --- Particle ---
+class Particle {
+  constructor(x, y, z) {
+    this.position = new THREE.Vector3(x, y, z);
+    this.prevPosition = new THREE.Vector3(x, y, z);
+    this.acceleration = new THREE.Vector3();
+    this.pinned = false;
+    this.original = new THREE.Vector3(x, y, z);
+  }
+
+  addForce(fx, fy, fz) {
+    this.acceleration.x += fx;
+    this.acceleration.y += fy;
+    this.acceleration.z += fz;
+  }
+
+  integrate(dt) {
+    if (this.pinned) return;
+    const vel = this.position.clone().sub(this.prevPosition).multiplyScalar(params.damping);
+    this.prevPosition.copy(this.position);
+    this.position.add(vel);
+    this.position.addScaledVector(this.acceleration, dt * dt);
+    this.acceleration.set(0, 0, 0);
+  }
+
+  reset() {
+    this.position.copy(this.original);
+    this.prevPosition.copy(this.original);
+    this.acceleration.set(0, 0, 0);
+  }
+}
+
+// --- Spring ---
+class Spring {
+  constructor(p1, p2, stiffness) {
+    this.p1 = p1;
+    this.p2 = p2;
+    this.restLength = p1.position.distanceTo(p2.position);
+    this.stiffness = stiffness !== undefined ? stiffness : 1.0;
+  }
+
+  satisfy() {
+    const diff = this.p2.position.clone().sub(this.p1.position);
+    const dist = diff.length();
+    if (dist < 0.0001) return;
+    const correction = (dist - this.restLength) / dist * this.stiffness;
+    const halfCorr = diff.multiplyScalar(correction * 0.5);
+
+    if (!this.p1.pinned) this.p1.position.add(halfCorr);
+    if (!this.p2.pinned) this.p2.position.sub(halfCorr);
+  }
+}
+
+// --- Cloth setup ---
+let particles = [];
+let springs = [];
+
+function buildCloth() {
+  particles = [];
+  springs = [];
+
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const x = (i - (GRID - 1) / 2) * SPACING;
+      const y = START_Y;
+      const z = (j - (GRID - 1) / 2) * SPACING;
+      const p = new Particle(x, y, z);
+      if (j === 0) p.pinned = true; // Fix top row
+      particles.push(p);
+    }
+  }
+
+  // Structural springs (horizontal + vertical)
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const idx = j * GRID + i;
+      if (i < GRID - 1) {
+        springs.push(new Spring(particles[idx], particles[idx + 1], 1.0));
+      }
+      if (j < GRID - 1) {
+        springs.push(new Spring(particles[idx], particles[idx + GRID], 1.0));
+      }
+    }
+  }
+
+  // Shear springs (diagonal)
+  for (let j = 0; j < GRID - 1; j++) {
+    for (let i = 0; i < GRID - 1; i++) {
+      const idx = j * GRID + i;
+      springs.push(new Spring(particles[idx], particles[idx + GRID + 1], 0.8));
+      springs.push(new Spring(particles[idx + 1], particles[idx + GRID], 0.8));
+    }
+  }
+
+  // Bend springs (skip-one neighbors)
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const idx = j * GRID + i;
+      if (i < GRID - 2) {
+        springs.push(new Spring(particles[idx], particles[idx + 2], 0.5));
+      }
+      if (j < GRID - 2) {
+        springs.push(new Spring(particles[idx], particles[idx + GRID * 2], 0.5));
+      }
+    }
+  }
+}
+
+// --- Geometry ---
+let clothGeo, clothMesh;
+const posAttr = new Float32Array(GRID * GRID * 3);
+const colorAttr = new Float32Array(GRID * GRID * 3);
+const normAttr = new Float32Array(GRID * GRID * 3);
+
+function buildGeometry() {
+  clothGeo = new THREE.BufferGeometry();
+
+  const indices = [];
+  for (let j = 0; j < GRID - 1; j++) {
+    for (let i = 0; i < GRID - 1; i++) {
+      const a = j * GRID + i;
+      const b = j * GRID + i + 1;
+      const c = (j + 1) * GRID + i;
+      const d = (j + 1) * GRID + i + 1;
+      indices.push(a, c, b);
+      indices.push(b, c, d);
+    }
+  }
+
+  clothGeo.setIndex(indices);
+  clothGeo.setAttribute('position', new THREE.BufferAttribute(posAttr, 3));
+  clothGeo.setAttribute('color', new THREE.BufferAttribute(colorAttr, 3));
+  clothGeo.setAttribute('normal', new THREE.BufferAttribute(normAttr, 3));
+
+  const clothMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    metalness: 0.05,
+    roughness: 0.8
+  });
+
+  clothMesh = new THREE.Mesh(clothGeo, clothMat);
+  clothMesh.castShadow = true;
+  clothMesh.receiveShadow = true;
+  scene.add(clothMesh);
+}
+
+function updateGeometry() {
+  const pos = clothGeo.attributes.position.array;
+  const col = clothGeo.attributes.color.array;
+  const minY = START_Y - GRID * SPACING;
+  const maxY = START_Y;
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    pos[i * 3] = p.position.x;
+    pos[i * 3 + 1] = p.position.y;
+    pos[i * 3 + 2] = p.position.z;
+
+    // Color gradient: top=red, bottom=blue
+    const t = (p.position.y - minY) / (maxY - minY);
+    const r = 1.0;
+    const g = Math.max(0, 0.3 + 0.5 * Math.sin(t * Math.PI));
+    const b = 1.0 - t * 0.7;
+    col[i * 3] = r;
+    col[i * 3 + 1] = g;
+    col[i * 3 + 2] = b;
+  }
+
+  clothGeo.attributes.position.needsUpdate = true;
+  clothGeo.attributes.color.needsUpdate = true;
+  clothGeo.computeVertexNormals();
+}
+
+// --- Physics ---
+let windEnabled = false;
+let paused = false;
+let time = 0;
+
+const params = {
+  gravity: 9.8,
+  windStrength: 5.0,
+  stiffness: 1.0,
+  damping: DAMPING
+};
+
+function applyForces(dt) {
+  for (const p of particles) {
+    if (p.pinned) continue;
+
+    // Gravity
+    p.addForce(0, -params.gravity, 0);
+
+    // Wind (sinusoidal in +X)
+    if (windEnabled) {
+      const wind = params.windStrength * (0.8 + 0.2 * Math.sin(time * 3.0 + p.position.y * 0.5));
+      p.addForce(wind, 0, 0);
+    }
+  }
+}
+
+function satisfyConstraints() {
+  for (let iter = 0; iter < CONSTRAINT_ITERS; iter++) {
+    for (const s of springs) {
+      s.satisfy();
+    }
+
+    // Sphere collision
+    for (const p of particles) {
+      if (p.pinned) continue;
+      const diff = p.position.clone().sub(SPHERE_CENTER);
+      const dist = diff.length();
+      if (dist < SPHERE_RADIUS + 0.01) {
+        diff.normalize().multiplyScalar(SPHERE_RADIUS + 0.01);
+        p.position.copy(SPHERE_CENTER).add(diff);
+      }
+    }
+  }
+}
+
+function resetCloth() {
+  for (const p of particles) p.reset();
+}
+
+// --- Interaction ---
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let draggedParticle = null;
+let dragPlane = new THREE.Plane();
+let dragOffset = new THREE.Vector3();
+
+function onPointerDown(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(clothMesh);
+
+  if (hits.length > 0) {
+    const hit = hits[0];
+    const pt = hit.point;
+
+    // Find nearest particle
+    let nearest = null;
+    let minDist = Infinity;
+    for (const p of particles) {
+      if (p.pinned) continue;
+      const d = p.position.distanceTo(pt);
+      if (d < minDist) {
+        minDist = d;
+        nearest = p;
+      }
+    }
+
+    if (nearest && minDist < SPACING * 2.5) {
+      draggedParticle = nearest;
+      draggedParticle.pinned = true;
+
+      const normal = hit.face ? hit.face.normal.clone().transformDirection(clothMesh.matrixWorld) : new THREE.Vector3(0, 1, 0);
+      dragPlane.setFromNormalAndCoplanarPoint(normal, pt);
+
+      const intersection = new THREE.Vector3();
+      raycaster.ray.intersectPlane(dragPlane, intersection);
+      dragOffset.subVectors(nearest.position, intersection);
+    }
+  }
+}
+
+function onPointerMove(e) {
+  if (!draggedParticle) return;
+
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersection = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
+    draggedParticle.position.copy(intersection.add(dragOffset));
+    draggedParticle.prevPosition.copy(draggedParticle.position);
+  }
+}
+
+function onPointerUp() {
+  if (draggedParticle) {
+    draggedParticle.pinned = false;
+    draggedParticle = null;
+  }
+}
+
+renderer.domElement.addEventListener('pointerdown', onPointerDown);
+renderer.domElement.addEventListener('pointermove', onPointerMove);
+renderer.domElement.addEventListener('pointerup', onPointerUp);
+renderer.domElement.addEventListener('pointerleave', onPointerUp);
+
+// --- Keyboard ---
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyW') {
+    windEnabled = !windEnabled;
+    console.log('Wind:', windEnabled);
+  } else if (e.code === 'KeyR') {
+    resetCloth();
+  } else if (e.code === 'Space') {
+    paused = !paused;
+    e.preventDefault();
+  }
+});
+
+// --- GUI ---
+const gui = new GUI();
+gui.add(params, 'gravity', 0, 30, 0.1).name('Gravity');
+gui.add(params, 'windStrength', 0, 20, 0.1).name('Wind Strength');
+gui.add(params, 'stiffness', 0.1, 2, 0.05).name('Stiffness');
+gui.add(params, 'damping', 0.9, 1.0, 0.001).name('Damping');
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- Animation ---
+let lastTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  let dt = Math.min((now - lastTime) / 1000, 0.033); // cap at ~30fps equivalent
+  lastTime = now;
+
+  if (!paused && dt > 0) {
+    time += dt;
+    applyForces(dt);
+
+    for (const p of particles) {
+      p.integrate(dt);
+    }
+
+    satisfyConstraints();
+  }
+
+  updateGeometry();
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// --- Init ---
+buildCloth();
+buildGeometry();
+animate();
+</script>
+</body>
+</html>

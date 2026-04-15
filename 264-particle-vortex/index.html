@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Vortex</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #info {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.4);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    pointer-events: none;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div id="info">Click to disturb the vortex</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GUI } from 'lil-gui';
+
+// ─── Scene Setup ───────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(0, 30, 60);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 1);
+document.body.appendChild(renderer.domElement);
+
+// ─── Parameters ──────────────────────────────────────────────────────────────
+const params = {
+  particleCount: 60000,
+  vortexStrength: 1.0,
+  speed: 1.0,
+  radius: 28,
+  heightSpread: 18,
+  turbulence: 0.15,
+  burstRadius: 12,
+  burstStrength: 8,
+  autoRotate: true,
+};
+
+// ─── Particle Buffers ────────────────────────────────────────────────────────
+let positions, velocities, colors, sizes;
+let geometry, material, points;
+let particleCount = params.particleCount;
+
+function createParticles(count) {
+  if (points) {
+    geometry.dispose();
+    material.dispose();
+    scene.remove(points);
+  }
+
+  particleCount = count;
+
+  positions  = new Float32Array(count * 3);
+  velocities = new Float32Array(count * 3);
+  colors     = new Float32Array(count * 3);
+  sizes      = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const i3 = i * 3;
+    // Distribute in a disk with radial bias (more particles near center)
+    const r = Math.pow(Math.random(), 0.6) * params.radius;
+    const theta = Math.random() * Math.PI * 2;
+    const y = (Math.random() - 0.5) * params.heightSpread;
+
+    positions[i3]     = r * Math.cos(theta);
+    positions[i3 + 1] = y;
+    positions[i3 + 2] = r * Math.sin(theta);
+
+    // Tangential velocity for vortex
+    const tangentSpeed = (0.5 + Math.random() * 0.5) * params.vortexStrength;
+    velocities[i3]     = -tangentSpeed * Math.sin(theta);
+    velocities[i3 + 1] = (Math.random() - 0.5) * 0.05;
+    velocities[i3 + 2] =  tangentSpeed * Math.cos(theta);
+
+    // Color: inner cyan → outer magenta/purple
+    const norm = r / params.radius;
+    const t = Math.pow(norm, 0.7);
+    // Inner: cyan #00ffff, Outer: magenta #ff00ff / purple #8800ff
+    if (t < 0.5) {
+      const s = t * 2;
+      colors[i3]     = s * 0.5;          // 0 → 0.5
+      colors[i3 + 1] = 0.8 + s * 0.2;   // 0.8 → 1.0
+      colors[i3 + 2] = 1.0;             // always 1.0
+    } else {
+      const s = (t - 0.5) * 2;
+      colors[i3]     = 0.5 + s * 0.5;   // 0.5 → 1.0
+      colors[i3 + 1] = 0.0;             // always 0.0
+      colors[i3 + 2] = 1.0 - s * 0.47;  // 1.0 → 0.53
+    }
+
+    sizes[i] = 0.8 + Math.random() * 1.2;
+  }
+
+  geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('size',    new THREE.BufferAttribute(sizes, 1));
+
+  material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:   { value: 0 },
+      uPixelRatio: { value: renderer.getPixelRatio() },
+    },
+    vertexShader: /* glsl */`
+      attribute float size;
+      attribute vec3 color;
+      varying vec3 vColor;
+      varying float vAlpha;
+      uniform float uPixelRatio;
+      uniform float uTime;
+
+      void main() {
+        vColor = color;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        float dist = length(position.xz);
+        float pulse = 0.8 + 0.2 * sin(uTime * 2.0 - dist * 0.15);
+        gl_PointSize = size * pulse * uPixelRatio * (300.0 / -mvPosition.z);
+        gl_PointSize = clamp(gl_PointSize, 1.0, 8.0);
+        gl_Position = projectionMatrix * mvPosition;
+        vAlpha = smoothstep(80.0, 5.0, dist) * 0.85 + 0.15;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv);
+        if (d > 0.5) discard;
+        float alpha = (1.0 - d * 2.0);
+        alpha = pow(alpha, 1.5) * vAlpha;
+        // Soft glow core
+        float core = exp(-d * d * 12.0);
+        vec3 col = vColor + core * vec3(0.3, 0.3, 0.5);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    vertexColors: true,
+  });
+
+  points = new THREE.Points(geometry, material);
+  scene.add(points);
+}
+
+createParticles(params.particleCount);
+
+// ─── Mouse Interaction ──────────────────────────────────────────────────────
+const mouse = new THREE.Vector2();
+const raycaster = new THREE.Raycaster();
+const mousePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const mouseWorld = new THREE.Vector3();
+const bursts = []; // active disturbances
+
+window.addEventListener('click', (e) => {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(mousePlane, mouseWorld);
+
+  bursts.push({
+    x: mouseWorld.x,
+    z: mouseWorld.z,
+    strength: params.burstStrength,
+    radius: params.burstRadius,
+    life: 1.0,
+  });
+});
+
+window.addEventListener('mousemove', (e) => {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+});
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '🌪️ Vortex Controls' });
+gui.add(params, 'particleCount', 10000, 150000, 1000)
+  .name('Particles')
+  .onChange(v => createParticles(v));
+gui.add(params, 'vortexStrength', 0, 3, 0.05).name('Vortex Strength');
+gui.add(params, 'speed', 0, 3, 0.05).name('Speed');
+gui.add(params, 'radius', 5, 60, 1).name('Radius').onChange(() => {
+  // subtle: just let it be, no reinit needed
+});
+gui.add(params, 'heightSpread', 2, 40, 0.5).name('Height Spread');
+gui.add(params, 'turbulence', 0, 1, 0.01).name('Turbulence');
+gui.add(params, 'burstRadius', 2, 30, 0.5).name('Burst Radius');
+gui.add(params, 'burstStrength', 1, 20, 0.5).name('Burst Strength');
+gui.add(params, 'autoRotate').name('Auto Rotate Camera');
+
+// ─── Ambient Glow Ring ──────────────────────────────────────────────────────
+const ringGeo = new THREE.RingGeometry(params.radius - 0.5, params.radius + 0.5, 128);
+const ringMat = new THREE.MeshBasicMaterial({
+  color: 0x4400ff,
+  transparent: true,
+  opacity: 0.12,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const ring = new THREE.Mesh(ringGeo, ringMat);
+ring.rotation.x = -Math.PI / 2;
+ring.position.y = -params.heightSpread / 2 - 0.5;
+scene.add(ring);
+
+// Second ring at top
+const ring2 = ring.clone();
+ring2.position.y = params.heightSpread / 2 + 0.5;
+scene.add(ring2);
+
+// ─── Central Glow Sphere ─────────────────────────────────────────────────────
+const coreGeo = new THREE.SphereGeometry(2, 32, 32);
+const coreMat = new THREE.MeshBasicMaterial({
+  color: 0x00ffff,
+  transparent: true,
+  opacity: 0.6,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const core = new THREE.Mesh(coreGeo, coreMat);
+scene.add(core);
+
+// ─── Animation ───────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let frameCount = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = Math.min(clock.getDelta(), 0.05);
+  const elapsed = clock.getElapsedTime();
+  frameCount++;
+
+  material.uniforms.uTime.value = elapsed;
+
+  // Auto-rotate camera
+  if (params.autoRotate) {
+    const angle = elapsed * 0.08;
+    const camR = 70;
+    camera.position.x = Math.sin(angle) * camR;
+    camera.position.z = Math.cos(angle) * camR;
+    camera.position.y = 30 + Math.sin(elapsed * 0.15) * 5;
+    camera.lookAt(0, 0, 0);
+  }
+
+  // Pulse core
+  const cp = 1.0 + 0.15 * Math.sin(elapsed * 3.0);
+  core.scale.setScalar(cp);
+  coreMat.opacity = 0.5 + 0.2 * Math.sin(elapsed * 2.0);
+
+  // Update rings
+  ring.position.y  = -params.heightSpread / 2 - 0.5 + 0.3 * Math.sin(elapsed * 0.5);
+  ring2.position.y =  params.heightSpread / 2 + 0.5 + 0.3 * Math.sin(elapsed * 0.5 + Math.PI);
+
+  // Decay bursts
+  for (let b = bursts.length - 1; b >= 0; b--) {
+    bursts[b].life -= delta * 1.2;
+    if (bursts[b].life <= 0) bursts.splice(b, 1);
+  }
+
+  // ── Particle simulation ──
+  const posAttr = geometry.attributes.position;
+  const colAttr = geometry.attributes.color;
+
+  for (let i = 0; i < particleCount; i++) {
+    const i3 = i * 3;
+    let px = positions[i3];
+    let py = positions[i3 + 1];
+    let pz = positions[i3 + 2];
+
+    const dist = Math.sqrt(px * px + pz * pz);
+    const angle = Math.atan2(pz, px);
+
+    // Vortex angular velocity: faster near center, slower at edge
+    const angularSpeed = params.vortexStrength * params.speed * (8.0 / (dist + 2.0) + 0.05);
+    const newAngle = angle + angularSpeed * delta;
+
+    // Radial pull toward center (keeps particles in vortex)
+    const radialPull = 0.015 * params.speed;
+    const newDist = Math.max(0.5, dist - radialPull * delta * 60);
+
+    // Turbulence (noise-like drift)
+    const turb = params.turbulence;
+    const tx = (Math.sin(elapsed * 1.3 + i * 0.017 + py * 0.3) * turb + Math.cos(elapsed * 0.7 + i * 0.009) * turb * 0.5);
+    const ty = (Math.sin(elapsed * 0.9 + i * 0.013) * turb * 0.3);
+    const tz = (Math.cos(elapsed * 1.1 + i * 0.021 + py * 0.3) * turb + Math.sin(elapsed * 0.5 + i * 0.011) * turb * 0.5);
+
+    // Apply burst disturbances
+    let bx = 0, by = 0, bz = 0;
+    for (const burst of bursts) {
+      const dx = px - burst.x;
+      const dz = pz - burst.z;
+      const bd = Math.sqrt(dx * dx + dz * dz);
+      if (bd < burst.radius && bd > 0.01) {
+        const force = (burst.strength * burst.life) / (bd + 1.0);
+        bx += (dx / bd) * force * delta;
+        by += (Math.random() - 0.5) * force * 0.3 * delta;
+        bz += (dz / bd) * force * delta;
+      }
+    }
+
+    // Write new position
+    positions[i3]     = newDist * Math.cos(newAngle) + tx + bx;
+    positions[i3 + 1] = py + ty + by;
+    positions[i3 + 2] = newDist * Math.sin(newAngle) + tz + bz;
+
+    // Soft boundary: if particle drifts too far, nudge it back
+    const totalDist = Math.sqrt(positions[i3] ** 2 + positions[i3 + 2] ** 2);
+    if (totalDist > params.radius + 5) {
+      const nudge = 0.05;
+      positions[i3]     *= (1 - nudge);
+      positions[i3 + 2] *= (1 - nudge);
+    }
+    // Vertical boundary
+    if (positions[i3 + 1] > params.heightSpread / 2) positions[i3 + 1] = -params.heightSpread / 2;
+    if (positions[i3 + 1] < -params.heightSpread / 2) positions[i3 + 1] = params.heightSpread / 2;
+
+    // Update color subtly based on height and speed
+    const norm = dist / params.radius;
+    const t = Math.pow(Math.min(norm, 1), 0.7);
+    const heightTint = (positions[i3 + 1] / (params.heightSpread / 2)) * 0.1;
+    if (t < 0.5) {
+      colAttr.array[i3]     = t * 2 * 0.5 + heightTint * 0.2;
+      colAttr.array[i3 + 1] = 0.8 + t * 0.4;
+      colAttr.array[i3 + 2] = 1.0;
+    } else {
+      colAttr.array[i3]     = 0.5 + (t - 0.5) * 2 * 0.5 + heightTint * 0.2;
+      colAttr.array[i3 + 1] = 0.0 + heightTint * 0.3;
+      colAttr.array[i3 + 2] = 1.0 - (t - 0.5) * 2 * 0.47;
+    }
+  }
+
+  posAttr.needsUpdate = true;
+  colAttr.needsUpdate = true;
+
+  renderer.render(scene, camera);
+}
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  material.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+});
+
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+A three.js benchmark comparing Individual Meshes, Merged Geometry, and InstancedMesh rendering performance with FPS counter and lil-gui controls.

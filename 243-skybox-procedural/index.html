@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Procedural Skybox — Atmospheric Scattering</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    canvas { display: block; }
+
+    /* ── Overlay UI ──────────────────────────────────── */
+    #ui {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .title {
+      color: rgba(255,255,255,0.85);
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.6);
+    }
+
+    .subtitle {
+      color: rgba(255,255,255,0.5);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ── Preset Buttons ─────────────────────────────── */
+    #presets {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .preset-btn {
+      padding: 5px 12px;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.35);
+      color: rgba(255,255,255,0.8);
+      font-size: 12px;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .preset-btn:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: rgba(255,255,255,0.5);
+    }
+
+    .preset-btn.active {
+      background: rgba(255,255,255,0.2);
+      border-color: rgba(255,255,255,0.7);
+      color: #fff;
+    }
+
+    /* ── Hint ───────────────────────────────────────── */
+    #hint {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.35);
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      pointer-events: none;
+    }
+
+    /* ── lil-gui custom theme override ──────────────── */
+    .lil-gui {
+      --background-color: rgba(10, 12, 18, 0.82) !important;
+      --title-background-color: rgba(20, 25, 40, 0.9) !important;
+      --text-color: #c8d8f0 !important;
+      --widget-color: rgba(255,255,255,0.12) !important;
+      --hover-color: rgba(255,255,255,0.22) !important;
+      --focus-color: rgba(80,140,255,0.5) !important;
+      --number-color: #7ec8e3 !important;
+      --string-color: #c3e88d !important;
+      font-size: 11px !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Overlay UI -->
+  <div id="ui">
+    <div class="title">Procedural Skybox</div>
+    <div class="subtitle">Atmospheric Scattering · Rayleigh + Mie</div>
+    <div id="presets">
+      <button class="preset-btn" data-preset="dawn">日出 Dawn</button>
+      <button class="preset-btn" data-preset="noon">正午 Noon</button>
+      <button class="preset-btn" data-preset="dusk">日落 Dusk</button>
+      <button class="preset-btn" data-preset="night">夜晚 Night</button>
+    </div>
+  </div>
+
+  <div id="hint">Drag sun to move · Scroll to zoom · Right-drag to orbit</div>
+
+  <!-- three.js via importmap (ES modules) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+    import { Sky }             from 'three/addons/objects/Sky.js';
+    import GUI                 from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+    /* ─────────────────────────────────────────────────
+       Scene Setup
+    ───────────────────────────────────────────────── */
+    const canvas   = document.createElement('canvas');
+    document.body.appendChild(canvas);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping        = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 200000);
+    camera.position.set(0, 10, 5000);
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping  = true;
+    controls.dampingFactor  = 0.05;
+    controls.minDistance    = 1000;
+    controls.maxDistance    = 20000;
+    controls.target.set(0, 0, 0);
+
+    /* ─────────────────────────────────────────────────
+       Sky Object (Three.js built-in atmospheric sky)
+       Uses Preetham's model for Rayleigh / Mie scattering
+    ───────────────────────────────────────────────── */
+    const sky = new Sky();
+    sky.scale.setScalar(450000);
+    scene.add(sky);
+
+    const skyUniforms = sky.material.uniforms;
+
+    /**
+     * The sky shader uses the following key uniforms:
+     *   turbidity        — atmospheric haze (clear sky ≈ 3–10)
+     *   rayleigh         — sky blue scattering strength (clear sky ≈ 0.5)
+     *   mieCoefficient   — sun halo size (clear sky ≈ 0.005)
+     *   mieDirectionalG  — Mie scattering anisotropy (0–1, more forward → 0.8)
+     *   sunPosition      — THREE.Vector3, direction toward the sun
+     */
+    const sunPos = new THREE.Vector3();
+
+    /* ─────────────────────────────────────────────────
+       GUI Parameters (driven by lil-gui)
+    ───────────────────────────────────────────────── */
+    const params = {
+      // Sun position in spherical coords
+      azimuthDeg:   180,   // degrees
+      elevationDeg: 85,   // degrees above horizon
+
+      // Atmospheric
+      turbidity:       3.0,  // [1, 20]
+      rayleigh:        0.5,  // [0, 4]
+      mieCoefficient:  0.005,
+      mieDirectionalG: 0.8,  // [0, 1]
+
+      // Tone mapping exposure
+      exposure: 1.0,
+    };
+
+    /* ─────────────────────────────────────────────────
+       Sync sun direction from azimuth/elevation
+    ───────────────────────────────────────────────── */
+    function updateSun() {
+      const phi   = THREE.MathUtils.degToRad(90 - params.elevationDeg);
+      const theta = THREE.MathUtils.degToRad(params.azimuthDeg);
+      sunPos.setFromSphericalCoords(1, phi, theta);
+      skyUniforms['sunPosition'].value.copy(sunPos);
+    }
+
+    /* ─────────────────────────────────────────────────
+       Apply atmosphere params to sky uniforms
+    ───────────────────────────────────────────────── */
+    function applyAtmosphereParams() {
+      skyUniforms['turbidity'].value        = params.turbidity;
+      skyUniforms['rayleigh'].value         = params.rayleigh;
+      skyUniforms['mieCoefficient'].value   = params.mieCoefficient;
+      skyUniforms['mieDirectionalG'].value = params.mieDirectionalG;
+      renderer.toneMappingExposure          = params.exposure;
+    }
+
+    /* ─────────────────────────────────────────────────
+       Presets
+    ───────────────────────────────────────────────── */
+    const presets = {
+      dawn:  { azimuthDeg: 180,  elevationDeg: 5,  turbidity: 8,  rayleigh: 2.5, mieCoefficient: 0.03, mieDirectionalG: 0.95, exposure: 0.7  },
+      noon:  { azimuthDeg: 180,  elevationDeg: 85, turbidity: 3,  rayleigh: 0.5, mieCoefficient: 0.005, mieDirectionalG: 0.8, exposure: 1.0 },
+      dusk:  { azimuthDeg: 0,    elevationDeg: 5,   turbidity: 8,  rayleigh: 2.5, mieCoefficient: 0.03, mieDirectionalG: 0.95, exposure: 0.7  },
+      night: { azimuthDeg: 180,  elevationDeg: -10, turbidity: 1, rayleigh: 0.1, mieCoefficient: 0.001, mieDirectionalG: 0.5, exposure: 0.3 },
+    };
+
+    function applyPreset(name) {
+      const p = presets[name];
+      if (!p) return;
+      Object.assign(params, p);
+      updateSun();
+      applyAtmosphereParams();
+      // Update lil-gui widgets to reflect new values
+      gui.controllers.forEach(c => c.updateDisplay());
+    }
+
+    /* ─────────────────────────────────────────────────
+       lil-gui Setup
+    ───────────────────────────────────────────────── */
+    const gui = new GUI({ title: 'Atmosphere', width: 230 });
+
+    // Sun folder
+    const sunFolder = gui.addFolder('Sun Position');
+    sunFolder.add(params, 'azimuthDeg', 0, 360, 0.1).name('Azimuth (°)')
+      .onChange(updateSun);
+    sunFolder.add(params, 'elevationDeg', -20, 90, 0.1).name('Elevation (°)')
+      .onChange(updateSun);
+    sunFolder.open();
+
+    // Atmosphere folder
+    const atmFolder = gui.addFolder('Atmosphere');
+    atmFolder.add(params, 'turbidity', 1, 20, 0.1).name('Turbidity')
+      .onChange(applyAtmosphereParams);
+    atmFolder.add(params, 'rayleigh', 0, 4, 0.01).name('Rayleigh')
+      .onChange(applyAtmosphereParams);
+    atmFolder.add(params, 'mieCoefficient', 0.001, 0.1, 0.001).name('Mie Coeff.')
+      .onChange(applyAtmosphereParams);
+    atmFolder.add(params, 'mieDirectionalG', 0, 1, 0.01).name('Mie Anisotropy')
+      .onChange(applyAtmosphereParams);
+    atmFolder.open();
+
+    // Renderer folder
+    const renFolder = gui.addFolder('Renderer');
+    renFolder.add(params, 'exposure', 0.1, 2.0, 0.01).name('Exposure')
+      .onChange(applyAtmosphereParams);
+
+    /* ─────────────────────────────────────────────────
+       Preset Button Wiring
+    ───────────────────────────────────────────────── */
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyPreset(btn.dataset.preset);
+      });
+    });
+
+    // Activate noon by default
+    document.querySelector('[data-preset="noon"]').classList.add('active');
+    applyPreset('noon');
+
+    /* ─────────────────────────────────────────────────
+       Resize Handler
+    ───────────────────────────────────────────────── */
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    /* ─────────────────────────────────────────────────
+       Render Loop
+    ───────────────────────────────────────────────── */
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>

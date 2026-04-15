@@ -1,0 +1,15 @@
+粒子风暴 (Particle Storm)
+==========================
+
+简介：
+这是一个基于 Three.js GPU 粒子系统的混沌粒子风暴可视化示例。数以万计的带电粒子在三维空间中形成湍流效果，
+通过 Simplex Noise 噪声算法驱动粒子的速度场，产生如同能量风暴般的视觉效果。用户可以通过鼠标与粒子流进行实时交互。
+
+关键 Three.js 技术：
+1. THREE.Points + BufferGeometry - 使用 GPU 实例化的点云粒子系统
+2. 自定义 ShaderMaterial - 顶点着色器实现粒子大小衰减，片元着色器实现发光圆形粒子
+3. EffectComposer + UnrealBloomPass - 后期处理泛光效果，增强粒子发光感
+4. Simplex Noise 3D - 三维噪声算法驱动粒子湍流运动
+5. lil-gui 交互控制面板 - 实时调节风暴参数
+6. Additive Blending - 加法混合模式实现粒子叠加发光
+7. 鼠标扰动交互 - 鼠标移动对粒子速度场的实时影响

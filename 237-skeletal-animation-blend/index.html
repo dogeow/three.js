@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Three.js Skeletal Animation &amp; Blend</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0f; color: #e0e0e0; font-family: 'Courier New', monospace; overflow: hidden; }
+    canvas { display: block; }
+    #info {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      text-align: center; pointer-events: none; z-index: 10;
+    }
+    #info h1 { font-size: 15px; font-weight: 700; color: #5af; letter-spacing: 0.08em; }
+    #info p  { font-size: 11px; color: #888; margin-top: 3px; }
+    #info .badge {
+      display: inline-block; margin-top: 6px; padding: 2px 8px;
+      border: 1px solid #334; border-radius: 3px; font-size: 10px; color: #68c;
+    }
+    #panel {
+      position: absolute; top: 14px; right: 14px; z-index: 10;
+      background: rgba(10,10,18,0.88); border: 1px solid #223;
+      border-radius: 6px; padding: 12px 14px; min-width: 200px;
+      font-size: 11px;
+    }
+    #panel h3 { color: #5af; font-size: 11px; letter-spacing: 0.1em; margin-bottom: 8px; border-bottom: 1px solid #223; padding-bottom: 5px; }
+    #panel .row { display: flex; justify-content: space-between; align-items: center; margin: 5px 0; }
+    #panel label { color: #aaa; }
+    #panel .val { color: #5f5; font-variant-numeric: tabular-nums; min-width: 36px; text-align: right; }
+    #panel .hint { font-size: 9px; color: #555; margin-top: 2px; }
+    #panel .section { margin-top: 10px; border-top: 1px solid #1a1a2e; padding-top: 8px; }
+    #panel .btn-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    button {
+      background: #112; border: 1px solid #335; color: #8af;
+      font-family: 'Courier New', monospace; font-size: 10px;
+      padding: 4px 9px; border-radius: 3px; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    button:hover { background: #224; color: #acf; }
+    button.active { background: #1a3a2a; border-color: #4a8; color: #4f8; }
+    #status { font-size: 10px; color: #555; margin-top: 8px; text-align: center; }
+    #bone-labels canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+    .key-hint {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      font-size: 10px; color: #444; text-align: center; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="info">
+  <h1>Skeletal Animation &amp; Blend Demo</h1>
+  <p>Three.js r160 &mdash; AnimationMixer, IK Hints, Procedural Fallback</p>
+  <span class="badge">Drag to orbit &nbsp;|&nbsp; Scroll to zoom</span>
+</div>
+
+<div id="panel">
+  <h3>BLEND WEIGHTS</h3>
+
+  <div class="row">
+    <label>Idle</label>
+    <span class="val" id="v-idle">1.00</span>
+  </div>
+  <input type="range" id="s-idle" min="0" max="1" step="0.01" value="1" style="width:100%" />
+
+  <div class="row" style="margin-top:6px">
+    <label>Walk</label>
+    <span class="val" id="v-walk">0.00</span>
+  </div>
+  <input type="range" id="s-walk" min="0" max="1" step="0.01" value="0" style="width:100%" />
+
+  <div class="row" style="margin-top:6px">
+    <label>Run</label>
+    <span class="val" id="v-run">0.00</span>
+  </div>
+  <input type="range" id="s-run" min="0" max="1" step="0.01" value="0" style="width:100%" />
+
+  <div class="section">
+    <label>IK Target X</label>
+    <input type="range" id="s-ik-x" min="-4" max="4" step="0.1" value="0" style="width:100%" />
+    <div class="hint">IK pole target for end-effector</div>
+  </div>
+  <div class="row">
+    <label>IK Target Y</label>
+    <span class="val" id="v-ik-y">1.5</span>
+  </div>
+  <input type="range" id="s-ik-y" min="0" max="4" step="0.1" value="1.5" style="width:100%" />
+
+  <div class="section">
+    <div class="btn-row">
+      <button id="btn-idle" class="active">Idle</button>
+      <button id="btn-walk">Walk</button>
+      <button id="btn-run">Run</button>
+    </div>
+    <div class="btn-row">
+      <button id="btn-ik">IK Demo</button>
+      <button id="btn-reset">Reset</button>
+    </div>
+    <div id="status">Procedural mode &mdash; no GLTF loaded</div>
+  </div>
+</div>
+
+<div class="key-hint">1/2/3 &mdash; Preset blend &nbsp;|&nbsp; Space &mdash; toggle procedural IK &nbsp;|&nbsp; R &mdash; reset</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }     from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }        from 'three/addons/loaders/GLTFLoader.js';
+import { EffectComposer }    from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }        from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass }   from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+/* ─────────────────────────────────────────────────────────────
+   RENDERER & SCENE
+   ───────────────────────────────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.06);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 4, 12);
+camera.lookAt(0, 2, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.minDistance = 3;
+controls.maxDistance = 30;
+controls.update();
+
+/* ─────────────────────────────────────────────────────────────
+   LIGHTING
+   ───────────────────────────────────────────────────────────── */
+scene.add(new THREE.AmbientLight(0x223366, 1.2));
+
+const sun = new THREE.DirectionalLight(0xffeedd, 2.5);
+sun.position.set(6, 12, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far  = 50;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -10;
+sun.shadow.camera.right = sun.shadow.camera.top  =  10;
+sun.shadow.bias = -0.0003;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0x4466aa, 0.8);
+fill.position.set(-6, 4, -6);
+scene.add(fill);
+
+const rim = new THREE.PointLight(0x00ffcc, 1.2, 20);
+rim.position.set(0, 6, -5);
+scene.add(rim);
+
+/* ─────────────────────────────────────────────────────────────
+   GROUND
+   ───────────────────────────────────────────────────────────── */
+const groundGeo = new THREE.PlaneGeometry(40, 40, 40, 40);
+// Slight wave on vertices for visual interest
+const pos = groundGeo.attributes.position;
+for (let i = 0; i < pos.count; i++) {
+  const x = pos.getX(i), z = pos.getZ(i);
+  pos.setY(i, Math.sin(x * 0.4) * 0.05 + Math.cos(z * 0.3) * 0.05);
+}
+groundGeo.computeVertexNormals();
+const ground = new THREE.Mesh(
+  groundGeo,
+  new THREE.MeshStandardMaterial({ color: 0x111122, metalness: 0.2, roughness: 0.85 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Grid
+const grid = new THREE.GridHelper(40, 40, 0x223355, 0x112233);
+grid.position.y = 0.01;
+scene.add(grid);
+
+/* ─────────────────────────────────────────────────────────────
+   HELPER: draw bone axis lines (X=red, Y=green, Z=blue)
+   ───────────────────────────────────────────────────────────── */
+function makeBoneAxis(length = 0.3) {
+  const group = new THREE.Group();
+  const mat = (col, from, to) => {
+    const m = new THREE.LineBasicMaterial({ color: col });
+    const g = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
+    group.add(new THREE.Line(g, m));
+  };
+  mat(0xff3333, new THREE.Vector3(0,0,0), new THREE.Vector3(length,0,0));
+  mat(0x33ff33, new THREE.Vector3(0,0,0), new THREE.Vector3(0,length,0));
+  mat(0x3333ff, new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,length));
+  return group;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   BOX HUMANOID SKELETON (procedural, no GLTF needed)
+   ───────────────────────────────────────────────────────────── */
+function buildBoxHumanoid() {
+  const root = new THREE.Object3D();
+  root.name = 'humanoidRoot';
+
+  // ── Materials ──────────────────────────────────────────────
+  const mat = (hex) => new THREE.MeshStandardMaterial({
+    color: hex, metalness: 0.15, roughness: 0.7, emissive: hex, emissiveIntensity: 0.04
+  });
+  const mBone   = mat(0xaaaaaa);
+  const mJoint  = mat(0x44aaff);
+  const mHead   = mat(0xe8d5b0);
+  const mTorso  = mat(0x334466);
+  const mArm    = mat(0x445577);
+  const mLeg    = mat(0x334455);
+
+  // ── JOINTS (visual spheres) ─────────────────────────────────
+  function joint(name, x, y, z, r = 0.12) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10), mJoint.clone());
+    s.position.set(x, y, z);
+    s.name = name;
+    s.castShadow = true;
+    return s;
+  }
+
+  // ── BONE SEGMENTS (box geometry) ───────────────────────────
+  function bone(name, len, w = 0.12) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, len, w), mBone.clone());
+    m.name = name;
+    m.castShadow = true;
+    return m;
+  }
+
+  // ── ROOT / PELVIS ──────────────────────────────────────────
+  const pelvis = joint('pelvis', 0, 1.0, 0, 0.18);
+  root.add(pelvis);
+
+  // ── SPINE ──────────────────────────────────────────────────
+  const spineBone = bone('spineBone', 0.5);
+  spineBone.position.set(0, 1.25, 0);
+  pelvis.add(spineBone);
+
+  const chest = joint('chest', 0, 1.75, 0, 0.20);
+  pelvis.add(chest);
+
+  // ── NECK & HEAD ────────────────────────────────────────────
+  const neckBone = bone('neckBone', 0.25);
+  neckBone.position.set(0, 0.12, 0);
+  chest.add(neckBone);
+
+  const headJoint = joint('head', 0, 0.3, 0, 0.28);
+  chest.add(headJoint);
+
+  const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.35), mHead);
+  headMesh.position.y = 0.25;
+  headMesh.castShadow = true;
+  headJoint.add(headMesh);
+
+  // Eyes (small boxes for character)
+  const eyeGeo = new THREE.BoxGeometry(0.07, 0.07, 0.04);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 2 });
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.12, 0.32, 0.18);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set( 0.12, 0.32, 0.18);
+  headJoint.add(eyeL, eyeR);
+
+  // ── LEFT ARM ───────────────────────────────────────────────
+  const lShoulder = joint('lShoulder', -0.5, 1.8, 0, 0.15);
+  pelvis.add(lShoulder);
+
+  const lUpperArmBone = bone('lUpperArmBone', 0.52);
+  lUpperArmBone.position.set(-0.25, 0, 0);
+  lShoulder.add(lUpperArmBone);
+
+  const lElbow = joint('lElbow', -0.52, 0, 0, 0.12);
+  lShoulder.add(lElbow);
+
+  const lForearmBone = bone('lForearmBone', 0.46);
+  lForearmBone.position.set(0, -0.23, 0);
+  lElbow.add(lForearmBone);
+
+  const lHand = joint('lHand', 0, -0.46, 0, 0.1);
+  lElbow.add(lHand);
+
+  const lHandMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.08), mArm);
+  lHandMesh.position.y = -0.1;
+  lHand.add(lHandMesh);
+
+  // ── RIGHT ARM ───────────────────────────────────────────────
+  const rShoulder = joint('rShoulder', 0.5, 1.8, 0, 0.15);
+  pelvis.add(rShoulder);
+
+  const rUpperArmBone = bone('rUpperArmBone', 0.52);
+  rUpperArmBone.position.set(0.25, 0, 0);
+  rShoulder.add(rUpperArmBone);
+
+  const rElbow = joint('rElbow', 0.52, 0, 0, 0.12);
+  rShoulder.add(rElbow);
+
+  const rForearmBone = bone('rForearmBone', 0.46);
+  rForearmBone.position.set(0, -0.23, 0);
+  rElbow.add(rForearmBone);
+
+  const rHand = joint('rHand', 0, -0.46, 0, 0.1);
+  rElbow.add(rHand);
+
+  const rHandMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.08), mArm);
+  rHandMesh.position.y = -0.1;
+  rHand.add(rHandMesh);
+
+  // ── LEFT LEG ────────────────────────────────────────────────
+  const lHip = joint('lHip', -0.22, 0.88, 0, 0.15);
+  pelvis.add(lHip);
+
+  const lThighBone = bone('lThighBone', 0.6);
+  lThighBone.position.set(0, -0.3, 0);
+  lHip.add(lThighBone);
+
+  const lKnee = joint('lKnee', 0, -0.6, 0, 0.13);
+  lHip.add(lKnee);
+
+  const lShinBone = bone('lShinBone', 0.55);
+  lShinBone.position.set(0, -0.275, 0);
+  lKnee.add(lShinBone);
+
+  const lFoot = joint('lFoot', 0, -0.55, 0, 0.11);
+  lKnee.add(lFoot);
+
+  const lFootMesh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.3), mLeg);
+  lFootMesh.position.set(0, -0.05, 0.07);
+  lFoot.add(lFootMesh);
+
+  // ── RIGHT LEG ───────────────────────────────────────────────
+  const rHip = joint('rHip', 0.22, 0.88, 0, 0.15);
+  pelvis.add(rHip);
+
+  const rThighBone = bone('rThighBone', 0.6);
+  rThighBone.position.set(0, -0.3, 0);
+  rHip.add(rThighBone);
+
+  const rKnee = joint('rKnee', 0, -0.6, 0, 0.13);
+  rHip.add(rKnee);
+
+  const rShinBone = bone('rShinBone', 0.55);
+  rShinBone.position.set(0, -0.275, 0);
+  rKnee.add(rShinBone);
+
+  const rFoot = joint('rFoot', 0, -0.55, 0, 0.11);
+  rKnee.add(rFoot);
+
+  const rFootMesh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.3), mLeg);
+  rFootMesh.position.set(0, -0.05, 0.07);
+  rFoot.add(rFootMesh);
+
+  // ── IK TARGETS (left & right foot) ──────────────────────────
+  const lFootTarget = new THREE.Object3D();
+  lFootTarget.name = 'lFootTarget';
+  lFootTarget.position.set(-0.22, 0.1, 0);
+  scene.add(lFootTarget);
+
+  const rFootTarget = new THREE.Object3D();
+  rFootTarget.name = 'rFootTarget';
+  rFootTarget.position.set(0.22, 0.1, 0);
+  scene.add(rFootTarget);
+
+  // IK pole vector (knee direction hint)
+  const lPole = new THREE.Vector3(-0.22, 2.5, 0.5);
+  const rPole = new THREE.Vector3( 0.22, 2.5, 0.5);
+
+  // ── STORE JOINT REFERENCES ──────────────────────────────────
+  const joints = {
+    pelvis, spineBone, chest, neckBone, head: headJoint,
+    lShoulder, lUpperArmBone, lElbow, lForearmBone, lHand,
+    rShoulder, rUpperArmBone, rElbow, rForearmBone, rHand,
+    lHip, lThighBone, lKnee, lShinBone, lFoot,
+    rHip, rThighBone, rKnee, rShinBone, rFoot,
+    lFootTarget, rFootTarget, lPole, rPole
+  };
+
+  // ── AXIS HELPERS on joints ─────────────────────────────────
+  const axisHelpers = [];
+  Object.entries(joints).forEach(([name, obj]) => {
+    if (obj instanceof THREE.Object3D) {
+      const ax = makeBoneAxis(0.18);
+      obj.add(ax);
+      ax.visible = false;
+      axisHelpers.push({ name, obj, ax });
+    }
+  });
+
+  root.castShadow = true;
+  scene.add(root);
+
+  return { root, joints, axisHelpers, lFootTarget, rFootTarget, lPole, rPole };
+}
+
+const humanoid = buildBoxHumanoid();
+const { joints } = humanoid;
+
+/* ─────────────────────────────────────────────────────────────
+   SKELETON BONE VISUALIZER (lines connecting joints)
+   ───────────────────────────────────────────────────────────── */
+const skeletonLines = new THREE.Group();
+skeletonLines.name = 'skeletonLines';
+scene.add(skeletonLines);
+
+const skelLineMat = new THREE.LineBasicMaterial({ color: 0x44ffaa, opacity: 0.35, transparent: true });
+function rebuildSkeletonLines() {
+  while (skeletonLines.children.length) skeletonLines.remove(skeletonLines.children[0]);
+  const connect = (a, b) => {
+    if (!joints[a] || !joints[b]) return;
+    const pa = new THREE.Vector3(); joints[a].getWorldPosition(pa);
+    const pb = new THREE.Vector3(); joints[b].getWorldPosition(pb);
+    const g = new THREE.BufferGeometry().setFromPoints([pa, pb]);
+    skeletonLines.add(new THREE.Line(g, skelLineMat.clone()));
+  };
+  const pairs = [
+    ['pelvis','chest'],['chest','head'],
+    ['chest','lShoulder'],['lShoulder','lElbow'],['lElbow','lHand'],
+    ['chest','rShoulder'],['rShoulder','rElbow'],['rElbow','rHand'],
+    ['pelvis','lHip'],['lHip','lKnee'],['lKnee','lFoot'],
+    ['pelvis','rHip'],['rHip','rKnee'],['rKnee','rFoot'],
+  ];
+  pairs.forEach(([a,b]) => connect(a,b));
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SIMPLE TWO-BONE IK SOLVER (CCD-style, analytical for knee)
+   ───────────────────────────────────────────────────────────── */
+function solveTwoBoneIK(rootPos, targetPos, poleDir, upperLen, lowerLen) {
+  const toTarget = new THREE.Vector3().subVectors(targetPos, rootPos);
+  let d = toTarget.length();
+  const maxReach = upperLen + lowerLen - 0.001;
+  const minReach = Math.abs(upperLen - lowerLen) + 0.001;
+  d = THREE.MathUtils.clamp(d, minReach, maxReach);
+  const dir = toTarget.clone().normalize();
+
+  // Law of cosines: angle at root (shoulder/hip)
+  const cosA = (upperLen*upperLen + d*d - lowerLen*lowerLen) / (2*upperLen*d);
+  const angleA = Math.acos(THREE.MathUtils.clamp(cosA, -1, 1));
+
+  // Project pole onto plane perpendicular to dir
+  const poleProj = poleDir.clone().sub(dir.clone().multiplyScalar(dir.dot(poleDir)));
+  const poleNorm = poleProj.normalize();
+
+  // Bend direction
+  const bendDir = poleNorm.clone(); // fallback forward
+
+  // Rotation to align upper bone from root toward target
+  const qAlign = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+  // Bend around axis perpendicular to dir and poleNorm
+  const bendAxis = new THREE.Vector3(0,1,0).cross(dir);
+  if (bendAxis.length() < 0.001) bendAxis.set(1,0,0);
+  const qBend = new THREE.Quaternion().setFromAxisAngle(bendAxis, angleA);
+
+  const q = new THREE.Quaternion().multiplyQuaternions(qAlign, qBend);
+  return q; // rotation to apply to a bone initially pointing +Y
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ANIMATION CLIPS (procedural keyframe tracks)
+   ───────────────────────────────────────────────────────────── */
+const clock = new THREE.Clock();
+const mixer = new THREE.AnimationMixer(humanoid.root);
+const actionMap = {};
+
+function makeClip(name, period, tracks) {
+  const clip = new THREE.AnimationClip(name, period, tracks);
+  const action = mixer.clipAction(clip);
+  action.loop = THREE.LoopRepeat;
+  action.clampWhenFinished = false;
+  return action;
+}
+
+// ── IDLE: gentle breathing, tiny sway ────────────────────────
+{
+  const t = 2.0;
+  const tracks = [
+    // Spine scale (breathing)
+    new THREE.VectorKeyframeTrack('humanoidRoot|spineBone.scale',
+      [0, t*0.5, t],
+      [1,1,1, 1.04,1.06,1, 1,1,1]),
+    // Pelvis Y bob
+    new THREE.VectorKeyframeTrack('humanoidRoot|pelvis.position',
+      [0, t*0.25, t*0.5, t*0.75, t],
+      [0,1.0,0, 0,1.03,0, 0,1.0,0, 0,0.97,0, 0,1.0,0]),
+    // Head slight nod
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|head.quaternion',
+      [0, t*0.33, t*0.66, t],
+      [...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.05,0,0)).toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,0.04)).toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.03,0,-0.04)).toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.05,0,0)).toArray()]),
+  ];
+  actionMap.idle = makeClip('Idle', t, tracks);
+  actionMap.idle.weight = 1.0;
+}
+
+// ── WALK: leg swing, arm counter-swing, hip sway ───────────────
+{
+  const t = 1.2;
+  // Left leg forward (positive Z), right leg back
+  const qLegFwd  = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.55, 0, 0));
+  const qLegBack = new THREE.Quaternion().setFromEuler(new THREE.Euler( 0.55, 0, 0));
+  const qLegNeutral = new THREE.Quaternion();
+  const qArmFwd  = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.45, 0, 0));
+  const qArmBack = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.45, 0, 0));
+  const hipSway = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0.07));
+  const hipNeutral = new THREE.Quaternion();
+
+  const tracks = [
+    // Left hip rotation (leg swing)
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|lHip.quaternion',
+      [0, t*0.5, t],
+      [...qLegNeutral.toArray(), ...qLegFwd.toArray(), ...qLegNeutral.toArray()]),
+    // Right hip rotation
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|rHip.quaternion',
+      [0, t*0.5, t],
+      [...qLegNeutral.toArray(), ...qLegBack.toArray(), ...qLegNeutral.toArray()]),
+    // Left knee (slight bend when leg goes back)
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|lKnee.quaternion',
+      [0, t*0.25, t*0.5, t*0.75, t],
+      [...new THREE.Quaternion().toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3,0,0)).toArray(),
+       ...new THREE.Quaternion().toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.15,0,0)).toArray(),
+       ...new THREE.Quaternion().toArray()]),
+    // Right knee
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|rKnee.quaternion',
+      [0, t*0.25, t*0.5, t*0.75, t],
+      [...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.15,0,0)).toArray(),
+       ...new THREE.Quaternion().toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3,0,0)).toArray(),
+       ...new THREE.Quaternion().toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.15,0,0)).toArray()]),
+    // Left shoulder (arm counter-swing)
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|lShoulder.quaternion',
+      [0, t*0.5, t],
+      [...qArmBack.toArray(), ...qArmFwd.toArray(), ...qArmBack.toArray()]),
+    // Right shoulder
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|rShoulder.quaternion',
+      [0, t*0.5, t],
+      [...qArmFwd.toArray(), ...qArmBack.toArray(), ...qArmFwd.toArray()]),
+    // Hip sway
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|pelvis.quaternion',
+      [0, t*0.5, t],
+      [...hipNeutral.toArray(), ...hipSway.toArray(), ...hipNeutral.toArray()]),
+  ];
+  actionMap.walk = makeClip('Walk', t, tracks);
+  actionMap.walk.weight = 0.0;
+}
+
+// ── RUN: exaggerated version of walk ───────────────────────────
+{
+  const t = 0.7;
+  const qLegFwdR  = new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.0, 0, 0));
+  const qLegBackR = new THREE.Quaternion().setFromEuler(new THREE.Euler( 1.0, 0, 0));
+  const qArmFwdR  = new THREE.Quaternion().setFromEuler(new THREE.Euler( 0.9, 0, 0));
+  const qArmBackR = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.9, 0, 0));
+  const bodyLean  = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.2, 0, 0));
+  const hipSwayR  = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0.12));
+
+  const tracks = [
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|lHip.quaternion',
+      [0, t*0.5, t],
+      [...new THREE.Quaternion().toArray(), ...qLegFwdR.toArray(), ...new THREE.Quaternion().toArray()]),
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|rHip.quaternion',
+      [0, t*0.5, t],
+      [...new THREE.Quaternion().toArray(), ...qLegBackR.toArray(), ...new THREE.Quaternion().toArray()]),
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|lKnee.quaternion',
+      [0, t*0.5, t],
+      [...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5,0,0)).toArray(),
+       ...new THREE.Quaternion().toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5,0,0)).toArray()]),
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|rKnee.quaternion',
+      [0, t*0.5, t],
+      [...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5,0,0)).toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5,0,0)).toArray(),
+       ...new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5,0,0)).toArray()]),
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|lShoulder.quaternion',
+      [0, t*0.5, t],
+      [...qArmBackR.toArray(), ...qArmFwdR.toArray(), ...qArmBackR.toArray()]),
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|rShoulder.quaternion',
+      [0, t*0.5, t],
+      [...qArmFwdR.toArray(), ...qArmBackR.toArray(), ...qArmFwdR.toArray()]),
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|pelvis.quaternion',
+      [0, t*0.5, t],
+      [...new THREE.Quaternion().toArray(), ...hipSwayR.toArray(), ...new THREE.Quaternion().toArray()]),
+    new THREE.QuaternionKeyframeTrack('humanoidRoot|chest.quaternion',
+      [0, t*0.5, t],
+      [...bodyLean.toArray(), ...new THREE.Quaternion().toArray(), ...bodyLean.toArray()]),
+  ];
+  actionMap.run = makeClip('Run', t, tracks);
+  actionMap.run.weight = 0.0;
+}
+
+// Start all actions
+Object.values(actionMap).forEach(a => a.play());
+
+/* ─────────────────────────────────────────────────────────────
+   CROSSFADE HELPER
+   ───────────────────────────────────────────────────────────── */
+function crossfadeTo(name, duration = 0.4) {
+  const target = actionMap[name];
+  if (!target) return;
+  Object.entries(actionMap).forEach(([n, a]) => {
+    if (n === name) {
+      a.wrong = false;
+      // Ease in
+      const fadeIn = { v: 0 };
+      const iv = setInterval(() => {
+        fadeIn.v = Math.min(1, fadeIn.v + (1/duration) * (1/60));
+        target.weight = fadeIn.v;
+        a.weight = fadeIn.v;
+        updateWeightUI();
+        if (fadeIn.v >= 1) clearInterval(iv);
+      }, 16);
+    } else {
+      const fadeOut = { v: a.weight || 0 };
+      const iv2 = setInterval(() => {
+        fadeOut.v = Math.max(0, fadeOut.v - (1/duration) * (1/60));
+        a.weight = fadeOut.v;

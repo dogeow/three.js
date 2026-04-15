@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Möbius Strip — Three.js</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0f; overflow: hidden; }
+    canvas { display: block; }
+
+    #info {
+      position: fixed;
+      top: 24px;
+      left: 28px;
+      font-family: 'Courier New', monospace;
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      pointer-events: none;
+      user-select: none;
+    }
+    #info span {
+      display: block;
+      margin-bottom: 4px;
+      color: rgba(180, 180, 255, 0.5);
+      font-size: 10px;
+      letter-spacing: 0.15em;
+    }
+    #info strong {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 15px;
+      letter-spacing: 0.12em;
+    }
+  </style>
+
+  <!-- Import map for Three.js ES modules from CDN -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <div id="info">
+    <span>Interactive 3D Visualization</span>
+    <strong>Möbius Strip</strong>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scene Setup
+    // ─────────────────────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0f);
+
+    const camera = new THREE.PerspectiveCamera(
+      55,
+      window.innerWidth / window.innerHeight,
+      0.01,
+      100
+    );
+    camera.position.set(0, 0, 6);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Post-processing (bloom)
+    // ─────────────────────────────────────────────────────────────────────────
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.9,   // strength
+      0.3,   // radius
+      0.1    // threshold
+    );
+    composer.addPass(bloomPass);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Orbit Controls
+    // ─────────────────────────────────────────────────────────────────────────
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 2;
+    controls.maxDistance = 15;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Möbius Strip Parametric Function
+    //
+    //   x(u,v) = (R + v·cos(u/2)) · cos(u)
+    //   y(u,v) = (R + v·cos(u/2)) · sin(u)
+    //   z(u,v) = v · sin(u/2)
+    //
+    //   u ∈ [0, 2π]  (wraps once around the strip)
+    //   v ∈ [-w, w]  (half-width of the strip)
+    //   R  = major radius
+    //
+    // The half-period factor u/2 in cos(u/2) and sin(u/2) is what creates
+    // the non-orientable twist — one full rotation of u produces only a
+    // half-twist in the surface normal.
+    // ─────────────────────────────────────────────────────────────────────────
+    function mobius(u, v, params) {
+      const { R, w } = params;
+      const vcos = v * Math.cos(u * 0.5);
+      const vsin = v * Math.sin(u * 0.5);
+      return new THREE.Vector3(
+        (R + vcos) * Math.cos(u),
+        (R + vcos) * Math.sin(u),
+        vsin
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Build the Möbius mesh using ParametricGeometry
+    // ─────────────────────────────────────────────────────────────────────────
+    let mesh, wireMesh;
+    const materialParams = {
+      R: 1.5,
+      w: 0.45,
+      opacity: 0.78,
+      wireframe: false,
+    };
+
+    function buildMobius(params) {
+      // Remove old meshes if rebuilding
+      if (mesh)     { scene.remove(mesh);     mesh.geometry.dispose(); }
+      if (wireMesh) { scene.remove(wireMesh); wireMesh.geometry.dispose(); }
+
+      // ── Main translucent surface ──────────────────────────────────────────
+      const geo = new THREE.ParametricGeometry(mobius, 120, 24, false, params);
+
+      // Assign per-vertex colors along the u direction (full HSL spectrum)
+      const posAttr = geo.attributes.position;
+      const colorArr = new Float32Array(posAttr.count * 3);
+
+      for (let i = 0; i < posAttr.count; i++) {
+        // Normalize u from [0, 2π] to [0, 1]
+        const u = Math.atan2(posAttr.getY(i), posAttr.getX(i));
+        const uNorm = ((u + Math.PI) / (2 * Math.PI) + 1) % 1; // wrap [0,1]
+        const hue = uNorm * 0.5 + 0.5; // shift so red is visible
+
+        const col = new THREE.Color().setHSL(hue % 1, 0.95, 0.55);
+        colorArr[i * 3]     = col.r;
+        colorArr[i * 3 + 1] = col.g;
+        colorArr[i * 3 + 2] = col.b;
+      }
+
+      geo.setAttribute('color', new THREE.BufferAttribute(colorArr, 3));
+      geo.computeVertexNormals();
+
+      const mat = new THREE.MeshPhysicalMaterial({
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: materialParams.opacity,
+        roughness: 0.05,
+        metalness: 0.0,
+        transmission: 0.4,     // glass-like internal transmission
+        thickness: 0.8,
+        ior: 1.45,
+        envMapIntensity: 1.2,
+        wireframe: false,
+      });
+
+      mesh = new THREE.Mesh(geo, mat);
+      scene.add(mesh);
+
+      // ── Wireframe overlay ─────────────────────────────────────────────────
+      const wireGeo = new THREE.ParametricGeometry(mobius, 60, 16, false, params);
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.08,
+        depthWrite: false,
+      });
+      wireMesh = new THREE.Mesh(wireGeo, wireMat);
+      wireMesh.visible = materialParams.wireframe;
+      scene.add(wireMesh);
+    }
+
+    buildMobius(materialParams);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Lighting
+    // ─────────────────────────────────────────────────────────────────────────
+    // Ambient fill
+    const ambient = new THREE.AmbientLight(0x202030, 2.5);
+    scene.add(ambient);
+
+    // Orbiting point light — produces constantly shifting reflections
+    const pointLight = new THREE.PointLight(0xffffff, 80, 20);
+    scene.add(pointLight);
+
+    // Fixed colored accent lights for depth
+    const light1 = new THREE.PointLight(0x4488ff, 30, 15);
+    light1.position.set(-4, 3, 2);
+    scene.add(light1);
+
+    const light2 = new THREE.PointLight(0xff4488, 30, 15);
+    light2.position.set(4, -3, -2);
+    scene.add(light2);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GUI  (lil-gui)
+    // ─────────────────────────────────────────────────────────────────────────
+    const gui = new GUI({ title: 'Möbius Controls' });
+
+    const twistFolder = gui.addFolder('Geometry');
+    twistFolder.add(materialParams, 'R', 0.5, 3.0, 0.01).name('Radius R').onChange(() => buildMobius(materialParams));
+    twistFolder.add(materialParams, 'w', 0.1, 1.0, 0.01).name('Width w').onChange(() => buildMobius(materialParams));
+    twistFolder.open();
+
+    const visFolder = gui.addFolder('Appearance');
+    visFolder.add(materialParams, 'opacity', 0.3, 1.0, 0.01).name('Opacity').onChange(val => {
+      mesh.material.opacity = val;
+    });
+    visFolder.add(materialParams, 'wireframe').name('Wireframe').onChange(val => {
+      wireMesh.visible = val;
+    });
+    visFolder.open();
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Animation State
+    // ─────────────────────────────────────────────────────────────────────────
+    let time = 0;
+    const twistSpeed = { value: 0.35 };
+    const rotationSpeed = { value: 0.25 };
+
+    // Add twist speed to GUI
+    gui.add(twistSpeed, 'value', 0.0, 2.0, 0.01).name('Twist Speed');
+    gui.add(rotationSpeed, 'value', 0.0, 2.0, 0.01).name('Rotation Speed');
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Responsive Canvas
+    // ─────────────────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Loop
+    // ─────────────────────────────────────────────────────────────────────────
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const dt = 0.012; // fixed delta for smoothness
+
+      // Advance time
+      time += dt;
+
+      // Slowly orbit the point light in an elliptical path
+      pointLight.position.set(
+        3.5 * Math.cos(time * 0.6),
+        2.5 * Math.sin(time * 0.9),
+        3.0 * Math.sin(time * 0.45)
+      );
+
+      // Rotate the mobius group
+      if (mesh) {
+        mesh.rotation.x += rotationSpeed.value * 0.008;
+        mesh.rotation.y += rotationSpeed.value * 0.012;
+      }
+      if (wireMesh) {
+        wireMesh.rotation.copy(mesh.rotation);
+      }
+
+      controls.update();
+      composer.render();
+    }
+
+    animate();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+点击物体触发 Voronoi 风格的三维碎片爆炸，碎片带物理模拟（重力、弹性、摩擦力）。关键技术：InstancedMesh、Verlet 积分、碰撞检测、火花粒子系统、UnrealBloom 后处理。

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLSL Shader Kaleidoscope</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+
+    .title-overlay {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      text-align: center;
+      pointer-events: none;
+      user-select: none;
+    }
+    .title-overlay h1 {
+      font-size: 1.4rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.85);
+      text-shadow: 0 0 20px rgba(180, 120, 255, 0.8), 0 0 40px rgba(120, 200, 255, 0.5);
+      font-weight: 400;
+    }
+    .title-overlay p {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      color: rgba(200, 200, 255, 0.5);
+      margin-top: 6px;
+    }
+    .webcam-status {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(200, 200, 255, 0.6);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      z-index: 100;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="title-overlay">
+    <h1>Kaleidoscope</h1>
+    <p>move mouse to shift symmetry center</p>
+  </div>
+  <div class="webcam-status" id="status">initializing...</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // ── Scene setup ──────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    // ── Mouse tracking ───────────────────────────────────────────────────────
+    const mouse = new THREE.Vector2(0.5, 0.5);
+
+    // ── Vertex shader ────────────────────────────────────────────────────────
+    const vertexShader = /* glsl */`
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position, 1.0);
+      }
+    `;
+
+    // ── Fragment shader ───────────────────────────────────────────────────────
+    const fragmentShader = /* glsl */`
+      precision highp float;
+
+      uniform sampler2D uTexture;
+      uniform float uTime;
+      uniform vec2 uMouse;
+      uniform vec2 uResolution;
+      uniform float uWebcamActive;
+
+      varying vec2 vUv;
+
+      const float PI  = 3.14159265358979323846;
+      const float SEG = 6.0;          // 6-fold symmetry
+      const float RAD = 1.0471975512; // PI / 3
+
+      // Smooth mirror fold within a sector
+      vec2 kaleidoscope(vec2 uv, vec2 center, float segments) {
+        vec2 d = uv - center;
+        float r = length(d);
+        float a = atan(d.y, d.x);
+
+        float sector = 2.0 * PI / segments;
+        a = abs(mod(a, sector) - sector * 0.5);
+        // Mirror every other segment
+        float idx = floor((atan(d.y, d.x) + PI) / sector);
+        if (mod(idx, 2.0) > 0.5) a = sector - a;
+
+        return center + vec2(cos(a), sin(a)) * r;
+      }
+
+      // Hue rotation helper
+      vec3 hueShift(vec3 col, float shift) {
+        float s = shift * 6.28318;
+        float cos_s = cos(s);
+        float sin_s = sin(s);
+        mat3 m = mat3(
+          0.213 + cos_s * 0.787 - sin_s * 0.213,  0.213 - cos_s * 0.213 + sin_s * 0.143,  0.213 - cos_s * 0.213 - sin_s * 0.787,
+          0.715 - cos_s * 0.715 - sin_s * 0.715,  0.715 + cos_s * 0.285 + sin_s * 0.140,  0.715 - cos_s * 0.715 + sin_s * 0.715,
+          0.072 - cos_s * 0.072 + sin_s * 0.928,  0.072 - cos_s * 0.072 - sin_s * 0.283,  0.072 + cos_s * 0.928 + sin_s * 0.072
+        );
+        return clamp(m * col, 0.0, 1.0);
+      }
+
+      void main() {
+        // Slow global rotation
+        float t = uTime * 0.12;
+        vec2 center = uMouse;
+
+        // Map UV to aspect-corrected space
+        float aspect = uResolution.x / uResolution.y;
+        vec2 uv = vUv;
+        vec2 kCenter = vec2(0.5);
+
+        // Apply kaleidoscope fold
+        vec2 kUv = kaleidoscope(uv, kCenter, SEG);
+
+        // Rotate the folded UV slowly
+        float rot = t;
+        mat2 rotMat = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
+        kUv = kCenter + rotMat * (kUv - kCenter);
+
+        // Sample texture (webcam or noise)
+        vec4 texColor = texture2D(uTexture, kUv);
+
+        // Color cycling — subtle hue shift + saturation pulse
+        float colorShift = uTime * 0.04 + length(uv - kCenter) * 0.5;
+        vec3 col = hueShift(texColor.rgb, colorShift);
+
+        // Subtle brightness pulse
+        float pulse = 0.92 + 0.08 * sin(uTime * 0.7);
+        col *= pulse;
+
+        // Vignette
+        float vig = 1.0 - smoothstep(0.4, 1.2, length(uv - vec2(0.5)));
+        col *= mix(0.6, 1.0, vig);
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    // ── Procedural noise texture fallback ────────────────────────────────────
+    function createNoiseTexture(size) {
+      const data = new Uint8Array(size * size * 4);
+      for (let i = 0; i < data.length; i++) {
+        const v = Math.random() * 255;
+        data[i] = v;
+      }
+      const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+      tex.needsUpdate = true;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.magFilter = THREE.LinearFilter;
+      tex.minFilter = THREE.LinearFilter;
+      return tex;
+    }
+
+    // ── Uniforms ──────────────────────────────────────────────────────────────
+    const uniforms = {
+      uTexture:       { value: createNoiseTexture(256) },
+      uTime:          { value: 0.0 },
+      uMouse:         { value: new THREE.Vector2(0.5, 0.5) },
+      uResolution:    { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+      uWebcamActive:  { value: 0.0 },
+    };
+
+    // ── Shader material & mesh ───────────────────────────────────────────────
+    const material = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms,
+    });
+
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    scene.add(mesh);
+
+    // ── Webcam ────────────────────────────────────────────────────────────────
+    const statusEl = document.getElementById('status');
+    let webcamTexture = null;
+    let webcamActive = false;
+
+    async function initWebcam() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+        });
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.playsInline = true;
+        video.muted = true;
+        await video.play();
+
+        webcamTexture = new THREE.VideoTexture(video);
+        webcamTexture.minFilter = THREE.LinearFilter;
+        webcamTexture.magFilter = THREE.LinearFilter;
+        webcamTexture.wrapS = THREE.RepeatWrapping;
+        webcamTexture.wrapT = THREE.RepeatWrapping;
+
+        uniforms.uTexture.value = webcamTexture;
+        uniforms.uWebcamActive.value = 1.0;
+        webcamActive = true;
+        statusEl.textContent = 'webcam active — move mouse to shift center';
+        statusEl.style.color = 'rgba(120, 255, 180, 0.6)';
+      } catch (err) {
+        console.warn('Webcam unavailable, using noise texture:', err.message);
+        statusEl.textContent = 'webcam denied — procedural noise fallback';
+        statusEl.style.color = 'rgba(255, 180, 120, 0.6)';
+        uniforms.uWebcamActive.value = 0.0;
+      }
+    }
+
+    initWebcam();
+
+    // ── Mouse interaction ─────────────────────────────────────────────────────
+    window.addEventListener('mousemove', (e) => {
+      uniforms.uMouse.value.set(
+        e.clientX / window.innerWidth,
+        1.0 - e.clientY / window.innerHeight
+      );
+    });
+
+    window.addEventListener('touchmove', (e) => {
+      const t = e.touches[0];
+      uniforms.uMouse.value.set(
+        t.clientX / window.innerWidth,
+        1.0 - t.clientY / window.innerHeight
+      );
+    }, { passive: true });
+
+    // ── Resize handling ───────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+    });
+
+    // ── Render loop ───────────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      uniforms.uTime.value = clock.getElapsedTime();
+      if (webcamActive && webcamTexture) {
+        webcamTexture.needsUpdate = true;
+      }
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

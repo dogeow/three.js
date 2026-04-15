@@ -1,0 +1,1 @@
+Interactive 3D molecular dynamics simulation with 40 atoms (C/O/N/H), Verlet physics, spring bonds, bloom post-processing, and lil-gui controls.

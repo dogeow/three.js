@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>体素迷宫生成器 — Voxel Maze Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0f;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+    }
+
+    canvas { display: block; }
+
+    /* 顶部信息栏 */
+    #info {
+      position: fixed;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #7fdbca;
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      pointer-events: none;
+      user-select: none;
+      text-shadow: 0 0 12px rgba(127, 219, 202, 0.6);
+    }
+
+    /* 重新生成按钮 */
+    #regen-btn {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: transparent;
+      border: 1px solid #7fdbca;
+      color: #7fdbca;
+      padding: 10px 32px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+    }
+    #regen-btn:hover {
+      background: #7fdbca;
+      color: #0a0a0f;
+      box-shadow: 0 0 20px rgba(127, 219, 202, 0.4);
+    }
+
+    /* 角落统计 */
+    #stats {
+      position: fixed;
+      bottom: 28px;
+      right: 24px;
+      color: #555;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-align: right;
+      pointer-events: none;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="info">Voxel Maze Generator</div>
+<button id="regen-btn">↻ Regenerate</button>
+<div id="stats"></div>
+
+<!-- three.js import map -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+/* ─────────────────────────────────────────────
+   1. 场景初始化
+───────────────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.Fog(0x0a0a0f, 60, 120);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 40, 40);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.maxPolarAngle = Math.PI / 2.2;
+controls.target.set(0, 0, 0);
+
+/* ─────────────────────────────────────────────
+   2. 光照
+───────────────────────────────────────────── */
+scene.add(new THREE.AmbientLight(0x223344, 0.8));
+
+const dirLight = new THREE.DirectionalLight(0xc8e8ff, 1.4);
+dirLight.position.set(20, 40, 20);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 200;
+dirLight.shadow.camera.left = -60;
+dirLight.shadow.camera.right = 60;
+dirLight.shadow.camera.top = 60;
+dirLight.shadow.camera.bottom = -60;
+scene.add(dirLight);
+
+const fillLight = new THREE.PointLight(0x7fdbca, 0.5, 80);
+fillLight.position.set(-15, 20, -15);
+scene.add(fillLight);
+
+/* ─────────────────────────────────────────────
+   3. 地面（棋盘格底板）
+───────────────────────────────────────────── */
+function buildFloor(size) {
+  const geo = new THREE.PlaneGeometry(size * 2, size * 2, 1, 1);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x111118,
+    roughness: 0.95,
+    metalness: 0.05,
+  });
+  const floor = new THREE.Mesh(geo, mat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  floor.name = 'floor';
+  return floor;
+}
+
+let floor = buildFloor(50);
+scene.add(floor);
+
+/* ─────────────────────────────────────────────
+   4. 迷宫生成 — 递归回溯 (Recursive Backtracker)
+   迷宫用一维数组存储，每个 cell 是一个整数掩码：
+     bit 0 (1) = 北墙
+     bit 1 (2) = 东墙
+     bit 2 (4) = 南墙
+     bit 3 (8) = 西墙
+   起始点 (0,0)，终点 (cols-1, rows-1)。
+───────────────────────────────────────────── */
+function generateMaze(cols, rows) {
+  // 用 1 初始化所有墙
+  const cells = new Uint8Array(cols * rows).fill(15);
+
+  // 访问标记
+  const visited = new Uint8Array(cols * rows);
+
+  // 模拟递归栈
+  const stack = [[0, 0]];
+  visited[0] = 1;
+
+  const idx = (x, y) => y * cols + x;
+
+  // 方向：上、右、下、左  对应 N E S W
+  // [dx, dy, 墙位掩码, 对面墙掩码]
+  const DIRS = [
+    [0, -1, 1, 4],   // 北
+    [1,  0, 2, 8],   // 东
+    [0,  1, 4, 1],   // 南
+    [-1, 0, 8, 2],   // 西
+  ];
+
+  while (stack.length > 0) {
+    const [cx, cy] = stack[stack.length - 1];
+
+    // 找未访问的邻居
+    const neighbors = [];
+    for (const [dx, dy] of DIRS) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited[idx(nx, ny)]) {
+        neighbors.push([nx, ny, dx, dy]);
+      }
+    }
+
+    if (neighbors.length > 0) {
+      // 随机选一个邻居
+      const [nx, ny, dx, dy] = neighbors[Math.floor(Math.random() * neighbors.length)];
+
+      // 移除当前格和邻居格之间的墙
+      cells[idx(cx, cy)] &= ~(DIRS.find(d => d[0] === dx && d[1] === dy)[2]);
+      cells[idx(nx, ny)] &= ~(DIRS.find(d => d[0] === -dx && d[1] === -dy)[2]);
+
+      visited[idx(nx, ny)] = 1;
+      stack.push([nx, ny]);
+    } else {
+      stack.pop();
+    }
+  }
+
+  return cells;
+}
+
+/* ─────────────────────────────────────────────
+   5. 墙壁数据 → InstancedMesh
+   每个 wall 用一个 BoxGeometry voxel 表示。
+   墙壁高度统一为 1.5 单位。
+───────────────────────────────────────────── */
+const VOXEL_H  = 1.5;   // 墙高
+const WALL_THICK = 0.18; // 墙厚
+
+let wallMesh = null;  // InstancedMesh 句柄
+let mazeCells = null;
+let MAZE_COLS = 20;
+let MAZE_ROWS = 20;
+
+function buildWalls(cols, rows, cells) {
+  // 清除旧 mesh
+  if (wallMesh) {
+    scene.remove(wallMesh);
+    wallMesh.geometry.dispose();
+    wallMesh.material.dispose();
+    wallMesh = null;
+  }
+
+  // 统计墙数量
+  let wallCount = 0;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const c = cells[y * cols + x];
+      if (c & 1) wallCount++; // 北墙
+      if (c & 2) wallCount++; // 东墙
+      if (y === 0    && (c & 1)) wallCount--; // 边界北墙不渲染（只内墙）
+      if (x === cols-1 && (c & 2)) wallCount--; // 边界东墙不渲染
+    }
+  }
+
+  // 体素几何体
+  const geo = new THREE.BoxGeometry(WALL_THICK, VOXEL_H, WALL_THICK);
+
+  // 随机颜色区间，营造积木感
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x4a6fa5,
+    roughness: 0.7,
+    metalness: 0.15,
+  });
+
+  wallMesh = new THREE.InstancedMesh(geo, mat, wallCount);
+  wallMesh.castShadow = true;
+  wallMesh.receiveShadow = true;
+
+  const dummy = new THREE.Object3D();
+  let i = 0;
+
+  // 中心偏移，使迷宫居中
+  const ox = -cols / 2 + 0.5;
+  const oz = -rows / 2 + 0.5;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const c = cells[y * cols + x];
+
+      // 北墙（朝 +z 方向）
+      if ((c & 1) && !(y === 0)) {
+        dummy.position.set(ox + x, VOXEL_H / 2, oz + y - 0.5 + 0.5);
+        dummy.updateMatrix();
+        wallMesh.setMatrixAt(i++, dummy.matrix);
+      }
+
+      // 东墙（朝 +x 方向）
+      if ((c & 2) && !(x === cols - 1)) {
+        dummy.position.set(ox + x + 0.5, VOXEL_H / 2, oz + y);
+        dummy.rotation.y = Math.PI / 2;
+        dummy.updateMatrix();
+        wallMesh.setMatrixAt(i++, dummy.matrix);
+      }
+    }
+  }
+
+  // 额外边界墙（迷宫外围边框，增强立体感）
+  // 填充南边和西边边界
+  // 北边界
+  for (let x = 0; x < cols; x++) {
+    dummy.position.set(ox + x, VOXEL_H / 2, oz - 0.5);
+    dummy.rotation.y = 0;
+    dummy.updateMatrix();
+    wallMesh.setMatrixAt(i++, dummy.matrix);
+    wallCount++;
+  }
+  // 南边界
+  for (let x = 0; x < cols; x++) {
+    dummy.position.set(ox + x, VOXEL_H / 2, oz + rows - 0.5);
+    dummy.rotation.y = 0;
+    dummy.updateMatrix();
+    wallMesh.setMatrixAt(i++, dummy.matrix);
+  }
+  // 西边界
+  for (let y = 0; y < rows; y++) {
+    dummy.position.set(ox - 0.5, VOXEL_H / 2, oz + y);
+    dummy.rotation.y = Math.PI / 2;
+    dummy.updateMatrix();
+    wallMesh.setMatrixAt(i++, dummy.matrix);
+  }
+  // 东边界
+  for (let y = 0; y < rows; y++) {
+    dummy.position.set(ox + cols - 0.5, VOXEL_H / 2, oz + y);
+    dummy.rotation.y = Math.PI / 2;
+    dummy.updateMatrix();
+    wallMesh.setMatrixAt(i++, dummy.matrix);
+  }
+
+  // 重新创建 InstancedMesh（因为加了边界墙，数量变了）
+  const finalGeo = new THREE.BoxGeometry(WALL_THICK, VOXEL_H, WALL_THICK);
+  const finalMat = new THREE.MeshStandardMaterial({
+    color: 0x4a6fa5,
+    roughness: 0.7,
+    metalness: 0.15,
+  });
+  scene.remove(wallMesh);
+  wallMesh.geometry.dispose();
+  wallMesh.material.dispose();
+
+  const borderCount = cols * 4 + rows * 4;
+  wallMesh = new THREE.InstancedMesh(finalGeo, finalMat, wallCount + borderCount);
+  wallMesh.castShadow = true;
+  wallMesh.receiveShadow = true;
+
+  i = 0;
+  // 内墙
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const c = cells[y * cols + x];
+      if ((c & 1) && !(y === 0)) {
+        dummy.position.set(ox + x, VOXEL_H / 2, oz + y - 0.5 + 0.5);
+        dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+        wallMesh.setMatrixAt(i++, dummy.matrix);
+      }
+      if ((c & 2) && !(x === cols - 1)) {
+        dummy.position.set(ox + x + 0.5, VOXEL_H / 2, oz + y);
+        dummy.rotation.set(0, Math.PI / 2, 0);
+        dummy.updateMatrix();
+        wallMesh.setMatrixAt(i++, dummy.matrix);
+      }
+    }
+  }
+  // 边界墙
+  for (let x = 0; x < cols; x++) {
+    dummy.position.set(ox + x, VOXEL_H / 2, oz - 0.5);
+    dummy.rotation.set(0, 0, 0); dummy.updateMatrix(); wallMesh.setMatrixAt(i++, dummy.matrix);
+    dummy.position.set(ox + x, VOXEL_H / 2, oz + rows - 0.5);
+    dummy.rotation.set(0, 0, 0); dummy.updateMatrix(); wallMesh.setMatrixAt(i++, dummy.matrix);
+  }
+  for (let y = 0; y < rows; y++) {
+    dummy.position.set(ox - 0.5, VOXEL_H / 2, oz + y);
+    dummy.rotation.set(0, Math.PI / 2, 0); dummy.updateMatrix(); wallMesh.setMatrixAt(i++, dummy.matrix);
+    dummy.position.set(ox + cols - 0.5, VOXEL_H / 2, oz + y);
+    dummy.rotation.set(0, Math.PI / 2, 0); dummy.updateMatrix(); wallMesh.setMatrixAt(i++, dummy.matrix);
+  }
+
+  wallMesh.instanceMatrix.needsUpdate = true;
+  scene.add(wallMesh);
+}
+
+/* ─────────────────────────────────────────────
+   6. 核心生成函数
+───────────────────────────────────────────── */
+function buildMaze(cols, rows) {
+  MAZE_COLS = cols;
+  MAZE_ROWS = rows;
+
+  const start = performance.now();
+  mazeCells = generateMaze(cols, rows);
+  const genMs = performance.now() - start;
+
+  // 重建地面
+  if (floor) scene.remove(floor);
+  floor = buildFloor(Math.max(cols, rows) * 1.2);
+  scene.add(floor);
+
+  // 重建墙壁
+  buildWalls(cols, rows, mazeCells);
+
+  // 调整相机
+  const dist = Math.max(cols, rows) * 1.1;
+  camera.position.set(0, dist * 0.9, dist);
+  controls.target.set(0, 0, 0);
+  controls.update();
+
+  // 更新统计
+  const wallN = wallMesh ? wallMesh.count : 0;
+  document.getElementById('stats').textContent =
+    `${cols}×${rows}  ·  ${wallN} walls  ·  gen ${genMs.toFixed(1)}ms`;
+}
+
+/* ─────────────────────────────────────────────
+   7. lil-gui 控制面板
+───────────────────────────────────────────── */
+const params = {
+  cols: 20,
+  rows: 20,
+  seed: 'Random',
+};
+
+const gui = new GUI({ title: '🧩 Maze Settings' });
+gui.domElement.style.position = 'fixed';
+gui.domElement.style.top = '18px';
+gui.domElement.style.right = '18px';
+
+const sizeFolder = gui.addFolder('Size');
+sizeFolder.add(params, 'cols', 5, 50, 1).name('Columns').onFinishChange(regenerate);
+sizeFolder.add(params, 'rows', 5, 50, 1).name('Rows').onFinishChange(regenerate);
+sizeFolder.open();
+
+function regenerate() {
+  buildMaze(params.cols, params.rows);
+}
+
+document.getElementById('regen-btn').addEventListener('click', () => {
+  params.cols = Math.max(5, Math.min(50, params.cols));
+  params.rows = Math.max(5, Math.min(50, params.rows));
+  buildMaze(params.cols, params.rows);
+});
+
+/* ─────────────────────────────────────────────
+   8. 窗口调整
+───────────────────────────────────────────── */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ─────────────────────────────────────────────
+   9. 动画循环
+───────────────────────────────────────────── */
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+/* ─────────────────────────────────────────────
+   10. 初始化
+───────────────────────────────────────────── */
+buildMaze(params.cols, params.rows);
+animate();
+</script>
+</body>
+</html>

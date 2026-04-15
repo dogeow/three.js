@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Torus Knot — (p,q) Mathematical Visualization</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0f;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+    }
+
+    canvas { display: block; }
+
+    #info {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: #7ee8fa;
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      pointer-events: none;
+      z-index: 10;
+      text-shadow: 0 0 12px rgba(126, 232, 250, 0.6);
+    }
+
+    #info .label {
+      font-size: 10px;
+      color: #4a9aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      margin-bottom: 2px;
+    }
+
+    #info .title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #e8faff;
+      text-shadow: 0 0 20px rgba(126, 232, 250, 0.8);
+    }
+
+    #info .subtitle {
+      font-size: 11px;
+      color: #5cc8d8;
+      margin-top: 4px;
+    }
+
+    #render-mode {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: #3a7a8a;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="info">
+    <div class="label">Mathematical Visualization</div>
+    <div class="title">Torus Knot</div>
+    <div class="subtitle" id="param-display">(p=3, q=2)</div>
+  </div>
+
+  <div id="render-mode" id="mode-display">Solid Mode</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    // ─── Scene Setup ───────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0f);
+    scene.fog = new THREE.FogExp2(0x0a0a0f, 0.04);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 0, 7);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    // ─── Post-processing ──────────────────────────────────────────────────────
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.2,   // strength
+      0.4,   // radius
+      0.2    // threshold
+    );
+    composer.addPass(bloomPass);
+
+    // ─── Controls ─────────────────────────────────────────────────────────────
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.autoRotate = false;
+    controls.autoRotateSpeed = 1.0;
+
+    // ─── Lighting ─────────────────────────────────────────────────────────────
+    const ambientLight = new THREE.AmbientLight(0x112233, 0.5);
+    scene.add(ambientLight);
+
+    const pointLight1 = new THREE.PointLight(0x7ee8fa, 3, 20);
+    pointLight1.position.set(3, 3, 3);
+    scene.add(pointLight1);
+
+    const pointLight2 = new THREE.PointLight(0xfa7ee8, 2, 20);
+    pointLight2.position.set(-3, -2, 2);
+    scene.add(pointLight2);
+
+    // ─── Grid Helper (subtle) ─────────────────────────────────────────────────
+    const gridHelper = new THREE.GridHelper(12, 24, 0x1a2a3a, 0x0d1520);
+    gridHelper.position.y = -3;
+    scene.add(gridHelper);
+
+    // ─── Parameters ──────────────────────────────────────────────────────────
+    let p = 3, q = 2;
+    let targetP = 3, targetQ = 2;
+    const LERP_SPEED = 0.06;
+
+    let renderMode = 'solid';   // solid | wireframe | tube | points
+    let tubeRadius = 0.25;
+    let knotColor = new THREE.Color(0x7ee8fa);
+    let targetColor = new THREE.Color(0x7ee8fa);
+    let rotationSpeed = 0.5;
+
+    // ─── Geometry containers ──────────────────────────────────────────────────
+    let solidMesh = null;
+    let wireframeMesh = null;
+    let tubeMesh = null;
+    let pointsMesh = null;
+
+    // ─── Material factory ────────────────────────────────────────────────────
+    function makeSolidMaterial(color) {
+      return new THREE.MeshStandardMaterial({
+        color: color,
+        metalness: 0.7,
+        roughness: 0.2,
+        emissive: color,
+        emissiveIntensity: 0.15,
+      });
+    }
+
+    function makeWireframeMaterial() {
+      return new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.15,
+      });
+    }
+
+    function makeTubeMaterial(color) {
+      return new THREE.MeshStandardMaterial({
+        color: color,
+        metalness: 0.9,
+        roughness: 0.1,
+        emissive: color,
+        emissiveIntensity: 0.3,
+      });
+    }
+
+    function makePointsMaterial(color) {
+      return new THREE.PointsMaterial({
+        color: color,
+        size: 0.06,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.9,
+      });
+    }
+
+    // ─── TorusKnotGeometry builder ────────────────────────────────────────────
+    function buildTorusKnotGeometry(pVal, qVal, tubeR = 0.25) {
+      // Use TubeGeometry on the knot curve for the tube render mode
+      const curve = buildKnotCurve(pVal, qVal, 256);
+      const tubeGeo = new THREE.TubeGeometry(curve, 400, tubeR, 12, false);
+      return tubeGeo;
+    }
+
+    function buildKnotCurve(pVal, qVal, segments) {
+      return new THREE.CatmullRomCurve3(
+        Array.from({ length: segments }, (_, i) => {
+          const t = (i / segments) * Math.PI * 2;
+          const r = 2 + Math.cos(qVal * t);
+          const x = r * Math.cos(pVal * t);
+          const y = r * Math.sin(pVal * t);
+          const z = Math.sin(qVal * t);
+          return new THREE.Vector3(x, y, z);
+        }),
+        true
+      );
+    }
+
+    // ─── Build / rebuild geometry objects ─────────────────────────────────────
+    function buildSolid(pVal, qVal) {
+      if (solidMesh) { scene.remove(solidMesh); solidMesh.geometry.dispose(); }
+      const geo = new THREE.TorusKnotGeometry(2, 0.4, 200, 32, pVal, qVal);
+      solidMesh = new THREE.Mesh(geo, makeSolidMaterial(knotColor));
+      solidMesh.visible = renderMode === 'solid';
+      scene.add(solidMesh);
+    }
+
+    function buildWireframe(pVal, qVal) {
+      if (wireframeMesh) { scene.remove(wireframeMesh); wireframeMesh.geometry.dispose(); }
+      const geo = new THREE.TorusKnotGeometry(2, 0.4, 100, 16, pVal, qVal);
+      wireframeMesh = new THREE.Mesh(geo, makeWireframeMaterial());
+      wireframeMesh.visible = renderMode === 'wireframe';
+      scene.add(wireframeMesh);
+    }
+
+    function buildTube(pVal, qVal) {
+      if (tubeMesh) { scene.remove(tubeMesh); tubeMesh.geometry.dispose(); }
+      const geo = buildTorusKnotGeometry(pVal, qVal, tubeRadius);
+      tubeMesh = new THREE.Mesh(geo, makeTubeMaterial(knotColor));
+      tubeMesh.visible = renderMode === 'tube';
+      scene.add(tubeMesh);
+    }
+
+    function buildPoints(pVal, qVal) {
+      if (pointsMesh) { scene.remove(pointsMesh); pointsMesh.geometry.dispose(); }
+      const curve = buildKnotCurve(pVal, qVal, 800);
+      const pts = curve.getPoints(800);
+      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      pointsMesh = new THREE.Points(geo, makePointsMaterial(knotColor));
+      pointsMesh.visible = renderMode === 'points';
+      scene.add(pointsMesh);
+    }
+
+    function rebuildAll() {
+      buildSolid(p, q);
+      buildWireframe(p, q);
+      buildTube(p, q);
+      buildPoints(p, q);
+    }
+
+    // ─── Mode switching ───────────────────────────────────────────────────────
+    function setMode(mode) {
+      renderMode = mode;
+      if (solidMesh)   solidMesh.visible   = mode === 'solid';
+      if (wireframeMesh) wireframeMesh.visible = mode === 'wireframe';
+      if (tubeMesh)    tubeMesh.visible    = mode === 'tube';
+      if (pointsMesh)  pointsMesh.visible  = mode === 'points';
+
+      const labels = {
+        solid:     'Solid — MeshStandardMaterial',
+        wireframe: 'Wireframe — Overlay',
+        tube:      'Tube — TubeGeometry',
+        points:    'Points — Particle Path',
+      };
+      document.getElementById('render-mode').textContent = labels[mode] || mode;
+    }
+
+    // ─── GUI ──────────────────────────────────────────────────────────────────
+    const GUI = (await import('https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.min.js')).default;
+
+    const gui = new GUI({ title: 'Torus Knot Controls' });
+
+    const params = {
+      pValue: 3,
+      qValue: 2,
+      tubeRadius: 0.25,
+      renderMode: 'solid',
+      color: '#7ee8fa',
+      rotationSpeed: 0.5,
+      autoRotate: false,
+    };
+
+    const folderParams = gui.addFolder('Parameters');
+    folderParams.add(params, 'pValue', 2, 10, 1).name('p (windings)').onChange(v => {
+      targetP = Math.round(v);
+      document.getElementById('param-display').textContent = `(p=${targetP}, q=${targetQ})`;
+    });
+    folderParams.add(params, 'qValue', 2, 15, 1).name('q (twists)').onChange(v => {
+      targetQ = Math.round(v);
+      document.getElementById('param-display').textContent = `(p=${targetP}, q=${targetQ})`;
+    });
+    folderParams.add(params, 'tubeRadius', 0.05, 0.6, 0.01).name('Tube Radius').onChange(v => {
+      tubeRadius = v;
+      if (renderMode === 'tube') buildTube(p, q);
+    });
+    folderParams.open();
+
+    const folderVis = gui.addFolder('Visualization');
+    folderVis.add(params, 'renderMode', ['solid', 'wireframe', 'tube', 'points'])
+      .name('Render Mode').onChange(v => setMode(v));
+    folderVis.addColor(params, 'color').name('Knot Color').onChange(v => {
+      targetColor.set(v);
+    });
+    folderVis.open();
+
+    const folderAnim = gui.addFolder('Animation');
+    folderAnim.add(params, 'autoRotate').name('Auto Rotate').onChange(v => {
+      controls.autoRotate = v;
+    });
+    folderAnim.add(params, 'rotationSpeed', 0, 3, 0.05).name('Rotation Speed');
+    folderAnim.open();
+
+    // ─── Init geometry ────────────────────────────────────────────────────────
+    rebuildAll();
+    setMode('solid');
+
+    // ─── Resize handler ───────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+      bloomPass.resolution.set(window.innerWidth, window.innerHeight);
+    });
+
+    // ─── Animation loop ───────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      const elapsed = clock.getElapsedTime();
+
+      // Lerp p / q
+      let pChanged = false, qChanged = false;
+      p += (targetP - p) * LERP_SPEED;
+      q += (targetQ - q) * LERP_SPEED;
+      if (Math.abs(p - targetP) < 0.01) { p = targetP; pChanged = true; }
+      if (Math.abs(q - targetQ) < 0.01) { q = targetQ; qChanged = true; }
+
+      if (pChanged || qChanged) {
+        rebuildAll();
+        setMode(renderMode);
+      }
+
+      // Lerp color
+      knotColor.lerp(targetColor, 0.05);
+
+      // Update materials with latest color
+      if (solidMesh && solidMesh.visible) {
+        solidMesh.material.color.copy(knotColor);
+        solidMesh.material.emissive.copy(knotColor);
+      }
+      if (wireframeMesh && wireframeMesh.visible) {
+        wireframeMesh.material.color.copy(knotColor);
+      }
+      if (tubeMesh && tubeMesh.visible) {
+        tubeMesh.material.color.copy(knotColor);
+        tubeMesh.material.emissive.copy(knotColor);
+      }
+      if (pointsMesh && pointsMesh.visible) {
+        pointsMesh.material.color.copy(knotColor);
+      }
+
+      // Animate lights
+      pointLight1.position.x = Math.sin(elapsed * 0.7) * 3;
+      pointLight1.position.z = Math.cos(elapsed * 0.7) * 3;
+      pointLight2.position.x = Math.cos(elapsed * 0.5) * -3;
+      pointLight2.position.z = Math.sin(elapsed * 0.5) * 3;
+
+      // Manual rotation
+      const speed = params.rotationSpeed * 0.5;
+      if (solidMesh)   solidMesh.rotation.y   += delta * speed;
+      if (wireframeMesh) wireframeMesh.rotation.y = solidMesh ? solidMesh.rotation.y : 0;
+      if (tubeMesh)    tubeMesh.rotation.y    = solidMesh ? solidMesh.rotation.y : 0;
+      if (pointsMesh)  pointsMesh.rotation.y  = solidMesh ? solidMesh.rotation.y : 0;
+
+      // Bloom intensity pulses slightly
+      bloomPass.strength = 1.0 + Math.sin(elapsed * 1.5) * 0.2;
+
+      controls.update();
+      composer.render();
+    }
+
+    animate();
+  </script>
+</body>
+</html>
