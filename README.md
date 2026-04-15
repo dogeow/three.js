@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **procedural-bonsai-growth** — [3272](./3272-procedural-bonsai-growth/index.html)
+- **fluid-structure-flutter** — [3273](./3273-fluid-structure-flutter/index.html)
+- **music-notation-3d** — [3274](./3274-music-notation-3d/index.html)
+- **bridge-engineering-sim** — [3275](./3275-bridge-engineering-sim/index.html)
+- **pottery-wheel-lathe** — [3276](./3276-pottery-wheel-lathe/index.html)
+- **3d-data-dashboard** — [3277](./3277-3d-data-dashboard/index.html)
+
 - **cellular-biology-mitosis** — [3266](./3266-cellular-biology-mitosis/index.html)
 - **blockchain-transaction-viz** — [3267](./3267-blockchain-transaction-viz/index.html)
 - **impressionist-painting-style** — [3268](./3268-impressionist-painting-style/index.html)
