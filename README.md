@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **procedural-watercolor-shader** — [3477](./3477-procedural-watercolor-shader/index.html)
+- **spring-rope-chain-sim** — [3478](./3478-spring-rope-chain-sim/index.html)
+- **underwater-acoustic-propagation** — [3478](./3478-underwater-acoustic-propagation/index.html)
+- **lidar-pointcloud-semantic** — [3479](./3479-lidar-pointcloud-semantic/index.html)
+- **parametric-shoe-draping** — [3480](./3480-parametric-shoe-draping/index.html)
+- **real-time-progressive-pathtrace** — [3480](./3480-real-time-progressive-pathtrace/index.html)
+- **digital-twin-sensor-floor** — [3481](./3481-digital-twin-sensor-floor/index.html)
+
 - **frustrated-magnetism-skyrmion** — [3471](./3471-frustrated-magnetism-skyrmion/index.html)
 - **kuramoto-oscillator-sync** — [3472](./3472-kuramoto-oscillator-sync/index.html)
 - **epigenetic-landscape-stem-cell** — [3473](./3473-epigenetic-landscape-stem-cell/index.html)
