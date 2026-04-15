@@ -609,16 +609,17 @@ animate()
 
 | 文件 | 内容 |
 |------|------|
+| [01-basic-scene.html](./examples/01-basic-scene.html) | 基础场景、立方体、轨道控制、Bloom后期 |
+| [02-lighting.html](./examples/02-lighting.html) | 环境光/平行光/点光/聚光灯、lil-gui控制 |
+| [03-materials.html](./examples/03-materials.html) | Standard/Phong/Physical/Toon材质对比 |
+| [04-particle-system.html](./examples/04-particle-system.html) | Shader粒子系统、15000粒子、流动动画 |
+| [05-physics-animation.html](./examples/05-physics-animation.html) | 弹簧物理、Verlet积分、碰撞边界 |
+| [06-post-processing.html](./examples/06-post-processing.html) | Bloom/Film/Bokeh后期处理切换 |
+| [07-3d-text.html](./examples/07-3d-text.html) | TextGeometry 3D文字、金属反射材质 |
+| [08-raycasting.html](./examples/08-raycasting.html) | 射线检测、悬停高亮、点击脉冲效果 |
 | [animation.html](./examples/animation.html) | 骨骼动画混合、关键帧插值 |
-| [camera-basics.html](./examples/camera-basics.html) | 相机类型、投影、视锥体 |
-| [geometry-materials.html](./examples/geometry-materials.html) | 几何体与材质对比 |
-| [lighting.html](./examples/lighting.html) | 光源类型与阴影 |
-| [mouse-interaction.html](./examples/mouse-interaction.html) | Raycaster鼠标拾取与交互 |
-| [particles.html](./examples/particles.html) | Points粒子系统 |
-| [post-processing.html](./examples/post-processing.html) | EffectComposer后期处理 |
-| [texture-mapping.html](./examples/texture-mapping.html) | 纹理加载与配置 |
 
-## 三十一、高级视觉与物理（237~339）
+## 三十一、高级视觉与物理（237~347）
 
 | # | 章节 | 技术点 |
 |---|------|-------|
@@ -717,3 +718,11 @@ animate()
 | [337](./337-procedural-architecture/index.html) | **程序化建筑学 ★** | 建筑程序生成、Algorithmic AIA、结构优化 |
 | [338](./338-soft-body-physics/index.html) | **软体物理模拟 ★** | 软体物理、弹簧系统、形变动画 |
 | [339](./339-audio-reactive-shader/index.html) | **音频反应着色器 ★** | 音频着色器、FFT频谱、实时图形渲染 |
+| [340](./340-audio-dsp-equalizer/index.html) | **音频DSP均衡器 ★** | FFT频谱可视化、3D音频频谱、频率响应 |
+| [341](./341-plasma-ball/index.html) | **等离子球 ★** | 等离子球闪电、电弧模拟、鼠标交互、UnrealBloom |
+| [342](./342-soap-bubble/index.html) | **肥皂泡模拟 ★** | 薄膜干涉、彩虹色、MeshPhysicalMaterial |
+| [343](./343-particle-sandpile/index.html) | **沙堆粒子模拟 ★** | 自组织临界、沙堆BTW模型、粒子堆积 |
+| [344](./344-knot-torus/index.html) | **结环面几何 ★** | TorusKnotGeometry、p/q比率、拓扑结、wireframe |
+| [345](./345-wave-pendulum/index.html) | **波动摆模拟 ★** | 耦合摆、拍频现象、混沌物理 |
+| [346](./346-shader-confetti/index.html) | **着色器彩屑 ★** | GLSL彩屑、粒子洒落、彩虹配色 |
+| [347](./347-rorschach-inkblot/index.html) | **罗夏墨迹 ★** | 对称墨迹、随机图形、心理投影 |

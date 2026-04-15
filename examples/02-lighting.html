@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Lighting Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; font-family: 'Helvetica Neue', Arial, sans-serif; }
+        canvas { display: block; }
+        #title {
+            position: absolute;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.15);
+            font-size: 11px;
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            pointer-events: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+<div id="title">THREE.JS LIGHTING LABORATORY</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050508);
+scene.fog = new THREE.FogExp2(0x050508, 0.035);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 8, 22);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+controls.target.set(0, 2, 0);
+controls.update();
+
+// ---- Starfield ----
+const starGeo = new THREE.BufferGeometry();
+const starCount = 3000;
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i++) {
+    starPositions[i] = (Math.random() - 0.5) * 200;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.15, sizeAttenuation: true, transparent: true, opacity: 0.7 });
+scene.add(new THREE.Points(starGeo, starMat));
+
+// ---- Ground Plane ----
+const groundGeo = new THREE.PlaneGeometry(80, 80);
+const groundMat = new THREE.MeshStandardMaterial({
+    color: 0x0a0a10,
+    roughness: 0.9,
+    metalness: 0.1,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Grid helper
+const grid = new THREE.GridHelper(40, 40, 0x1a1030, 0x0d0820);
+grid.position.y = 0.01;
+scene.add(grid);
+
+// ---- Materials ----
+const purpleMat = new THREE.MeshStandardMaterial({
+    color: 0x8b5cf6, roughness: 0.2, metalness: 0.7,
+    emissive: 0x2d0a5e, emissiveIntensity: 0.3
+});
+const orangeMat = new THREE.MeshStandardMaterial({
+    color: 0xf97316, roughness: 0.3, metalness: 0.5,
+    emissive: 0x7a2000, emissiveIntensity: 0.3
+});
+const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xfbbf24, roughness: 0.15, metalness: 0.9,
+    emissive: 0x5a3800, emissiveIntensity: 0.3
+});
+const darkPurpleMat = new THREE.MeshStandardMaterial({
+    color: 0x4c1d95, roughness: 0.4, metalness: 0.6,
+    emissive: 0x1a0040, emissiveIntensity: 0.2
+});
+const roseMat = new THREE.MeshStandardMaterial({
+    color: 0xe879f9, roughness: 0.25, metalness: 0.65,
+    emissive: 0x5a004a, emissiveIntensity: 0.3
+});
+const tealMat = new THREE.MeshStandardMaterial({
+    color: 0x06b6d4, roughness: 0.2, metalness: 0.7,
+    emissive: 0x003344, emissiveIntensity: 0.3
+});
+
+// ---- Objects ----
+// Central torus (purple)
+const torus = new THREE.Mesh(
+    new THREE.TorusGeometry(2.2, 0.6, 32, 64),
+    purpleMat
+);
+torus.position.set(0, 3.5, 0);
+torus.castShadow = true;
+torus.receiveShadow = true;
+scene.add(torus);
+
+// Octahedron on torus (gold)
+const octa = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.8),
+    goldMat
+);
+octa.position.set(0, 3.5, 0);
+octa.castShadow = true;
+scene.add(octa);
+
+// Floating sphere left (orange)
+const sphereL = new THREE.Mesh(
+    new THREE.SphereGeometry(1.5, 32, 32),
+    orangeMat
+);
+sphereL.position.set(-5.5, 3, 2);
+sphereL.castShadow = true;
+sphereL.receiveShadow = true;
+scene.add(sphereL);
+
+// Ring around sphereL
+const ringL = new THREE.Mesh(
+    new THREE.TorusGeometry(2.2, 0.12, 16, 64),
+    goldMat
+);
+ringL.position.copy(sphereL.position);
+ringL.rotation.x = Math.PI / 4;
+ringL.castShadow = true;
+scene.add(ringL);
+
+// Box right (rose)
+const boxR = new THREE.Mesh(
+    new THREE.BoxGeometry(2.5, 2.5, 2.5),
+    roseMat
+);
+boxR.position.set(5.5, 2.5, 2);
+boxR.castShadow = true;
+boxR.receiveShadow = true;
+scene.add(boxR);
+
+// Small icosahedron above box
+const ico = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.7),
+    tealMat
+);
+ico.position.set(5.5, 5.5, 2);
+ico.castShadow = true;
+scene.add(ico);
+
+// Cone behind (dark purple)
+const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(1.5, 3.5, 6),
+    darkPurpleMat
+);
+cone.position.set(-1.5, 2.5, -5);
+cone.castShadow = true;
+cone.receiveShadow = true;
+scene.add(cone);
+
+// Cylinder back right (purple)
+const cyl = new THREE.Mesh(
+    new THREE.CylinderGeometry(1, 1, 3.5, 32),
+    purpleMat
+);
+cyl.position.set(3.5, 2.5, -4.5);
+cyl.castShadow = true;
+cyl.receiveShadow = true;
+scene.add(cyl);
+
+// Ground accent spheres (small)
+const accentGeo = new THREE.SphereGeometry(0.4, 16, 16);
+const accentPositions = [
+    [-4, 0.4, -3], [4, 0.4, -3], [0, 0.4, 4],
+    [-3, 0.4, 3], [3, 0.4, 3]
+];
+const accentMats = [orangeMat, goldMat, purpleMat, roseMat, tealMat];
+accentPositions.forEach(([x, y, z], i) => {
+    const m = new THREE.Mesh(accentGeo, accentMats[i]);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    scene.add(m);
+});
+
+// ---- Lights ----
+const ambientLight = new THREE.AmbientLight(0x1a0a2e, 0.4);
+scene.add(ambientLight);
+
+// Directional Light (main sun-like, warm gold)
+const dirLight = new THREE.DirectionalLight(0xfbbf24, 3.5);
+dirLight.position.set(8, 14, 6);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 60;
+dirLight.shadow.camera.left = -20;
+dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 20;
+dirLight.shadow.camera.bottom = -20;
+dirLight.shadow.bias = -0.0005;
+dirLight.shadow.radius = 4;
+scene.add(dirLight);
+
+// Point Light 1 (purple, near torus)
+const pointLight1 = new THREE.PointLight(0x8b5cf6, 60, 18);
+pointLight1.position.set(-2, 6, 2);
+pointLight1.castShadow = true;
+pointLight1.shadow.mapSize.set(1024, 1024);
+pointLight1.shadow.bias = -0.001;
+scene.add(pointLight1);
+
+// Point Light 2 (orange, near sphere)
+const pointLight2 = new THREE.PointLight(0xf97316, 40, 15);
+pointLight2.position.set(-7, 4, 3);
+pointLight2.castShadow = true;
+pointLight2.shadow.mapSize.set(512, 512);
+scene.add(pointLight2);
+
+// Spot Light (teal/cyan, dramatic from above-front)
+const spotLight = new THREE.SpotLight(0x06b6d4, 120, 30, Math.PI / 6, 0.4, 2);
+spotLight.position.set(0, 16, 8);
+spotLight.target.position.set(0, 0, 0);
+spotLight.castShadow = true;
+spotLight.shadow.mapSize.set(2048, 2048);
+spotLight.shadow.bias = -0.001;
+spotLight.shadow.radius = 3;
+scene.add(spotLight);
+scene.add(spotLight.target);
+
+// Hemisphere light for subtle sky/ground color bleed
+const hemiLight = new THREE.HemisphereLight(0x1a0a3e, 0x0a0508, 0.3);
+scene.add(hemiLight);
+
+// Light helpers (toggled by GUI)
+const dirLightHelper = new THREE.DirectionalLightHelper(dirLight, 1.5, 0xfbbf24);
+const pointLightHelper1 = new THREE.PointLightHelper(pointLight1, 0.5, 0x8b5cf6);
+const pointLightHelper2 = new THREE.PointLightHelper(pointLight2, 0.5, 0xf97316);
+const spotLightHelper = new THREE.SpotLightHelper(spotLight, 0x06b6d4);
+dirLightHelper.visible = false;
+pointLightHelper1.visible = false;
+pointLightHelper2.visible = false;
+spotLightHelper.visible = false;
+scene.add(dirLightHelper);
+scene.add(pointLightHelper1);
+scene.add(pointLightHelper2);
+scene.add(spotLightHelper);
+
+// ---- GUI ----
+const gui = new GUI({ title: 'LIGHTING CONTROLS' });
+gui.domElement.style.fontFamily = "'Helvetica Neue', Arial, sans-serif";
+
+const opts = {
+    ambientIntensity: 0.4,
+    ambientColor: '#1a0a2e',
+
+    dirIntensity: 3.5,
+    dirColor: '#fbbf24',
+    dirX: 8, dirY: 14, dirZ: 6,
+    dirShowHelper: false,
+    dirShadow: true,
+
+    point1Intensity: 60,
+    point1Color: '#8b5cf6',
+    point1X: -2, point1Y: 6, point1Z: 2,
+    point1ShowHelper: false,
+    point1Shadow: true,
+
+    point2Intensity: 40,
+    point2Color: '#f97316',
+    point2X: -7, point2Y: 4, point2Z: 3,
+    point2ShowHelper: false,
+
+    spotIntensity: 120,
+    spotColor: '#06b6d4',
+    spotX: 0, spotY: 16, spotZ: 8,
+    spotAngle: 30,
+    spotPenumbra: 40,
+    spotShowHelper: false,
+    spotShadow: true,
+
+    toneExposure: 1.2,
+    fogDensity: 0.035,
+
+    autoRotate: false,
+};
+
+// Ambient folder
+const ambientFolder = gui.addFolder('Ambient Light');
+ambientFolder.addColor(opts, 'ambientColor', 'Ambient Color').onChange(v => ambientLight.color.set(v));
+ambientFolder.add(opts, 'ambientIntensity', 0, 2, 0.01).name('Intensity').onChange(v => ambientLight.intensity = v);
+ambientFolder.open();
+
+// Directional folder
+const dirFolder = gui.addFolder('Directional Light');
+dirFolder.addColor(opts, 'dirColor', 'Color').onChange(v => dirLight.color.set(v));
+dirFolder.add(opts, 'dirIntensity', 0, 6, 0.1).name('Intensity').onChange(v => dirLight.intensity = v);
+dirFolder.add(opts, 'dirX', -20, 20, 0.5).name('Pos X').onChange(() => updateDirPos());
+dirFolder.add(opts, 'dirY', -20, 30, 0.5).name('Pos Y').onChange(() => updateDirPos());
+dirFolder.add(opts, 'dirZ', -20, 20, 0.5).name('Pos Z').onChange(() => updateDirPos());
+dirFolder.add(opts, 'dirShowHelper').name('Show Helper').onChange(v => dirLightHelper.visible = v);
+dirFolder.add(opts, 'dirShadow').name('Cast Shadow').onChange(v => dirLight.castShadow = v);
+dirFolder.open();
+
+function updateDirPos() {
+    dirLight.position.set(opts.dirX, opts.dirY, opts.dirZ);
+    dirLightHelper.update();
+}
+
+// Point 1 folder
+const pt1Folder = gui.addFolder('Point Light — Purple');
+pt1Folder.addColor(opts, 'point1Color', 'Color').onChange(v => pointLight1.color.set(v));
+pt1Folder.add(opts, 'point1Intensity', 0, 150, 1).name('Intensity').onChange(v => pointLight1.intensity = v);
+pt1Folder.add(opts, 'point1X', -15, 15, 0.5).name('Pos X').onChange(() => updatePt1Pos());
+pt1Folder.add(opts, 'point1Y', 0, 20, 0.5).name('Pos Y').onChange(() => updatePt1Pos());
+pt1Folder.add(opts, 'point1Z', -15, 15, 0.5).name('Pos Z').onChange(() => updatePt1Pos());
+pt1Folder.add(opts, 'point1ShowHelper').name('Show Helper').onChange(v => pointLightHelper1.visible = v);
+pt1Folder.add(opts, 'point1Shadow').name('Cast Shadow').onChange(v => pointLight1.castShadow = v);
+pt1Folder.open();
+
+function updatePt1Pos() {
+    pointLight1.position.set(opts.point1X, opts.point1Y, opts.point1Z);
+    pointLightHelper1.update();
+}
+
+// Point 2 folder
+const pt2Folder = gui.addFolder('Point Light — Orange');
+pt2Folder.addColor(opts, 'point2Color', 'Color').onChange(v => pointLight2.color.set(v));
+pt2Folder.add(opts, 'point2Intensity', 0, 100, 1).name('Intensity').onChange(v => pointLight2.intensity = v);
+pt2Folder.add(opts, 'point2X', -15, 15, 0.5).name('Pos X').onChange(() => updatePt2Pos());
+pt2Folder.add(opts, 'point2Y', 0, 20, 0.5).name('Pos Y').onChange(() => updatePt2Pos());
+pt2Folder.add(opts, 'point2Z', -15, 15, 0.5).name('Pos Z').onChange(() => updatePt2Pos());
+pt2Folder.add(opts, 'point2ShowHelper').name('Show Helper').onChange(v => pointLightHelper2.visible = v);
+pt2Folder.open();
+
+function updatePt2Pos() {
+    pointLight2.position.set(opts.point2X, opts.point2Y, opts.point2Z);
+    pointLightHelper2.update();
+}
+
+// Spot folder
+const spotFolder = gui.addFolder('Spot Light — Teal');
+spotFolder.addColor(opts, 'spotColor', 'Color').onChange(v => { spotLight.color.set(v); spotLightHelper.update(); });
+spotFolder.add(opts, 'spotIntensity', 0, 200, 1).name('Intensity').onChange(v => spotLight.intensity = v);
+spotFolder.add(opts, 'spotX', -15, 15, 0.5).name('Pos X').onChange(() => updateSpotPos());
+spotFolder.add(opts, 'spotY', 5, 30, 0.5).name('Pos Y').onChange(() => updateSpotPos());
+spotFolder.add(opts, 'spotZ', -15, 15, 0.5).name('Pos Z').onChange(() => updateSpotPos());
+spotFolder.add(opts, 'spotAngle', 10, 60, 1).name('Angle (deg)').onChange(v => spotLight.angle = (v * Math.PI) / 180);
+spotFolder.add(opts, 'spotPenumbra', 0, 1, 0.01).name('Penumbra').onChange(v => spotLight.penumbra = v);
+spotFolder.add(opts, 'spotShowHelper').name('Show Helper').onChange(v => spotLightHelper.visible = v);
+spotFolder.add(opts, 'spotShadow').name('Cast Shadow').onChange(v => spotLight.castShadow = v);
+spotFolder.open();
+
+function updateSpotPos() {
+    spotLight.position.set(opts.spotX, opts.spotY, opts.spotZ);
+    spotLightHelper.update();
+}
+
+// Renderer folder
+const renderFolder = gui.addFolder('Renderer');
+renderFolder.add(opts, 'toneExposure', 0.1, 3, 0.01).name('Tone Exposure').onChange(v => renderer.toneMappingExposure = v);
+renderFolder.add(opts, 'fogDensity', 0, 0.1, 0.001).name('Fog Density').onChange(v => scene.fog.density = v);
+renderFolder.add(opts, 'autoRotate').name('Auto Rotate');
+renderFolder.open();
+
+// ---- Animation ----
+const clock = new THREE.Clock();
+let frameCount = 0;
+
+function animate() {
+    requestAnimationFrame(animate);
+    const elapsed = clock.getElapsedTime();
+
+    // Torus and octa rotation
+    torus.rotation.y = elapsed * 0.4;
+    torus.rotation.x = Math.sin(elapsed * 0.3) * 0.3;
+    octa.rotation.y = -elapsed * 0.8;
+    octa.rotation.z = elapsed * 0.5;
+
+    // Sphere bob
+    sphereL.position.y = 3 + Math.sin(elapsed * 0.8) * 0.3;
+    ringL.position.y = sphereL.position.y;
+    ringL.rotation.z = elapsed * 0.6;
+
+    // Box rotation
+    boxR.rotation.y = elapsed * 0.25;
+    boxR.rotation.x = Math.sin(elapsed * 0.2) * 0.2;
+
+    // Ico float and spin
+    ico.position.y = 5.5 + Math.sin(elapsed * 0.7) * 0.5;
+    ico.rotation.y = elapsed * 1.2;
+    ico.rotation.x = elapsed * 0.7;
+
+    // Cone spin
+    cone.rotation.y = elapsed * 0.35;
+
+    // Cylinder bob
+    cyl.position.y = 2.5 + Math.sin(elapsed * 0.5) * 0.2;
+    cyl.rotation.y = elapsed * 0.2;
+
+    // Animate point lights subtly
+    pointLight1.position.y = 6 + Math.sin(elapsed * 0.5) * 1;
+    pointLight2.position.x = -7 + Math.sin(elapsed * 0.3) * 0.8;
+
+    // Update helpers
+    if (pointLightHelper1.visible) pointLightHelper1.update();
+    if (pointLightHelper2.visible) pointLightHelper2.update();
+    if (spotLightHelper.visible) spotLightHelper.update();
+
+    // Auto rotate camera
+    if (opts.autoRotate) {
+        const r = 22;
+        camera.position.x = Math.sin(elapsed * 0.1) * r;
+        camera.position.z = Math.cos(elapsed * 0.1) * r;
+        camera.position.y = 8 + Math.sin(elapsed * 0.08) * 2;
+        camera.lookAt(0, 2, 0);
+    }
+
+    controls.update();
+    renderer.render(scene, camera);
+    frameCount++;
+}
+
+animate();
+
+// Resize
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+});
+</script>
+</body>
+</html>

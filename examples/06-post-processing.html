@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js - Post Processing</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #050510; font-family: 'Courier New', monospace; }
+    .title {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ff00aa;
+      font-size: 14px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      text-shadow: 0 0 10px #ff00aa;
+      z-index: 10;
+    }
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 10;
+    }
+    .controls button {
+      background: rgba(255, 0, 170, 0.1);
+      border: 1px solid #ff00aa;
+      color: #ff00aa;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      letter-spacing: 2px;
+      transition: all 0.3s;
+    }
+    .controls button:hover {
+      background: rgba(255, 0, 170, 0.3);
+      box-shadow: 0 0 10px #ff00aa;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="title">Post Processing</div>
+  <div class="controls">
+    <button id="btnBloom">Bloom</button>
+    <button id="btnFilm">Film Grain</button>
+    <button id="btnBokeh">Depth of Field</button>
+    <button id="btnAll">All Effects</button>
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { FilmPass } from 'three/addons/postprocessing/FilmPass.js';
+    import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050510);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 5, 15);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 5;
+    controls.maxDistance = 50;
+
+    // Effect composer
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 2.0, 0.5, 0.85);
+    bloomPass.threshold = 0.0;
+    bloomPass.strength = 2.5;
+    bloomPass.radius = 1.0;
+    bloomPass.enabled = true;
+    composer.addPass(bloomPass);
+
+    const filmPass = new FilmPass(0.35, 0.025, 512, false);
+    filmPass.enabled = false;
+    composer.addPass(filmPass);
+
+    const bokehPass = new BokehPass(scene, camera, {
+      focus: 15.0,
+      aperture: 0.002,
+      maxblur: 0.01,
+    });
+    bokehPass.enabled = false;
+    composer.addPass(bokehPass);
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0x110022, 0.5);
+    scene.add(ambientLight);
+
+    // Neon signs / objects
+    const neonObjects = [];
+
+    // Pink neon sign (torus)
+    const torusGeo = new THREE.TorusGeometry(2, 0.15, 16, 100);
+    const torusMat = new THREE.MeshBasicMaterial({ color: 0xff00aa });
+    const torus = new THREE.Mesh(torusGeo, torusMat);
+    torus.position.set(-5, 4, 0);
+    scene.add(torus);
+    neonObjects.push(torus);
+
+    // Cyan neon box
+    const boxGeo = new THREE.BoxGeometry(2, 3, 0.3);
+    const boxMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.set(5, 3.5, 0);
+    scene.add(box);
+    neonObjects.push(box);
+
+    // Yellow spheres
+    const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    for (let i = 0; i < 5; i++) {
+      const sphereGeo = new THREE.SphereGeometry(0.4 + Math.random() * 0.3, 32, 32);
+      const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+      sphere.position.set(
+        (Math.random() - 0.5) * 10,
+        1 + Math.random() * 5,
+        (Math.random() - 0.5) * 6 - 3
+      );
+      scene.add(sphere);
+      neonObjects.push(sphere);
+    }
+
+    // Ground
+    const floorGeo = new THREE.PlaneGeometry(30, 30);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a15, roughness: 0.9 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+
+    // City silhouette
+    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x111122, emissive: 0x050510 });
+    for (let i = 0; i < 20; i++) {
+      const h = 2 + Math.random() * 8;
+      const w = 1 + Math.random() * 2;
+      const d = 1 + Math.random() * 2;
+      const buildingGeo = new THREE.BoxGeometry(w, h, d);
+      const building = new THREE.Mesh(buildingGeo, buildingMat);
+      const angle = (i / 20) * Math.PI * 2;
+      const radius = 15 + Math.random() * 5;
+      building.position.set(Math.cos(angle) * radius, h / 2, Math.sin(angle) * radius);
+      scene.add(building);
+
+      // Random lit windows
+      if (Math.random() > 0.5) {
+        const windowGeo = new THREE.PlaneGeometry(0.3, 0.3);
+        const windowMat = new THREE.MeshBasicMaterial({
+          color: Math.random() > 0.5 ? 0xffff00 : 0x00ffff,
+          side: THREE.DoubleSide,
+        });
+        const windowMesh = new THREE.Mesh(windowGeo, windowMat);
+        windowMesh.position.copy(building.position);
+        windowMesh.position.x += w / 2 + 0.01;
+        windowMesh.rotation.y = Math.PI / 2;
+        scene.add(windowMesh);
+        neonObjects.push(windowMesh);
+      }
+    }
+
+    // UI Controls
+    document.getElementById('btnBloom').addEventListener('click', () => {
+      bloomPass.enabled = !bloomPass.enabled;
+      filmPass.enabled = false;
+      bokehPass.enabled = false;
+    });
+
+    document.getElementById('btnFilm').addEventListener('click', () => {
+      filmPass.enabled = !filmPass.enabled;
+      bloomPass.enabled = false;
+      bokehPass.enabled = false;
+    });
+
+    document.getElementById('btnBokeh').addEventListener('click', () => {
+      bokehPass.enabled = !bokehPass.enabled;
+      bloomPass.enabled = false;
+      filmPass.enabled = false;
+    });
+
+    document.getElementById('btnAll').addEventListener('click', () => {
+      bloomPass.enabled = !bloomPass.enabled;
+      filmPass.enabled = !filmPass.enabled;
+      bokehPass.enabled = !bokehPass.enabled;
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const elapsed = clock.getElapsedTime();
+
+      neonObjects.forEach((obj, i) => {
+        if (obj.type === 'Mesh') {
+          obj.position.y += Math.sin(elapsed * 2 + i) * 0.002;
+        }
+      });
+
+      controls.update();
+      composer.render();
+    }
+    animate();
+  </script>
+</body>
+</html>
