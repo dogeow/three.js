@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 
+- **elastic-wave-propagation** — [2991](./2991-elastic-wave-propagation/index.html)
+- **beat-synced-particle-explosion** — [2992](./2992-beat-synced-particle-explosion/index.html)
+- **subsurface-scattering-gemstones** — [2993](./2993-subsurface-scattering-gemstones/index.html)
+- **kdtree-raytracing-visualizer** — [2994](./2994-kdtree-raytracing-visualizer/index.html)
+- **procedural-vegetation-scatter** — [2995](./2995-procedural-vegetation-scatter/index.html)
+- **photorealistic-water-shader** — [2996](./2996-photorealistic-water-shader/index.html)
+- **shader-node-editor** — [2997](./2997-shader-node-editor/index.html)
+
 - **karman-vortex-street** — [2985](./2985-karman-vortex-street/index.html)
 - **quasicrystal-differential-rotation** — [2987](./2987-quasicrystal-differential-rotation/index.html)
 - **tesseract-4d-rotation** — [2988](./2988-tesseract-4d-rotation/index.html)

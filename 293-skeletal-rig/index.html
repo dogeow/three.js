@@ -343,11 +343,10 @@
     function makeHand(isLeft) {
       const g = new THREE.Group();
       // palm
-      g.add(Object.assign(
-        new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.05),
-          new THREE.MeshStandardMaterial({ color: 0xffd5b5, roughness: 0.7 })),
-        { position: new THREE.Vector3(0, 0, 0) }
-      ));
+      const _palm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.05),
+        new THREE.MeshStandardMaterial({ color: 0xffd5b5, roughness: 0.7 }));
+      _palm.position.set(0, 0, 0);
+      g.add(_palm);
       for (let f = 0; f < 4; f++) {
         const fing = new THREE.Mesh(
           new THREE.CylinderGeometry(0.012, 0.010, 0.07, 6),
