@@ -1,4 +1,4 @@
-// 2105. Voxel City Builder — Enhanced (100-150 lines)
+// 2105. 体素城市构建器 — 增强版
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'

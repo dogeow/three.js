@@ -1,4 +1,4 @@
-// 2395. Soft Body Cloth Sim
+// 2395. 软体布料模拟
 // 软体布料模拟
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

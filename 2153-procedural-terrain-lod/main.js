@@ -1,4 +1,4 @@
-// 2153. Procedural Terrain LOD
+// 2153. 程序化地形LOD
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'

@@ -1,4 +1,4 @@
-// 2172. Shader Kaleidoscope — Enhanced Edition
+// 2172. 着色器万花筒 — Enhanced Edition
 // 着色器万花筒效果 + 鼠标交互 + 分段控制
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -137,7 +137,6 @@ const kaleidoMat = new THREE.ShaderMaterial({
       float glow = 1.0 - smoothstep(0.0, 1.5, length(kUv));
       col += vec3(0.2, 0.4, 0.8) * glow * 0.5;
 
-      // Vignette
       float vig = 1.0 - length(uv) * 0.25;
       col *= vig;
 

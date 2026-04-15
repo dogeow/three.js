@@ -1,4 +1,4 @@
-// 2149. Particle Vortex
+// 2149. 粒子漩涡
 // 粒子漩涡系统 - 增强版
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

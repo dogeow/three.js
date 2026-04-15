@@ -1,4 +1,4 @@
-// 2168. Fluid Shader Water — Enhanced Edition
+// 2168. 着色器水面 — Enhanced Edition
 // 着色器实现的流体水面 + 鼠标交互 + 焦散效果
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -141,7 +141,6 @@ boatGroup.add(hull, mast)
 boatGroup.position.set(-5, 1.5, -10)
 scene.add(boatGroup)
 
-// Sail
 const sailGeo = new THREE.PlaneGeometry(4, 8)
 const sailMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.9, side: THREE.DoubleSide })
 const sail = new THREE.Mesh(sailGeo, sailMat)

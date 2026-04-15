@@ -1,4 +1,4 @@
-// 2173. Particle Vortex — Enhanced Edition
+// 2173. 粒子漩涡 — Enhanced Edition
 // 粒子漩涡系统 + 引力场交互 + 多层旋臂
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

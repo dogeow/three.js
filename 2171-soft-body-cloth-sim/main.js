@@ -1,4 +1,4 @@
-// 2171. Soft Body Cloth Sim — Enhanced Edition
+// 2171. 软体布料模拟 — Enhanced Edition
 // 软体布料模拟 + 物理交互 + 风力
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

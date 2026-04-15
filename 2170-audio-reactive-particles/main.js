@@ -1,4 +1,4 @@
-// 2170. Audio Reactive Particles — Enhanced Edition
+// 2170. 音频响应粒子 — Enhanced Edition
 // 音频响应粒子系统 + Web Audio + 鼠标交互
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

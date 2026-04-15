@@ -1,4 +1,4 @@
-// 2151. Voxel City Builder - Enhanced Edition
+// 2151. 体素城市构建器 - Enhanced Edition
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
@@ -31,13 +31,12 @@ const raycaster = new THREE.Raycaster()
 const mouse = new THREE.Vector2()
 let hoveredBuilding = null
 
-// Materials
 const matGlass = new THREE.MeshStandardMaterial({ color: 0x88ccff, roughness: 0.1, metalness: 0.8, emissive: 0x224466, emissiveIntensity: 0.3 })
 const matBrick = new THREE.MeshStandardMaterial({ color: 0xcc6644, roughness: 0.85 })
 const matOffice = new THREE.MeshStandardMaterial({ color: 0x4488ff, roughness: 0.2, metalness: 0.6, emissive: 0x112244, emissiveIntensity: 0.5 })
 const mats = [matGlass, matBrick, matOffice]
 
-// Generate city
+// 生成城市
 const city = new THREE.Group()
 const buildings = []
 const grid = 18, size = 2
@@ -59,14 +58,12 @@ for (let x = -grid; x < grid; x++) {
 }
 scene.add(city)
 
-// Ground
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.9 }))
 ground.rotation.x = -Math.PI / 2
 ground.receiveShadow = true
 scene.add(ground)
 scene.add(new THREE.GridHelper(200, 40, 0x222244, 0x111122))
 
-// Lighting
 scene.add(new THREE.AmbientLight(0x334466, 0.5))
 const sun = new THREE.DirectionalLight(0xffeedd, 1.2)
 sun.position.set(80, 120, 60)
@@ -77,7 +74,6 @@ const cityGlow = new THREE.PointLight(0xff6600, 2, 80)
 cityGlow.position.set(0, 5, 0)
 scene.add(cityGlow)
 
-// Particles
 const pCount = 1500
 const pGeo = new THREE.BufferGeometry()
 const pPos = new Float32Array(pCount * 3)
@@ -86,7 +82,7 @@ pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3))
 const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0xaaccff, size: 0.5, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending }))
 scene.add(particles)
 
-// Mouse interaction
+// 鼠标交互
 window.addEventListener('mousemove', e => { mouse.x = (e.clientX / innerWidth) * 2 - 1; mouse.y = -(e.clientY / innerHeight) * 2 + 1 })
 
 const clock = new THREE.Clock()

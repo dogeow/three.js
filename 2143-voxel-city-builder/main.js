@@ -1,4 +1,4 @@
-// 2143. Voxel City Builder
+// 2143. 体素城市构建器
 // 体素方块构建程序化城市 - 增强版
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

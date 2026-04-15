@@ -1,4 +1,4 @@
-// 2428. Shader Kaleidoscope
+// 2428. 着色器万花筒
 // 着色器万花筒效果
 import * as THREE from 'three'
 

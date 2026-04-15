@@ -1,4 +1,4 @@
-// 2160. Fluid Shader Water — Enhanced
+// 2160. 着色器水面 — Enhanced
 import * as THREE from 'three'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
@@ -101,7 +101,7 @@ const water = new THREE.Mesh(new THREE.PlaneGeometry(80, 80, 256, 256), waterMat
 water.rotation.x = -Math.PI / 2
 scene.add(water)
 
-// Floating particles
+// 浮游粒子
 const N = 500
 const pg = new THREE.BufferGeometry()
 const pbuf = new Float32Array(N * 3)
@@ -123,7 +123,6 @@ const particles = new THREE.Points(pg, new THREE.ShaderMaterial({
 }))
 scene.add(particles)
 
-// Stars
 const sg = new THREE.BufferGeometry()
 const sb = new Float32Array(600*3)
 for (let i = 0; i < 600; i++) {

@@ -1,5 +1,5 @@
 // ============================================================
-// 2159. Voxel City Builder — Enhanced Edition
+// 2159. 体素城市构建器 — Enhanced Edition
 // ============================================================
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

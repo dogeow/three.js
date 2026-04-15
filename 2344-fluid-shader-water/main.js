@@ -1,4 +1,4 @@
-// 2344. Fluid Shader Water
+// 2344. 着色器水面
 // 着色器实现的流体水面
 import * as THREE from 'three'
 

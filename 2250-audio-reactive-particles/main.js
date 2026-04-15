@@ -1,4 +1,4 @@
-// 2250. Audio Reactive Particles
+// 2250. 音频响应粒子
 // 音频响应粒子系统
 import * as THREE from 'three'
 

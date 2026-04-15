@@ -1,4 +1,4 @@
-// 2144. Fluid Shader Water
+// 2144. 着色器水面
 // 着色器实现的流体水面 - 增强版
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

@@ -1,4 +1,4 @@
-// 2094. Shader Kaleidoscope
+// 2094. 着色器万花筒
 // 着色器万花筒效果 - 增强版
 // 特性：8对称轴 + 丰富色彩 + 动态变化 + 全屏渲染
 import * as THREE from 'three'

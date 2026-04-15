@@ -1,4 +1,4 @@
-// 2326. SDF Spheres
+// 2326. 有符号距离场球体
 // 有符号距离场球体
 import * as THREE from 'three'
 

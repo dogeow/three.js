@@ -1,4 +1,4 @@
-// 2261. Particle Vortex
+// 2261. 粒子漩涡
 // 粒子漩涡系统
 import * as THREE from 'three'
 

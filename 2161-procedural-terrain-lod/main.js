@@ -1,4 +1,4 @@
-// 2161. Procedural Terrain LOD — Enhanced Edition
+// 2161. 程序化地形LOD — Enhanced Edition
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Water } from 'three/addons/objects/Water.js'

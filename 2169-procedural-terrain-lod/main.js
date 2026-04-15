@@ -1,4 +1,4 @@
-// 2169. Procedural Terrain LOD — Enhanced Edition
+// 2169. 程序化地形LOD — Enhanced Edition
 // 程序化地形多级细节 + 鼠标交互 + 动态天气
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

@@ -1,5 +1,5 @@
 // ============================================================
-// 2106. Fluid Shader Water — Advanced Water Surface Simulation
+// 2106. 着色器水面 — 高级水面模拟
 // ============================================================
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

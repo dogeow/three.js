@@ -1,4 +1,4 @@
-// 2152. Fluid Shader Water - Enhanced Edition
+// 2152. 着色器水面 - Enhanced Edition
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'

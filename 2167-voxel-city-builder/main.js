@@ -1,4 +1,4 @@
-// 2167. Voxel City Builder — Enhanced Edition
+// 2167. 体素城市构建器 — Enhanced Edition
 // Procedural voxel city with Three.js post-processing, mouse interaction & animations
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

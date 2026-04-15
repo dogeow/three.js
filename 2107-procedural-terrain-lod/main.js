@@ -1,4 +1,4 @@
-// 2107. Procedural Terrain LOD
+// 2107. 程序化地形LOD
 // 程序化地形多级细节
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -290,4 +290,4 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight)
 })
 
-console.log('Procedural Terrain LOD initialized - Press L to toggle LOD wireframes')
+console.log('程序化地形LOD initialized - Press L to toggle LOD wireframes')

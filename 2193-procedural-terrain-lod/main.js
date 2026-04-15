@@ -1,4 +1,4 @@
-// 2193. Procedural Terrain LOD
+// 2193. 程序化地形LOD
 // 程序化地形多级细节
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

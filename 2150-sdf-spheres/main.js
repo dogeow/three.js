@@ -1,4 +1,4 @@
-// 2150. SDF Spheres
+// 2150. 有符号距离场球体
 // 有符号距离场球体 - 增强版
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
