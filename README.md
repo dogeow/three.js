@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **{typ}** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **abel-flux-divergence** — [3075](./3075-abel-flux-divergence/index.html)
+- **spinodal-decomposition** — [3076](./3076-spinodal-decomposition/index.html)
+- **eulerian-fluid-smoke** — [3077](./3077-eulerian-fluid-smoke/index.html)
+- **soap-film-minimal-surface** — [3078](./3078-soap-film-minimal-surface/index.html)
+- **tree-ring-dendrochronology** — [3079](./3079-tree-ring-dendrochronology/index.html)
+- **pendulum-chaos-lorenz** — [3080](./3080-pendulum-chaos-lorenz/index.html)
+- **percolation-transport** — [3081](./3081-percolation-transport/index.html)
+- **honeycomb-weaire-phelan** — [3082](./3082-honeycomb-weaire-phelan/index.html)
+
 - **percolation-cluster** — [3071](./3071-percolation-cluster/index.html)
 - **pythagorean-tree-3d** — [3072](./3072-pythagorean-tree-3d/index.html)
 - **shader-art-parametric** — [3073](./3073-shader-art-parametric/index.html)
