@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3360. Scatter Plot Matrix 3D</title>
+<style>
+body{margin:0;overflow:hidden;background:#0a0a1a;font-family:Arial,sans-serif}
+canvas{display:block}
+#legend{position:absolute;top:16px;right:16px;background:rgba(10,10,30,0.85);padding:12px;border-radius:8px;border:1px solid rgba(100,150,255,0.3);color:#fff;font-size:13px}
+#legend h4{margin:0 0 8px;font-size:14px;color:#aac}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+#title{position:absolute;top:16px;left:16px;color:#88aaff;font-size:18px;font-weight:bold;text-shadow:0 0 10px #4488ff}
+</style>
+</head>
+<body>
+<div id="title">3D Scatter Plot — PCA Projection</div>
+<div id="legend">
+  <h4>Clusters</h4>
+  <div><span class="dot" style="background:#4488ff"></span>Cluster A</div>
+  <div><span class="dot" style="background:#44ff88"></span>Cluster B</div>
+  <div><span class="dot" style="background:#ff8844"></span>Cluster C</div>
+  <div><span class="dot" style="background:#ff44aa"></span>Cluster D</div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
