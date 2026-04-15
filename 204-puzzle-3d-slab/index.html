@@ -465,7 +465,7 @@
     const gui = new GUI({ title: '控制面板' });
 
     gui.add({ shuffle }, 'shuffle').name('🎲 洗牌重开');
-    gui.add({ animSpeed }, 0.05, 1.0, 0.05).name('动画速度').onChange(v => {
+    gui.add({ get animSpeed() { return animSpeed; }, set animSpeed(v) { animSpeed = v; } }, 'animSpeed', 0.05, 1.0, 0.05).name('动画速度').onChange(v => {
       animSpeed = v;
     });
 

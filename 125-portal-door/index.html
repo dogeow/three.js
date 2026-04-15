@@ -239,7 +239,7 @@
         glowCanvas.width = glowCanvas.height = 128;
         const gCtx = glowCanvas.getContext('2d');
         const grad = gCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
-        grad.addColorStop(0, `${color}88`);
+        const hex = '#' + color.toString(16).padStart(6, '0'); grad.addColorStop(0, hex + 'cc');
         grad.addColorStop(1, 'transparent');
         gCtx.fillStyle = grad;
         gCtx.fillRect(0, 0, 128, 128);

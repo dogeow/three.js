@@ -242,7 +242,7 @@ function buildTree(axiom, rules, iter, angleDeg, lenScale, origin) {
         up.crossVectors(dir, right).normalize()
         break
       }
-      case '[': stack.push({ pos: pos.clone(), dir: dir.clone(), right: right.clone(), up: up.clone(), segLen }) break
+      case '[': { stack.push({ pos: pos.clone(), dir: dir.clone(), right: right.clone(), up: up.clone(), segLen }); break }
       case ']': {
         const s = stack.pop()
         if (s) { pos = s.pos; dir = s.dir; right = s.right; up = s.up; segLen = s.segLen / lenScale }

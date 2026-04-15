@@ -104,7 +104,7 @@ function createSeeds(count) {
 // ── Voronoi Cell Computation ─────────────────────────────────────────────────
 // Simple brute-force: sample points on a sphere shell around each seed,
 // assign to nearest seed, build convex hull via gift-wrapping / visible faces
-function computeVoronoiCells() {
+async function computeVoronoiCells() {
   // Clear old geometry
   cells.forEach(m => { m.geometry.dispose(); scene.remove(m); });
   edges.forEach(l => { l.geometry.dispose(); scene.remove(l); });

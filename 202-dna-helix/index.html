@@ -308,14 +308,17 @@
       });
     });
 
-    gui.add({ reset: () => {
-      params.rotationSpeed = 0.008;
-      params.helixRadius = 3.0;
-      params.pitch = 3.4;
-      params.basePairs = 20;
-      gui.controllersRecursive().forEach(c => c.updateDisplay());
-      rebuildForPitchAndCount();
-    }}).name('重置参数');
+    const _resetActions = {
+      reset: () => {
+        params.rotationSpeed = 0.008;
+        params.helixRadius = 3.0;
+        params.pitch = 3.4;
+        params.basePairs = 20;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+        rebuildForPitchAndCount();
+      }
+    };
+    gui.add(_resetActions, 'reset').name('重置参数');
 
     /* ─────────────────────────────── 重建辅助函数 ─────────────────────────────── */
     function rebuildForPitchAndCount() {

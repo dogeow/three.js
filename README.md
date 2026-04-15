@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 
+- **rigid-body-stacking** — [2980](./2980-rigid-body-stacking/index.html)
+- **procedural-texture-shaders** — [2981](./2981-procedural-texture-shaders/index.html)
+- **kinetic-typography** — [2982](./2982-kinetic-typography/index.html)
+- **multi-agent-traffic** — [2983](./2983-multi-agent-traffic/index.html)
+- **waterfall-cascade** — [2984](./2984-waterfall-cascade/index.html)
+
 - **holographic-sculpture** — [361](./361-holographic-sculpture/index.html)
 - **penrose-stairs** — [362](./362-penrose-stairs/index.html)
 - **thermal-imaging** — [363](./363-thermal-imaging/index.html)
