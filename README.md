@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **self-organizing-criticality-sandpile** — [3290](./3290-self-organizing-criticality-sandpile/index.html)
+- **maze-generation-3d** — [3291](./3291-maze-generation-3d/index.html)
+- **spectral-clustering-visual** — [3292](./3292-spectral-clustering-visual/index.html)
+- **rigid-body-fracture-sim** — [3293](./3293-rigid-body-fracture-sim/index.html)
+- **reaction-transport-diffusion** — [3294](./3294-reaction-transport-diffusion/index.html)
+
 - **path-integral-quantum-mechanics** — [3285](./3285-path-integral-quantum-mechanics/index.html)
 - **protein-ligand-docking-sim** — [3286](./3286-protein-ligand-docking-sim/index.html)
 - **topological-quantum-anyons** — [3287](./3287-topological-quantum-anyons/index.html)
