@@ -744,6 +744,12 @@ animate()
 | [360](./360-voxel-extrusion-font/index.html) | **体素字体挤压 ★** | InstancedMesh体素动画、入场逐字弹出、赛博朋克霓虹风格 |
 
 ## 附录：全部示例索引
+- **{typ}** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **{typ}** — [3042](./3042-granular-segregation-sim/index.html)
+- **{typ}** — [3043](./3043-kelp-forest-underwater/index.html)
+- **{typ}** — [3044](./3044-suspension-bridge-catenary/index.html)
+- **{typ}** — [3045](./3045-marangoni-convection/index.html)
+- **{typ}** — [3046](./3046-root-growth-tropism/index.html)
 
 - **geodesic-dome-architecture** — [3036](./3036-geodesic-dome-architecture/index.html)
 - **string-art-harmonograph** — [3037](./3037-string-art-harmonograph/index.html)
