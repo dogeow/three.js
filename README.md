@@ -745,6 +745,16 @@ animate()
 
 ## 附录：全部示例索引
 
+- **prism-rainbow** — [2898](./2898-prism-rainbow/index.html)
+- **ferris-wheel-sim** — [2899](./2899-ferris-wheel-sim/index.html)
+- **newton-cradle** — [2900](./2900-newton-cradle/index.html)
+- **balloon-physics** — [2901](./2901-balloon-physics/index.html)
+- **water-droplet** — [2902](./2902-water-droplet/index.html)
+- **solar-system-sim** — [2903](./2903-solar-system-sim/index.html)
+- **comet-tail-sim** — [2904](./2904-comet-tail-sim/index.html)
+- **aurora-borealis-sim** — [2905](./2905-aurora-borealis-sim/index.html)
+- **granular-sim** — [2908](./2908-granular-sim/index.html)
+
 - **magnet-field-lines** — [2834](./2834-magnet-field-lines/index.html)
 - **conway-life** — [2835](./2835-conway-life/index.html)
 - **fractal-tree-gen** — [2836](./2836-fractal-tree-gen/index.html)
