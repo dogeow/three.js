@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 
+- **game-octree-spatial** — [3020](./3020-game-octree-spatial/index.html)
+- **volume-rendering-medical** — [3021](./3021-volume-rendering-medical/index.html)
+- **fft-spectral-waterfall** — [3022](./3022-fft-spectral-waterfall/index.html)
+- **soft-body-verlet-sim** — [3023](./3023-soft-body-verlet-sim/index.html)
+- **portal-rendering-room** — [3024](./3024-portal-rendering-room/index.html)
+- **marching-cubes-isosurface** — [3025](./3025-marching-cubes-isosurface/index.html)
+- **neural-network-3d-arch** — [3026](./3026-neural-network-3d-arch/index.html)
+- **fractal-terrain-minecraft** — [3027](./3027-fractal-terrain-minecraft/index.html)
+
 - **ink-wash-painting** — [3012](./3012-ink-wash-painting/index.html)
 - **hex-grid-strategy** — [3013](./3013-hex-grid-strategy/index.html)
 - **procedural-coral-reef** — [3014](./3014-procedural-coral-reef/index.html)
