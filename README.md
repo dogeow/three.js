@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **dendritic-solidification-sim** — [3374](./3374-dendritic-solidification-sim/index.html)
+- **agent-based-market-sim** — [3375](./3375-agent-based-market-sim/index.html)
+- **evolutionary-algorithm-3d** — [3376](./3376-evolutionary-algorithm-3d/index.html)
+- **stress-analysis-beam** — [3377](./3377-stress-analysis-beam/index.html)
+- **boolean-logic-circuit-viz** — [3378](./3378-boolean-logic-circuit-viz/index.html)
+- **parking-lot-sim** — [3379](./3379-parking-lot-sim/index.html)
+- **multi-agent-drone-swarm** — [3380](./3380-multi-agent-drone-swarm/index.html)
+
 - **procedural-architecture-parametric** — [3354](./3354-procedural-architecture-parametric/index.html)
 - **voxel-game-engine** — [3355](./3355-voxel-game-engine/index.html)
 - **robot-path-planning** — [3356](./3356-robot-path-planning/index.html)
