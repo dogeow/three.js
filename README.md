@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 - **{typ}** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **percolation-cluster** — [3071](./3071-percolation-cluster/index.html)
+- **pythagorean-tree-3d** — [3072](./3072-pythagorean-tree-3d/index.html)
+- **shader-art-parametric** — [3073](./3073-shader-art-parametric/index.html)
+- **reaction-diffusion-gray-scott** — [3074](./3074-reaction-diffusion-gray-scott/index.html)
+
 - **boids-flocking-sim** — [3063](./3063-boids-flocking-sim/index.html)
 - **reaction-diffusion-turing-gpu** — [3064](./3064-reaction-diffusion-turing-gpu/index.html)
 - **procedural-cave-dungeon-gem** — [3065](./3065-procedural-cave-dungeon-gem/index.html)
