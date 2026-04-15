@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **shader-material-builder** — [3381](./3381-shader-material-builder/index.html)
+- **swarm-robotics-sim** — [3382](./3382-swarm-robotics-sim/index.html)
+- **path-tracer-global** — [3383](./3383-path-tracer-global/index.html)
+- **dataflow-graph-viz** — [3384](./3384-dataflow-graph-viz/index.html)
+- **fabric-weave-pattern** — [3385](./3385-fabric-weave-pattern/index.html)
+- **music-step-sequencer-3d** — [3386](./3386-music-step-sequencer-3d/index.html)
+- **structural-fem-analysis** — [3387](./3387-structural-fem-analysis/index.html)
+- **archaeological-dig-sim** — [3388](./3388-archaeological-dig-sim/index.html)
+
 - **dendritic-solidification-sim** — [3374](./3374-dendritic-solidification-sim/index.html)
 - **agent-based-market-sim** — [3375](./3375-agent-based-market-sim/index.html)
 - **evolutionary-algorithm-3d** — [3376](./3376-evolutionary-algorithm-3d/index.html)
