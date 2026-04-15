@@ -731,4 +731,7 @@ animate()
 | [350](./350-3d-graph-visualization/index.html) | **3D图形可视化 ★** | 力导向图布局、Verlet物理、节点-边可视化、CSS2DRenderer标签 |
 | [351](./351-sdf-raymarching-scene/index.html) | **SDF光线步进场景 ★** | SDF场景构建、光线步进、距离场渲染 |
 | [352](./352-soft-body-cloth/index.html) | **软体布料模拟 ★** | 布料物理、弹簧质点、碰撞检测 |
+| [353](./353-wind-erosion-terrain/index.html) | **风力侵蚀地形 ★** | FBM噪声地形、风力侵蚀模拟、顶点着色器位移、沙粒粒子漂流、暖色沙漠 |
 | [354](./354-particle-settling/index.html) | **粒子沉降模拟 ★** | GPU InstancedMesh引力沉降、安息角堆积、点击倾倒、InstancedMesh |
+| [355](./355-steinberg-guitar/index.html) | **吉他弦振动 ★** | 驻波傅里叶分解、谐波叠加、点击拨弦、频谱可视化 |
+| [356](./356-kinematic-chain/index.html) | **机械连杆运动链 ★** | 正逆运动学、多段连杆、旋转关节约束、点击控制 |
