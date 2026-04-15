@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **quantum-walk-2d** — [3309](./3309-quantum-walk-2d/index.html)
+
+- **sph-fluid-sim** — [3303](./3303-sph-fluid-sim/index.html)
+- **lattice-boltzmann-2d** — [3304](./3304-lattice-boltzmann-2d/index.html)
+- **dendritic-solidification** — [3306](./3306-dendritic-solidification/index.html)
+- **liquid-crystal-phase** — [3307](./3307-liquid-crystal-phase/index.html)
+- **tumor-growth-agent** — [3308](./3308-tumor-growth-agent/index.html)
+
 - **procedural-wood-grain** — [3295](./3295-procedural-wood-grain/index.html)
 - **islamic-geometric-pattern** — [3296](./3296-islamic-geometric-pattern/index.html)
 - **pointillism-shader** — [3297](./3297-pointillism-shader/index.html)
