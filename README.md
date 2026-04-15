@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **procedural-wood-grain** — [3295](./3295-procedural-wood-grain/index.html)
+- **islamic-geometric-pattern** — [3296](./3296-islamic-geometric-pattern/index.html)
+- **pointillism-shader** — [3297](./3297-pointillism-shader/index.html)
+- **parametric-fashion-drape** — [3298](./3298-parametric-fashion-drape/index.html)
+- **truchet-tile-volumetric** — [3299](./3299-truchet-tile-volumetric/index.html)
+- **fibonacci-phyllotaxis** — [3300](./3300-fibonacci-phyllotaxis/index.html)
+- **optical-art-moire** — [3301](./3301-optical-art-moire/index.html)
+- **impossible-ames-room** — [3302](./3302-impossible-ames-room/index.html)
+
 - **self-organizing-criticality-sandpile** — [3290](./3290-self-organizing-criticality-sandpile/index.html)
 - **maze-generation-3d** — [3291](./3291-maze-generation-3d/index.html)
 - **spectral-clustering-visual** — [3292](./3292-spectral-clustering-visual/index.html)
