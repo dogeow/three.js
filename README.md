@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **stress-fiber-cell** — [3326](./3326-stress-fiber-cell/index.html)
+- **haptic-soft-touch** — [3327](./3327-haptic-soft-touch/index.html)
+- **metamaterial-inversion** — [3328](./3328-metamaterial-inversion/index.html)
+- **crystal-plane-slip** — [3329](./3329-crystal-plane-slip/index.html)
+- **soap-bubble-bounce** — [3330](./3330-soap-bubble-bounce/index.html)
+
 - **--analyze-readme** — [3310](./3310---analyze-readme/index.html)
 - **procedural-moss-wall** — [3311](./3311-procedural-moss-wall/index.html)
 - **reaction-diffusion-pattern** — [3312](./3312-reaction-diffusion-pattern/index.html)
