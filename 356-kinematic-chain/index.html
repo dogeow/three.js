@@ -275,7 +275,6 @@ function updateChain(joints) {
 // ─── Inverse Kinematics (CCD) ─────────────────────────────────────────────────
 function solveIK(target, maxIter = 30) {
   const joints = angles.slice();
-  const tolerances = [positions => positions[positions.length - 1].distanceTo(target) < 0.15];
 
   for (let iter = 0; iter < maxIter; iter++) {
     const { positions } = computeFK(joints);
