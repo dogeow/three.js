@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **tower-defense-wave** — [3336](./3336-tower-defense-wave/index.html)
+- **rhythm-game-3d** — [3337](./3337-rhythm-game-3d/index.html)
+- **stealth-guard-ai** — [3338](./3338-stealth-guard-ai/index.html)
+- **procedural-city-zoning** — [3339](./3339-procedural-city-zoning/index.html)
+- **platformer-side-scroll** — [3340](./3340-platformer-side-scroll/index.html)
+
 - **acoustic-room-sim** — [3332](./3332-acoustic-room-sim/index.html)
 - **brewster-angle-polarization** — [3333](./3333-brewster-angle-polarization/index.html)
 - **phonon-crystal-lattice** — [3334](./3334-phonon-crystal-lattice/index.html)
