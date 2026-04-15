@@ -1,262 +1,160 @@
-// 2167. 体素城市构建器 — Enhanced Edition
-// 程序化体素城市 with Three.js post-processing, mouse interaction & animations
+// ============================================================
+// 2167. Voxel City Builder — Professional Edition
+// ============================================================
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js'
 
-// ─── Scene Setup ────────────────────────────────────────────────────────────
+// ── Scene ────────────────────────────────────────────────────────
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x0a0a1a)
-scene.fog = new THREE.FogExp2(0x0a0a1a, 0.012)
+scene.background = new THREE.Color(0x060d1a)
+scene.fog = new THREE.FogExp2(0x071525, 0.007)
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000)
-camera.position.set(55, 85, 55)
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1200)
+camera.position.set(55, 90, 90)
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-renderer.setSize(window.innerWidth, window.innerHeight)
+const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
-renderer.toneMappingExposure = 1.2
+renderer.toneMappingExposure = 1.1
 document.body.appendChild(renderer.domElement)
 
-// ─── Post-Processing ────────────────────────────────────────────────────────
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.8, 0.4, 0.85)
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.35, 0.82)
 composer.addPass(bloomPass)
-composer.addPass(new OutputPass())
 
-// ─── Controls ───────────────────────────────────────────────────────────────
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
-controls.dampingFactor = 0.05
-controls.maxPolarAngle = Math.PI / 2.1
-controls.minDistance = 15
-controls.maxDistance = 250
-controls.target.set(0, 5, 0)
+controls.dampingFactor = 0.04
+controls.maxPolarAngle = Math.PI / 2.08
+controls.autoRotate = true
+controls.autoRotateSpeed = 0.4
+controls.target.set(0, 8, 0)
 
-// ─── Lighting ───────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0x1a1a3a, 0.6))
+// ── Params ────────────────────────────────────────────────────────
+const P = { bloomStrength: 0.45, dayNight: 0.0, autoRotate: true }
 
-const sun = new THREE.DirectionalLight(0xffeedd, 1.5)
+// ── Lights ────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x1a2840, 0.5))
+const sun = new THREE.DirectionalLight(0xfff4e0, 1.2)
 sun.position.set(60, 120, 60)
 sun.castShadow = true
 sun.shadow.mapSize.set(2048, 2048)
-sun.shadow.camera.near = 1
-sun.shadow.camera.far = 400
-sun.shadow.camera.left = sun.shadow.camera.bottom = -120
-sun.shadow.camera.right = sun.shadow.camera.top = 120
-sun.shadow.bias = -0.001
+Object.assign(sun.shadow.camera, { near: 1, far: 500, left: -150, right: 150, top: 150, bottom: -150 })
 scene.add(sun)
 
-// Accent colored point lights scattered around the city
-const accentColors = [0xff3366, 0x33aaff, 0xffcc33, 0x33ffcc]
-for (let i = 0; i < 12; i++) {
-  const angle = (i / 12) * Math.PI * 2
-  const r = 30 + Math.random() * 20
-  const pl = new THREE.PointLight(accentColors[i % accentColors.length], 3, 40)
-  pl.position.set(Math.cos(angle) * r, 3 + Math.random() * 10, Math.sin(angle) * r)
+// City glow lights
+const cityLights = []
+const LCOLS = [0xff7722, 0x22aaff, 0xff4488, 0x44ffcc]
+for (let i = 0; i < 20; i++) {
+  const pl = new THREE.PointLight(LCOLS[i % 4], 1.5, 30)
+  pl.position.set((Math.random() - 0.5) * 100, 2 + Math.random() * 12, (Math.random() - 0.5) * 100)
+  pl.userData = { phase: Math.random() * Math.PI * 2, speed: 0.5 + Math.random() * 1.5, base: 1.2 + Math.random() * 0.8 }
   scene.add(pl)
+  cityLights.push(pl)
 }
 
-// ─── Materials ───────────────────────────────────────────────────────────────
-const mats = {
-  concrete: new THREE.MeshStandardMaterial({ color: 0x445566, roughness: 0.85, metalness: 0.1 }),
-  glass: new THREE.MeshStandardMaterial({ color: 0x88ccff, roughness: 0.1, metalness: 0.8, transparent: true, opacity: 0.85 }),
-  neon: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.0 }),
-  grass: new THREE.MeshStandardMaterial({ color: 0x1a3320, roughness: 0.9 }),
-  road: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95 }),
-  rooftop: new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.7, metalness: 0.3 }),
+// ── Materials ─────────────────────────────────────────────────────
+const glassMats = [], concreteMats = []
+;[0x3a3f52, 0x4a5268, 0x2e3440, 0x515a6a].forEach(c => concreteMats.push(new THREE.MeshStandardMaterial({ color: c, roughness: 0.75, metalness: 0.25 })))
+for (let i = 0; i < 5; i++) {
+  glassMats.push(new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL(0.55 + i * 0.04, 0.6, 0.55),
+    roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.78,
+    emissive: new THREE.Color(0x112233), emissiveIntensity: 0.4,
+  }))
 }
+const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a2030, roughness: 0.9 })
 
-// ─── City Generation ────────────────────────────────────────────────────────
-const city = new THREE.Group()
-const buildings = []  // for raycasting / hover
-const grid = 22, size = 2
+// ── City Generation ────────────────────────────────────────────────
+const buildings = [], GRID = 22, STEP = 2.4
 
-for (let x = -grid; x < grid; x++) {
-  for (let z = -grid; z < grid; z++) {
+for (let xi = -GRID; xi < GRID; xi++) {
+  for (let zi = -GRID; zi < GRID; zi++) {
     if (Math.random() > 0.58) continue
-
-    const h = Math.random() * 9 + 1.5
-    const w = size * (0.7 + Math.random() * 0.5)
-    const d = size * (0.7 + Math.random() * 0.5)
-
-    // Choose material: glass facades on tall buildings, concrete on short
-    const isTower = h > 6
-    const mat = isTower ? mats.glass : (Math.random() > 0.5 ? mats.concrete : mats.rooftop)
-
-    const geo = new THREE.BoxGeometry(w, size * h, d)
+    const wx = xi * STEP, wz = zi * STEP
+    const dc = Math.sqrt(xi * xi + zi * zi)
+    const h = Math.round(Math.max(1.5, (GRID * 0.55 - dc) * 0.5 + Math.random() * 8) * 0.5) * 2
+    const useGlass = Math.random() > 0.78 && h > 5
+    const mat = useGlass ? glassMats[Math.floor(Math.random() * glassMats.length)] : concreteMats[Math.floor(Math.random() * concreteMats.length)]
+    const geo = new THREE.BoxGeometry(STEP * 0.82, h, STEP * 0.82)
     const mesh = new THREE.Mesh(geo, mat)
-    const px = x * size * 1.3
-    const pz = z * size * 1.3
-    mesh.position.set(px, size * h / 2, pz)
-    mesh.castShadow = true
-    mesh.receiveShadow = true
-
-    // Tag building data for interaction
-    mesh.userData = { type: 'building', height: h, baseY: size * h / 2, hovered: false, phase: Math.random() * Math.PI * 2 }
-
-    // Rooftop emissive beacon on tall buildings
-    if (isTower && Math.random() > 0.4) {
-      const beacon = new THREE.Mesh(
-        new THREE.BoxGeometry(0.3, 0.3, 0.3),
-        mats.neon
-      )
-      beacon.position.set(0, size * h / 2 + 0.5, 0)
-      mesh.add(beacon)
+    mesh.position.set(wx, h / 2, wz)
+    mesh.castShadow = true; mesh.receiveShadow = true
+    mesh.userData = { h, phase: Math.random() * Math.PI * 2, freq: 0.3 + Math.random() * 0.5, useGlass }
+    scene.add(mesh); buildings.push(mesh)
+    if (useGlass) {
+      const eg = new THREE.EdgesGeometry(new THREE.BoxGeometry(STEP * 0.75, h * 0.9, STEP * 0.75))
+      const el = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: 0x4499ff, transparent: true, opacity: 0.3 }))
+      el.position.set(wx, h / 2, wz); scene.add(el); mesh.userData.edge = el
     }
-
-    buildings.push(mesh)
-    city.add(mesh)
+    if (Math.random() > 0.6 && h > 5) {
+      const r = new THREE.Mesh(new THREE.BoxGeometry(STEP * 0.5, 0.5 + Math.random(), STEP * 0.5), roofMat)
+      r.position.set(wx, h + 0.3, wz); r.castShadow = true; scene.add(r)
+    }
   }
 }
-scene.add(city)
 
-// ─── Ground / Streets ────────────────────────────────────────────────────────
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(300, 300),
-  mats.road
-)
-ground.rotation.x = -Math.PI / 2
-ground.receiveShadow = true
-scene.add(ground)
+// ── Ground ───────────────────────────────────────────────────────
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(GRID * STEP * 3, GRID * STEP * 3), new THREE.MeshStandardMaterial({ color: 0x111520, roughness: 0.95 }))
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground)
+scene.add(new THREE.GridHelper(GRID * STEP * 3, 40, 0x334466, 0x1a2233))
 
-// Street grid lines (subtle emissive strips)
-const lineMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: 0xffcc00, emissiveIntensity: 0.6 })
-for (let i = -grid; i <= grid; i++) {
-  const hLine = new THREE.Mesh(new THREE.PlaneGeometry(120, 0.15), lineMat)
-  hLine.rotation.x = -Math.PI / 2
-  hLine.position.set(0, 0.05, i * size * 1.3)
-  scene.add(hLine)
-  const vLine = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 120), lineMat)
-  vLine.rotation.x = -Math.PI / 2
-  vLine.position.set(i * size * 1.3, 0.05, 0)
-  scene.add(vLine)
+// ── Stars ────────────────────────────────────────────────────────
+const sg = new THREE.BufferGeometry(), sp = new Float32Array(3000 * 3)
+for (let i = 0; i < 3000; i++) {
+  const r = 350 + Math.random() * 200, t = Math.random() * 6.28, p = Math.acos(2 * Math.random() - 1)
+  sp[i*3] = r * Math.sin(p) * Math.cos(t); sp[i*3+1] = Math.abs(r * Math.cos(p)); sp[i*3+2] = r * Math.sin(p) * Math.sin(t)
 }
+sg.setAttribute('position', new THREE.BufferAttribute(sp, 3))
+scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, sizeAttenuation: true })))
 
-// ─── Floating Particles ─────────────────────────────────────────────────────
-const particleCount = 600
-const pPositions = new Float32Array(particleCount * 3)
-for (let i = 0; i < particleCount; i++) {
-  pPositions[i * 3] = (Math.random() - 0.5) * 120
-  pPositions[i * 3 + 1] = Math.random() * 60 + 2
-  pPositions[i * 3 + 2] = (Math.random() - 0.5) * 120
-}
-const pGeo = new THREE.BufferGeometry()
-pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3))
-const particles = new THREE.Points(
-  pGeo,
-  new THREE.PointsMaterial({ color: 0x88ccff, size: 0.2, transparent: true, opacity: 0.7, sizeAttenuation: true })
-)
-scene.add(particles)
-
-// ─── Hover / Raycaster Interaction ──────────────────────────────────────────
-const raycaster = new THREE.Raycaster()
-const mouse = new THREE.Vector2()
-let hoveredMesh = null
-const highlightMat = new THREE.MeshStandardMaterial({
-  color: 0xffffff, emissive: 0x4488ff, emissiveIntensity: 0.5, wireframe: true
+// ── Mouse Hover ───────────────────────────────────────────────────
+const ray = new THREE.Raycaster(), m2 = new THREE.Vector2()
+let hovered = null
+window.addEventListener('mousemove', e => { m2.x = e.clientX / innerWidth * 2 - 1; m2.y = -(e.clientY / innerHeight) * 2 + 1 })
+window.addEventListener('click', () => {
+  ray.setFromCamera(m2, camera)
+  const h = ray.intersectObjects(buildings.filter(b => b.userData.useGlass))
+  if (h.length > 0) { h[0].object.material.emissiveIntensity = 2.5; setTimeout(() => { h[0].object.material.emissiveIntensity = 0.4 }, 300) }
 })
 
-renderer.domElement.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
+// ── GUI ───────────────────────────────────────────────────────────
+const gui = new GUI()
+gui.add(P, 'bloomStrength', 0, 1.5, 0.01).name('辉光').onChange(v => { bloomPass.strength = v })
+gui.add(P, 'dayNight', 0, 1, 0.01).name('昼夜').onChange(v => {
+  sun.intensity = v * 1.2; scene.fog.color.set(0x071525).lerp(new THREE.Color(0x1a3040), v)
+})
+gui.add(P, 'autoRotate').name('自动旋转').onChange(v => { controls.autoRotate = v })
+
+// ── Resize ────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight)
 })
 
-renderer.domElement.addEventListener('click', (e) => {
-  if (!hoveredMesh) return
-  // Fly camera toward clicked building
-  const target = hoveredMesh.position.clone()
-  const offset = new THREE.Vector3(12, 15, 12)
-  controls.target.copy(target)
-  // Animate camera position toward building
-  const dest = target.clone().add(offset)
-  camera.position.lerp(dest, 0.3)
-})
-
-// ─── Animation Loop ─────────────────────────────────────────────────────────
+// ── Animation ────────────────────────────────────────────────────
 const clock = new THREE.Clock()
-
 function animate() {
   requestAnimationFrame(animate)
   const t = clock.getElapsedTime()
-  const delta = clock.getDelta ? 0.016 : 0.016
-
-  // Raycasting — hover highlight
-  raycaster.setFromCamera(mouse, camera)
-  const hits = raycaster.intersectObjects(buildings)
-  if (hits.length > 0) {
-    const m = hits[0].object
-    if (hoveredMesh !== m) {
-      if (hoveredMesh && hoveredMesh.userData.hovered) {
-        hoveredMesh.userData.hovered = false
-      }
-      hoveredMesh = m
-      hoveredMesh.userData.hovered = true
-      document.body.style.cursor = 'pointer'
-    }
-  } else {
-    if (hoveredMesh) {
-      hoveredMesh.userData.hovered = false
-      hoveredMesh = null
-      document.body.style.cursor = 'default'
-    }
-  }
-
-  // Building animations: gentle bob + emissive pulse
-  buildings.forEach((b) => {
-    const ph = b.userData.phase
-    const hoverS = b.userData.hovered ? 0.5 : 0
-    const bob = Math.sin(t * 0.4 + ph) * 0.08 + hoverS * Math.sin(t * 4 + ph) * 0.15
-    b.position.y = b.userData.baseY + bob
-
-    // Pulse emissive on rooftop beacons
-    if (b.children.length > 0) {
-      const beacon = b.children[0]
-      const intensity = b.userData.hovered
-        ? 3.5 + Math.sin(t * 6) * 1.5
-        : 1.5 + Math.sin(t * 2 + ph) * 0.8
-      beacon.material.emissiveIntensity = intensity
-    }
+  buildings.forEach(b => {
+    b.scale.y = 1 + Math.sin(t * b.userData.freq + b.userData.phase) * 0.0012
+    if (b.userData.edge) { b.userData.edge.scale.y = b.scale.y; b.userData.edge.material.opacity = 0.2 + Math.sin(t * 2 + b.userData.phase) * 0.1 }
   })
-
-  // Particle drift
-  const pos = particles.geometry.attributes.position
-  for (let i = 0; i < particleCount; i++) {
-    pos.array[i * 3 + 1] += Math.sin(t * 0.3 + i) * 0.005
-    if (pos.array[i * 3 + 1] > 65) pos.array[i * 3 + 1] = 2
-  }
-  pos.needsUpdate = true
-  particles.rotation.y = t * 0.01
-
-  // Animate accent lights
-  scene.children.forEach((c) => {
-    if (c instanceof THREE.PointLight) {
-      c.intensity = 3 + Math.sin(t * 1.5 + c.position.x) * 1.2
-    }
-  })
-
-  // Sky subtle color shift
-  const hue = 0.61 + Math.sin(t * 0.05) * 0.02
-  scene.background.setHSL(hue, 0.3, 0.03)
-
-  controls.update()
-  composer.render()
+  cityLights.forEach(l => { l.intensity = l.userData.base + Math.sin(t * l.userData.speed + l.userData.phase) * 0.7 })
+  ray.setFromCamera(m2, camera)
+  const hits = ray.intersectObjects(buildings.filter(b => b.userData.useGlass))
+  if (hovered) { hovered.material.emissiveIntensity = 0.4; hovered = null }
+  if (hits.length > 0) { hovered = hits[0].object; hovered.material.emissiveIntensity = 0.9; document.body.style.cursor = 'pointer' }
+  else document.body.style.cursor = 'default'
+  controls.update(); composer.render()
 }
-
 animate()
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
-  composer.setSize(window.innerWidth, window.innerHeight)
-  bloomPass.setSize(window.innerWidth, window.innerHeight)
-})
