@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 
+- **vortex-street-sim** — [2926](./2926-vortex-street-sim/index.html)
+- **spin-glass-ising** — [2927](./2927-spin-glass-ising/index.html)
+- **wave-interference-patterns** — [2928](./2928-wave-interference-patterns/index.html)
+- **optical-ray-tracer** — [2929](./2929-optical-ray-tracer/index.html)
+
 - **lorenz-attractor** — [2917](./2917-lorenz-attractor/index.html)
 - **topological-knots** — [2918](./2918-topological-knots/index.html)
 - **dna-replication-sim** — [2919](./2919-dna-replication-sim/index.html)
