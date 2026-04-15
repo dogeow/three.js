@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 
+- **lorenz-attractor** — [2917](./2917-lorenz-attractor/index.html)
+- **topological-knots** — [2918](./2918-topological-knots/index.html)
+- **dna-replication-sim** — [2919](./2919-dna-replication-sim/index.html)
+- **pendulum-clock** — [2920](./2920-pendulum-clock/index.html)
+- **soap-film-minimal** — [2921](./2921-soap-film-minimal/index.html)
+- **elastic-ribbon-sim** — [2922](./2922-elastic-ribbon-sim/index.html)
+- **crystal-growth-diffusion** — [2923](./2923-crystal-growth-diffusion/index.html)
+
 - **clockwork-gears** — [2909](./2909-clockwork-gears/index.html)
 - **sandpile-self-organized** — [2910](./2910-sandpile-self-organized/index.html)
 - **soap-bubble-thinfilm** — [2911](./2911-soap-bubble-thinfilm/index.html)
