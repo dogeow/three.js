@@ -649,8 +649,6 @@ animate()
 | [261](./261-voronoi-shattering/index.html) | **Voronoi破碎效果 ★** | Voronoi碎片、爆炸物理模拟、Verlet积分、碰撞检测、火花粒子 |
 | [262](./262-soft-body-water/index.html) | **软体水球模拟 ★** | 软体弹簧系统、浮力模拟、透明材质、水面着色器 |
 | [263](./263-soft-body-cube/index.html) | **软体方块模拟 ★** | 软体物理、弹簧质点系统、形变着色器、弹性碰撞 |
-| [264](./264-particle-vortex/index.html) | **粒子漩涡 ★** | GPU粒子漩涡、角动量速度场、AdditiveBlending、鼠标爆炸力 |
-| [265](./265-sdf-spheres/index.html) | **SDF多球体渲染 ★** | SDE渲染、距离场着色、smooth union、ray marching |
 | [266](./266-neural-gas/index.html) | **神经气算法 ★** | 神经气聚类、自组织映射、拓扑保持、竞争学习 |
 | [267](./267-portal-sphere/index.html) | **传送门球体 ★** | 传送门特效、空间扭曲着色器、能量漩涡 |
 | [268](./268-terrain-hydraulic-erosion/index.html) | **地形水力侵蚀 ★** | 水力侵蚀模拟、地形生成、顶点击穿、冲积扇 |
@@ -733,7 +731,6 @@ animate()
 | [352](./352-soft-body-cloth/index.html) | **软体布料模拟 ★** | 布料物理、弹簧质点、碰撞检测 |
 | [353](./353-wind-erosion-terrain/index.html) | **风力侵蚀地形 ★** | FBM噪声地形、风力侵蚀模拟、顶点着色器位移、沙粒粒子漂流、暖色沙漠 |
 | [354](./354-particle-settling/index.html) | **粒子沉降模拟 ★** | GPU InstancedMesh引力沉降、安息角堆积、点击倾倒、InstancedMesh |
-| [355](./355-steinberg-guitar/index.html) | **吉他弦振动 ★** | 驻波傅里叶分解、谐波叠加、点击拨弦、频谱可视化 |
 | [356](./356-kinematic-chain/index.html) | **机械连杆运动链 ★** | 正逆运动学、多段连杆、旋转关节约束、点击控制 |
 
 ## 三十二、新示例（353~360）
