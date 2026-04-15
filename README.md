@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **pencil-sketch-npr** — [3413](./3413-pencil-sketch-npr/index.html)
+- **point-cloud-kinect** — [3414](./3414-point-cloud-kinect/index.html)
+- **robot-arm-kinematics** — [3415](./3415-robot-arm-kinematics/index.html)
+- **fractal-flame-shader** — [3416](./3416-fractal-flame-shader/index.html)
+- **webxr-teleportation** — [3417](./3417-webxr-teleportation/index.html)
+- **scent-olfactory-visual** — [3418](./3418-scent-olfactory-visual/index.html)
+
 - **opinion-dynamics-axelrod** — [3408](./3408-opinion-dynamics-axelrod/index.html)
 - **michelson-interferometer** — [3409](./3409-michelson-interferometer/index.html)
 - **food-web-ecology-3d** — [3410](./3410-food-web-ecology-3d/index.html)
