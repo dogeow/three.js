@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **electromagnetic-wave-antenna-radiation** — [3341](./3341-electromagnetic-wave-antenna-radiation/index.html)
+- **gpu-computational-fluid-dynamics** — [3342](./3342-gpu-computational-fluid-dynamics/index.html)
+- **sintering-grain-growth-material** — [3343](./3343-sintering-grain-growth-material/index.html)
+- **options-greeks-surface-visualization** — [3344](./3344-options-greeks-surface-visualization/index.html)
+- **gis-3d-terrain-hydrology** — [3345](./3345-gis-3d-terrain-hydrology/index.html)
+- **volume-rendering-medical-ct** — [3346](./3346-volume-rendering-medical-ct/index.html)
+
 - **tower-defense-wave** — [3336](./3336-tower-defense-wave/index.html)
 - **rhythm-game-3d** — [3337](./3337-rhythm-game-3d/index.html)
 - **stealth-guard-ai** — [3338](./3338-stealth-guard-ai/index.html)
