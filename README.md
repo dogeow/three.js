@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **benard-convection-cells** — [3252](./3252-benard-convection-cells/index.html)
+- **kelvin-helmholtz-instability** — [3253](./3253-kelvin-helmholtz-instability/index.html)
+- **liquid-crystal-nematic-phase** — [3254](./3254-liquid-crystal-nematic-phase/index.html)
+- **phylogenetic-tree-evolution** — [3255](./3255-phylogenetic-tree-evolution/index.html)
+- **economic-order-book-depth** — [3256](./3256-economic-order-book-depth/index.html)
+- **shear-wave-elastography** — [3257](./3257-shear-wave-elastography/index.html)
+
 - **organic-fluid-simulation** — [3245](./3245-organic-fluid-simulation/index.html)
 - **generative-art-noise** — [3246](./3246-generative-art-noise/index.html)
 - **particle-starfield** — [3247](./3247-particle-starfield/index.html)
