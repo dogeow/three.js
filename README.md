@@ -745,6 +745,18 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **shader-canvas-paint** — [3151](./3151-shader-canvas-paint/index.html)
+- **monte-carlo-path-tracer** — [3152](./3152-monte-carlo-path-tracer/index.html)
+- **navier-stokes-cfd** — [3153](./3153-navier-stokes-cfd/index.html)
+- **fluid-structure-coupled** — [3154](./3154-fluid-structure-coupled/index.html)
+- **julia-set-3d** — [3155](./3155-julia-set-3d/index.html)
+- **moire-optical-art** — [3156](./3156-moire-optical-art/index.html)
+- **schlierenn-imaging** — [3157](./3157-schlierenn-imaging/index.html)
+- **leidenfrost-droplet** — [3158](./3158-leidenfrost-droplet/index.html)
+- **apollonian-gasket** — [3159](./3159-apollonian-gasket/index.html)
+- **anamorphic-art** — [3160](./3160-anamorphic-art/index.html)
+- **fractal-coral-growth** — [3161](./3161-fractal-coral-growth/index.html)
+
 - **--help** — [3143](./3143---help/index.html)
 - **mechanical-watch** — [3144](./3144-mechanical-watch/index.html)
 - **origami-folding** — [3145](./3145-origami-folding/index.html)
