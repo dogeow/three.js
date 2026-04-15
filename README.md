@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **belousov-zhabotinsky-reaction** — [3171](./3171-belousov-zhabotinsky-reaction/index.html)
+- **traffic-flow-intersection** — [3173](./3173-traffic-flow-intersection/index.html)
+- **acoustic-levitation-physics** — [3174](./3174-acoustic-levitation-physics/index.html)
+- **ising-model-ferromagnet** — [3175](./3175-ising-model-ferromagnet/index.html)
+- **forest-fire-spread-ca** — [3176](./3176-forest-fire-spread-ca/index.html)
+- **dendrite-metal-solidification** — [3177](./3177-dendrite-metal-solidification/index.html)
+- **chladni-cymatics-pattern** — [3178](./3178-chladni-cymatics-pattern/index.html)
+
 - **--analyze** — [3162](./3162---analyze/index.html)
 - **superformula-3d-morphing** — [3163](./3163-superformula-3d-morphing/index.html)
 - **caustic-water-light** — [3164](./3164-caustic-water-light/index.html)
