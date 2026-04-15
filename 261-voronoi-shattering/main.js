@@ -1,0 +1,425 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js';
+
+// ============================================================
+// 场景初始化
+// ============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.018);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 6, 22);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+//后期处理 - Bloom发光
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight), 0.8, 0.4, 0.85
+);
+composer.addPass(bloomPass);
+
+//OrbitControls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 2, 0);
+
+// ============================================================
+// 灯光
+// ============================================================
+const ambientLight = new THREE.AmbientLight(0x223366, 0.6);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+dirLight.position.set(8, 16, 8);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 50;
+dirLight.shadow.camera.left = -15;
+dirLight.shadow.camera.right = 15;
+dirLight.shadow.camera.top = 15;
+dirLight.shadow.camera.bottom = -15;
+scene.add(dirLight);
+
+const pointLight = new THREE.PointLight(0x00ffcc, 1.0, 30);
+pointLight.position.set(-5, 8, 5);
+scene.add(pointLight);
+
+const pointLight2 = new THREE.PointLight(0xff4488, 0.6, 20);
+pointLight2.position.set(5, 4, -5);
+scene.add(pointLight2);
+
+// ============================================================
+// 地面 + 网格
+// ============================================================
+const groundGeo = new THREE.PlaneGeometry(40, 40);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x0d0d1a, roughness: 0.9, metalness: 0.1
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// 网格线
+const grid = new THREE.GridHelper(40, 40, 0x223355, 0x112233);
+grid.position.y = 0.01;
+scene.add(grid);
+
+// ============================================================
+// Voronoi 破碎体系统
+// ============================================================
+const params = {
+  fragmentCount: 60,       // 碎片数量
+  explosionForce: 12,     // 爆炸力
+  gravity: 9.8,           // 重力
+  rotationDamping: 0.98,   // 旋转阻尼
+  friction: 0.92,         // 摩擦
+  bounceRestitution: 0.35, // 弹性
+  reset: resetObject,
+  explode: triggerExplosion
+};
+
+let originalMesh = null;    // 原始完整物体
+let fragments = [];         // 碎片数组
+let isExploded = false;     // 是否已爆炸
+
+// 创建 Voronoi 风格的多面体几何体
+function createVoronoiFragmentGeometry() {
+  // 使用 IcosahedronGeometry 作为基础，通过随机扰动顶点创建不规则碎片
+  const geo = new THREE.IcosahedronGeometry(0.5, 0);
+  const pos = geo.attributes.position;
+  const vertices = [];
+  for (let i = 0; i < pos.count; i++) {
+    vertices.push(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)));
+  }
+  // 扰动顶点
+  for (let i = 0; i < pos.count; i++) {
+    const v = vertices[i];
+    const noise = 0.2 + Math.random() * 0.3;
+    pos.setXYZ(i, v.x + (Math.random() - 0.5) * noise,
+                  v.y + (Math.random() - 0.5) * noise,
+                  v.z + (Math.random() - 0.5) * noise);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// 创建完整物体
+function createObject() {
+  if (originalMesh) {
+    scene.remove(originalMesh);
+    originalMesh.geometry.dispose();
+    originalMesh.material.dispose();
+  }
+  fragments.forEach(f => {
+    scene.remove(f.mesh);
+    f.mesh.geometry.dispose();
+    f.mesh.material.dispose();
+  });
+  fragments = [];
+  isExploded = false;
+
+  const geo = new THREE.IcosahedronGeometry(2.5, 1);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x4488ff,
+    roughness: 0.3,
+    metalness: 0.6,
+    emissive: 0x112244,
+    emissiveIntensity: 0.3,
+    flatShading: true
+  });
+  originalMesh = new THREE.Mesh(geo, mat);
+  originalMesh.position.set(0, 4, 0);
+  originalMesh.castShadow = true;
+  originalMesh.receiveShadow = true;
+  scene.add(originalMesh);
+}
+
+// 触发爆炸
+function triggerExplosion() {
+  if (!originalMesh || isExploded) return;
+  isExploded = true;
+
+  const count = params.fragmentCount;
+  const parentPos = originalMesh.position.clone();
+  const parentRot = originalMesh.rotation.clone();
+  scene.remove(originalMesh);
+
+  // 创建碎片
+  for (let i = 0; i < count; i++) {
+    const fragGeo = createVoronoiFragmentGeometry();
+
+    // 随机颜色变化
+    const hue = 0.55 + Math.random() * 0.15;
+    const sat = 0.6 + Math.random() * 0.3;
+    const light = 0.4 + Math.random() * 0.3;
+    const color = new THREE.Color().setHSL(hue, sat, light);
+
+    const fragMat = new THREE.MeshStandardMaterial({
+      color: color,
+      roughness: 0.4 + Math.random() * 0.3,
+      metalness: 0.5 + Math.random() * 0.3,
+      emissive: color,
+      emissiveIntensity: 0.15,
+      flatShading: true
+    });
+
+    const fragMesh = new THREE.Mesh(fragGeo, fragMat);
+    fragMesh.castShadow = true;
+    fragMesh.receiveShadow = true;
+
+    // 碎片初始位置：从父物体位置为中心，半径2.5范围内随机
+    const r = Math.random() * 2.5;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    fragMesh.position.set(
+      parentPos.x + r * Math.sin(phi) * Math.cos(theta),
+      parentPos.y + r * Math.sin(phi) * Math.sin(theta),
+      parentPos.z + r * Math.cos(phi)
+    );
+    fragMesh.rotation.set(
+      parentRot.x + Math.random() * Math.PI,
+      parentRot.y + Math.random() * Math.PI,
+      parentRot.z + Math.random() * Math.PI
+    );
+
+    scene.add(fragMesh);
+
+    // 爆炸初速度：从中心向外
+    const speed = params.explosionForce * (0.5 + Math.random() * 0.8);
+    const vel = fragMesh.position.clone().sub(parentPos).normalize().multiplyScalar(speed);
+    // 添加一些随机分量
+    vel.x += (Math.random() - 0.5) * 4;
+    vel.y += (Math.random() - 0.5) * 4;
+    vel.z += (Math.random() - 0.5) * 4;
+
+    fragments.push({
+      mesh: fragMesh,
+      velocity: vel,
+      angularVelocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 8
+      ),
+      alive: true
+    });
+  }
+}
+
+// 重置
+function resetObject() {
+  createObject();
+}
+
+// ============================================================
+// 火花 / 尘埃粒子系统
+// ============================================================
+const SPARK_COUNT = 200;
+const sparkGeo = new THREE.BufferGeometry();
+const sparkPositions = new Float32Array(SPARK_COUNT * 3);
+const sparkVelocities = [];
+const sparkLifetimes = new Float32Array(SPARK_COUNT);
+const sparkMaxLifetimes = new Float32Array(SPARK_COUNT);
+
+for (let i = 0; i < SPARK_COUNT; i++) {
+  sparkPositions[i * 3] = 0;
+  sparkPositions[i * 3 + 1] = -999;
+  sparkPositions[i * 3 + 2] = 0;
+  sparkVelocities.push(new THREE.Vector3());
+  sparkLifetimes[i] = 0;
+  sparkMaxLifetimes[i] = 0;
+}
+
+sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+
+const sparkMat = new THREE.PointsMaterial({
+  color: 0xffaa33,
+  size: 0.12,
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+
+const sparks = new THREE.Points(sparkGeo, sparkMat);
+scene.add(sparks);
+
+let sparkIndex = 0;
+
+function emitSparks(position, count = 10) {
+  const pos = sparkGeo.attributes.position;
+  for (let i = 0; i < count; i++) {
+    const idx = sparkIndex % SPARK_COUNT;
+    pos.setXYZ(idx, position.x, position.y, position.z);
+    sparkVelocities[idx].set(
+      (Math.random() - 0.5) * 6,
+      Math.random() * 4 + 1,
+      (Math.random() - 0.5) * 6
+    );
+    sparkLifetimes[idx] = 1.0;
+    sparkMaxLifetimes[idx] = 0.8 + Math.random() * 0.6;
+    sparkIndex++;
+  }
+  pos.needsUpdate = true;
+}
+
+function updateSparks(dt) {
+  const pos = sparkGeo.attributes.position;
+  for (let i = 0; i < SPARK_COUNT; i++) {
+    if (sparkLifetimes[i] > 0) {
+      sparkLifetimes[i] -= dt / sparkMaxLifetimes[i];
+      sparkVelocities[i].y -= 9.8 * dt;
+      const x = pos.getX(i) + sparkVelocities[i].x * dt;
+      const y = pos.getY(i) + sparkVelocities[i].y * dt;
+      const z = pos.getZ(i) + sparkVelocities[i].z * dt;
+      if (y < 0.05) {
+        sparkLifetimes[i] = 0;
+        pos.setXYZ(i, 0, -999, 0);
+      } else {
+        pos.setXYZ(i, x, y, z);
+      }
+    }
+  }
+  pos.needsUpdate = true;
+  sparkMat.opacity = 0.9;
+}
+
+// ============================================================
+// 物理更新
+// ============================================================
+const clock = new THREE.Clock();
+const FIXED_DT = 1 / 120;
+let accumulator = 0;
+
+function updatePhysics(dt) {
+  if (!isExploded || fragments.length === 0) return;
+
+  let collisionOccurred = false;
+
+  for (let i = 0; i < fragments.length; i++) {
+    const f = fragments[i];
+    if (!f.alive) continue;
+
+    // 重力
+    f.velocity.y -= params.gravity * dt;
+
+    // 位移
+    f.mesh.position.x += f.velocity.x * dt;
+    f.mesh.position.y += f.velocity.y * dt;
+    f.mesh.position.z += f.velocity.z * dt;
+
+    // 旋转
+    f.mesh.rotation.x += f.angularVelocity.x * dt;
+    f.mesh.rotation.y += f.angularVelocity.y * dt;
+    f.mesh.rotation.z += f.angularVelocity.z * dt;
+
+    // 角速度阻尼
+    f.angularVelocity.multiplyScalar(params.rotationDamping);
+
+    // 地面碰撞
+    if (f.mesh.position.y < 0.1) {
+      f.mesh.position.y = 0.1;
+      if (Math.abs(f.velocity.y) > 0.5) {
+        collisionOccurred = true;
+        emitSparks(f.mesh.position.clone(), 5);
+      }
+      f.velocity.y *= -params.bounceRestitution;
+      f.velocity.x *= params.friction;
+      f.velocity.z *= params.friction;
+      f.angularVelocity.multiplyScalar(0.8);
+    }
+
+    // 边界检测
+    const bound = 18;
+    if (Math.abs(f.mesh.position.x) > bound) { f.velocity.x *= -0.5; f.mesh.position.x = Math.sign(f.mesh.position.x) * bound; }
+    if (Math.abs(f.mesh.position.z) > bound) { f.velocity.z *= -0.5; f.mesh.position.z = Math.sign(f.mesh.position.z) * bound; }
+
+    // 速度过小则休眠
+    if (f.velocity.length() < 0.05 && f.mesh.position.y < 0.15) {
+      f.velocity.set(0, 0, 0);
+      f.angularVelocity.set(0, 0, 0);
+    }
+  }
+}
+
+// ============================================================
+// 鼠标交互
+// ============================================================
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+window.addEventListener('click', (e) => {
+  if (e.target.tagName === 'CANVAS') {
+    mouse.x = (e.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+
+    if (!isExploded && originalMesh) {
+      const hits = raycaster.intersectObject(originalMesh);
+      if (hits.length > 0) {
+        triggerExplosion();
+      }
+    }
+  }
+});
+
+// ============================================================
+// GUI
+// ============================================================
+const gui = new GUI();
+gui.add(params, 'fragmentCount', 10, 150, 1).name('碎片数量');
+gui.add(params, 'explosionForce', 1, 30, 0.5).name('爆炸力');
+gui.add(params, 'gravity', 1, 20, 0.1).name('重力');
+gui.add(params, 'bounceRestitution', 0, 1, 0.05).name('弹性');
+gui.add(params, 'friction', 0.5, 1, 0.01).name('摩擦力');
+gui.add(params, 'explode').name('💥 触发爆炸');
+gui.add(params, 'reset').name('🔄 重新生成');
+
+// ============================================================
+// 响应式
+// ============================================================
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+// ============================================================
+// 初始化 & 动画循环
+// ============================================================
+createObject();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  accumulator += dt;
+
+  // 物理固定步长
+  while (accumulator >= FIXED_DT) {
+    updatePhysics(FIXED_DT);
+    accumulator -= FIXED_DT;
+  }
+
+  updateSparks(dt);
+  controls.update();
+  composer.render();
+}
+
+animate();

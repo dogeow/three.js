@@ -1,0 +1,537 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+
+const scene = new THREE.Scene()
+// 夜晚深蓝天空
+scene.background = new THREE.Color(0x050a14)
+// 雾效增加景深感
+scene.fog = new THREE.FogExp2(0x060c1a, 0.025)
+
+// ============ 相机 ============
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500)
+camera.position.set(18, 10, 22)
+camera.lookAt(0, 2, 0)
+
+// ============ 渲染器 ============
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.2
+document.body.appendChild(renderer.domElement)
+
+// ============ 轨道控制 ============
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.05
+controls.target.set(0, 3, 0)
+controls.maxPolarAngle = Math.PI / 2 - 0.05
+
+// ============ 灯光 ============
+// 夜晚环境光（极暗）
+const ambient = new THREE.AmbientLight(0x1a2a4a, 0.6)
+scene.add(ambient)
+
+// 月光（冷蓝）
+const moonLight = new THREE.DirectionalLight(0x6699cc, 0.5)
+moonLight.position.set(-20, 30, 10)
+moonLight.castShadow = true
+moonLight.shadow.mapSize.set(2048, 2048)
+moonLight.shadow.camera.near = 0.5
+moonLight.shadow.camera.far = 80
+moonLight.shadow.camera.left = -30
+moonLight.shadow.camera.right = 30
+moonLight.shadow.camera.top = 30
+moonLight.shadow.camera.bottom = -30
+moonLight.shadow.bias = -0.001
+scene.add(moonLight)
+
+// 小屋窗口暖光
+const warmLight1 = new THREE.PointLight(0xffaa44, 3, 12)
+warmLight1.position.set(-3.5, 2.8, 1)
+scene.add(warmLight1)
+
+const warmLight2 = new THREE.PointLight(0xffaa44, 3, 12)
+warmLight2.position.set(-3.5, 2.8, -1)
+scene.add(warmLight2)
+
+// ============ 地面（可积雪的平面）============
+const GROUND_SIZE = 60
+const GROUND_SEGS = 80
+const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, GROUND_SEGS, GROUND_SEGS)
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x1a2a1a,
+  roughness: 0.95,
+  metalness: 0.0
+})
+const ground = new THREE.Mesh(groundGeo, groundMat)
+ground.rotation.x = -Math.PI / 2
+ground.position.y = 0
+ground.receiveShadow = true
+scene.add(ground)
+
+// ============ 积雪网格（顶点位移）============
+// 高度图：记录每个网格点的积雪高度
+const SNOW_RES = 80
+const snowHeights = new Float32Array((SNOW_RES + 1) * (SNOW_RES + 1))
+const maxSnowHeight = 2.5
+
+// 积雪平面
+const snowAccumGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, SNOW_RES, SNOW_RES)
+snowAccumGeo.rotateX(-Math.PI / 2)
+const snowAccumMat = new THREE.MeshStandardMaterial({
+  color: 0xe8f0ff,
+  roughness: 0.85,
+  metalness: 0.0,
+  emissive: 0x4466aa,
+  emissiveIntensity: 0.08
+})
+const snowAccumMesh = new THREE.Mesh(snowAccumGeo, snowAccumMat)
+snowAccumMesh.position.y = 0.01
+snowAccumMesh.receiveShadow = true
+scene.add(snowAccumMesh)
+
+function updateSnowHeights() {
+  const pos = snowAccumGeo.attributes.position
+  const half = GROUND_SIZE / 2
+  for (let i = 0; i < pos.count; i++) {
+    const wx = pos.getX(i)
+    const wz = pos.getZ(i)
+    const ix = Math.floor((wx + half) / GROUND_SIZE * SNOW_RES)
+    const iz = Math.floor((wz + half) / GROUND_SIZE * SNOW_RES)
+    const idx = Math.min(iz, SNOW_RES) * (SNOW_RES + 1) + Math.min(ix, SNOW_RES)
+    pos.setY(i, snowHeights[idx] || 0)
+  }
+  pos.needsUpdate = true
+  snowAccumGeo.computeVertexNormals()
+}
+
+// ============ 小屋（由 Box 构成）============
+const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a3020, roughness: 0.9, metalness: 0 })
+const roofMat = new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.95, metalness: 0 })
+
+// 地板
+const cabinFloorGeo = new THREE.BoxGeometry(7, 0.3, 5)
+const cabinFloor = new THREE.Mesh(cabinFloorGeo, woodMat)
+cabinFloor.position.set(-3, 0.15, 0)
+cabinFloor.castShadow = true
+cabinFloor.receiveShadow = true
+scene.add(cabinFloor)
+
+// 墙体
+const cabinWallMat = new THREE.MeshStandardMaterial({ color: 0x5a3a28, roughness: 0.9, metalness: 0 })
+
+const wallBackGeo = new THREE.BoxGeometry(7, 4, 0.3)
+const wallBack = new THREE.Mesh(wallBackGeo, cabinWallMat)
+wallBack.position.set(-3, 2.3, -2.5)
+wallBack.castShadow = true
+wallBack.receiveShadow = true
+scene.add(wallBack)
+
+const wallLeftGeo = new THREE.BoxGeometry(0.3, 4, 5)
+const wallLeft = new THREE.Mesh(wallLeftGeo, cabinWallMat)
+wallLeft.position.set(-6.65, 2.3, 0)
+wallLeft.castShadow = true
+wallLeft.receiveShadow = true
+scene.add(wallLeft)
+
+const wallRightGeo = new THREE.BoxGeometry(0.3, 4, 5)
+const wallRight = new THREE.Mesh(wallRightGeo, cabinWallMat)
+wallRight.position.set(0.65, 2.3, 0)
+wallRight.castShadow = true
+wallRight.receiveShadow = true
+scene.add(wallRight)
+
+const wallFrontGeo = new THREE.BoxGeometry(7, 4, 0.3)
+const wallFront = new THREE.Mesh(wallFrontGeo, cabinWallMat)
+wallFront.position.set(-3, 2.3, 2.5)
+wallFront.castShadow = true
+wallFront.receiveShadow = true
+scene.add(wallFront)
+
+// 门洞（黑色平面遮住）
+const doorGeo = new THREE.BoxGeometry(1.2, 2.2, 0.32)
+const doorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 1 })
+const door = new THREE.Mesh(doorGeo, doorMat)
+door.position.set(-3, 1.1, 2.65)
+scene.add(door)
+
+// 窗口（暖光透出）
+const windowMat = new THREE.MeshStandardMaterial({
+  color: 0xffcc66,
+  emissive: 0xffaa33,
+  emissiveIntensity: 1.5,
+  roughness: 0.1
+})
+const windowGeo = new THREE.BoxGeometry(1.0, 1.0, 0.05)
+
+const win1 = new THREE.Mesh(windowGeo, windowMat)
+win1.position.set(-3.5, 2.8, 1.0)
+win1.rotation.y = Math.PI / 2
+scene.add(win1)
+
+const win2 = new THREE.Mesh(windowGeo, windowMat)
+win2.position.set(-3.5, 2.8, -1.0)
+win2.rotation.y = Math.PI / 2
+scene.add(win2)
+
+// 屋顶（两个斜面板）
+const roofGeo = new THREE.BoxGeometry(7.6, 0.3, 6)
+const roof = new THREE.Mesh(roofGeo, roofMat)
+roof.position.set(-3, 4.4, 0)
+roof.rotation.z = 0.22
+roof.castShadow = true
+roof.receiveShadow = true
+scene.add(roof)
+
+const roof2Geo = new THREE.BoxGeometry(7.6, 0.3, 6)
+const roof2 = new THREE.Mesh(roof2Geo, roofMat)
+roof2.position.set(-3, 4.4, 0)
+roof2.rotation.z = -0.22
+roof2.castShadow = true
+roof2.receiveShadow = true
+scene.add(roof2)
+
+// 屋顶上面的积雪（单独平面，随时间增大）
+const roofSnowGeo = new THREE.PlaneGeometry(7.6, 6.1, 16, 8)
+roofSnowGeo.rotateX(-Math.PI / 2)
+const roofSnowMat = new THREE.MeshStandardMaterial({
+  color: 0xe8f0ff,
+  roughness: 0.85,
+  metalness: 0,
+  emissive: 0x3355aa,
+  emissiveIntensity: 0.1
+})
+const roofSnowMesh = new THREE.Mesh(roofSnowGeo, roofSnowMat)
+roofSnowMesh.position.set(-3, 4.55, 0)
+roofSnowMesh.castShadow = true
+roofSnowMesh.receiveShadow = true
+scene.add(roofSnowMesh)
+
+// ============ 场景中的其他物体（树木、石头）============
+function addTree(x, z) {
+  // 树干
+  const trunkGeo = new THREE.CylinderGeometry(0.15, 0.2, 2.5, 8)
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3a2010, roughness: 0.9 })
+  const trunk = new THREE.Mesh(trunkGeo, trunkMat)
+  trunk.position.set(x, 1.25, z)
+  trunk.castShadow = true
+  trunk.receiveShadow = true
+  scene.add(trunk)
+
+  // 树冠（多层）
+  const foliageMat = new THREE.MeshStandardMaterial({ color: 0x1a3020, roughness: 0.9 })
+  for (let j = 0; j < 3; j++) {
+    const r = 1.5 - j * 0.35
+    const coneGeo = new THREE.ConeGeometry(r, 2.0, 8)
+    const cone = new THREE.Mesh(coneGeo, foliageMat)
+    cone.position.set(x, 2.5 + j * 1.5, z)
+    cone.castShadow = true
+    cone.receiveShadow = true
+    scene.add(cone)
+  }
+}
+
+function addRock(x, z, s) {
+  const rockGeo = new THREE.DodecahedronGeometry(s, 0)
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9, metalness: 0.1 })
+  const rock = new THREE.Mesh(rockGeo, rockMat)
+  rock.position.set(x, s * 0.7, z)
+  rock.rotation.set(Math.random() * 2, Math.random() * 2, Math.random() * 2)
+  rock.castShadow = true
+  rock.receiveShadow = true
+  scene.add(rock)
+}
+
+// 树木
+addTree(-12, -5)
+addTree(-10, -8)
+addTree(-14, -2)
+addTree(5, -6)
+addTree(8, -10)
+addTree(12, 3)
+addTree(10, 7)
+addTree(-8, 8)
+
+// 石头
+addRock(-6, -10, 0.8)
+addRock(-8, -9, 0.5)
+addRock(6, -8, 0.6)
+addRock(9, -6, 0.9)
+addRock(4, 6, 0.7)
+addRock(-11, 6, 0.5)
+
+// 栅栏
+function addFence(x, z, rot) {
+  const postGeo = new THREE.BoxGeometry(0.12, 1.2, 0.12)
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.95 })
+  const railGeo = new THREE.BoxGeometry(1.5, 0.08, 0.08)
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x6a5040, roughness: 0.95 })
+
+  const post1 = new THREE.Mesh(postGeo, postMat)
+  post1.position.set(x, 0.6, z)
+  post1.castShadow = true
+  scene.add(post1)
+
+  const post2 = new THREE.Mesh(postGeo, postMat)
+  post2.position.set(x + 1.5 * Math.cos(rot), 0.6, z + 1.5 * Math.sin(rot))
+  post2.castShadow = true
+  scene.add(post2)
+
+  const rail = new THREE.Mesh(railGeo, railMat)
+  rail.position.set(x + 0.75 * Math.cos(rot), 0.8, z + 0.75 * Math.sin(rot))
+  rail.rotation.y = -rot + Math.PI / 2
+  rail.castShadow = true
+  scene.add(rail)
+
+  const rail2 = new THREE.Mesh(railGeo, railMat)
+  rail2.position.set(x + 0.75 * Math.cos(rot), 0.4, z + 0.75 * Math.sin(rot))
+  rail2.rotation.y = -rot + Math.PI / 2
+  rail2.castShadow = true
+  scene.add(rail2)
+}
+
+// 栅栏围着屋子
+for (let i = 0; i < 6; i++) {
+  addFence(-8 + i * 1.5, -3, 0)
+}
+for (let i = 0; i < 6; i++) {
+  addFence(-8 + i * 1.5, 3, 0)
+}
+for (let i = 0; i < 4; i++) {
+  addFence(-8, -3 + i * 1.5, Math.PI / 2)
+}
+for (let i = 0; i < 4; i++) {
+  addFence(1, -3 + i * 1.5, Math.PI / 2)
+}
+
+// ============ 雪花粒子系统 ============
+const SNOW_COUNT = 5000
+const snowGeo = new THREE.BufferGeometry()
+const snowPositions = new Float32Array(SNOW_COUNT * 3)
+const snowSpeeds = new Float32Array(SNOW_COUNT)     // 下降速度
+const snowSwayPhases = new Float32Array(SNOW_COUNT)  // 正弦横飘相位
+const snowSwayAmps = new Float32Array(SNOW_COUNT)    // 横飘幅度
+const snowSizes = new Float32Array(SNOW_COUNT)       // 粒子大小
+const snowOrigX = new Float32Array(SNOW_COUNT)      // 原始 X（风力基础）
+const snowOrigZ = new Float32Array(SNOW_COUNT)      // 原始 Z
+
+const SPREAD = 50
+const FALL_RANGE = 20 // 积雪区域半径
+
+for (let i = 0; i < SNOW_COUNT; i++) {
+  const x = (Math.random() - 0.5) * SPREAD
+  const y = Math.random() * 30 + 2
+  const z = (Math.random() - 0.5) * SPREAD
+  snowPositions[i * 3] = x
+  snowPositions[i * 3 + 1] = y
+  snowPositions[i * 3 + 2] = z
+
+  snowSpeeds[i] = 0.5 + Math.random() * 1.5       // 每秒 0.5~2 单位
+  snowSwayPhases[i] = Math.random() * Math.PI * 2
+  snowSwayAmps[i] = 0.3 + Math.random() * 0.8
+  snowSizes[i] = 0.06 + Math.random() * 0.12
+  snowOrigX[i] = x
+  snowOrigZ[i] = z
+}
+
+snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3))
+
+// 圆形雪花 sprite
+function makeSnowSprite() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const ctx = c.getContext('2d')
+  const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32)
+  grad.addColorStop(0.0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.3, 'rgba(220,235,255,0.8)')
+  grad.addColorStop(0.7, 'rgba(200,220,255,0.3)')
+  grad.addColorStop(1.0, 'rgba(180,210,255,0)')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(32, 32, 32, 0, Math.PI * 2)
+  ctx.fill()
+  return new THREE.CanvasTexture(c)
+}
+
+const snowMat = new THREE.PointsMaterial({
+  size: 0.18,
+  map: makeSnowSprite(),
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  opacity: 0.85,
+  sizeAttenuation: true
+})
+const snowPoints = new THREE.Points(snowGeo, snowMat)
+scene.add(snowPoints)
+
+// ============ GUI 参数 ============
+const params = {
+  snowfallIntensity: 1.0,   // 降雪强度倍率
+  windStrength: 0.5,        // 风力强度
+  accumulationRate: 0.3,    // 积雪速度
+  timeOfDay: 0.5,           // 0=深夜, 1=正午
+  roofSnowRate: 0.15,       // 屋顶积雪速度
+  maxSnowHeight: 2.5        // 最大积雪厚度
+}
+
+// 将时间映射到天空颜色和灯光
+function updateTimeOfDay(t) {
+  // t: 0深夜 ~ 1正午
+  // 深夜：深蓝黑  |  正午：浅蓝白
+  const nightColor = new THREE.Color(0x020508)
+  const dayColor = new THREE.Color(0x3366aa)
+  const skyColor = nightColor.clone().lerp(dayColor, t)
+
+  scene.background = skyColor
+  scene.fog.color = skyColor.clone().multiplyScalar(0.8)
+
+  // 月光与阳光切换
+  moonLight.intensity = 0.3 + (1 - t) * 0.7
+  moonLight.color.setHex(t < 0.3 ? 0x6699cc : 0xffffff)
+  moonLight.intensity = t < 0.3 ? 0.3 + (1 - t) / 0.3 * 0.5 : 0.1
+
+  // 窗口暖光
+  warmLight1.intensity = 1.5 + (1 - t) * 3
+  warmLight2.intensity = 1.5 + (1 - t) * 3
+
+  // 积雪自发光随时间变
+  snowAccumMat.emissiveIntensity = 0.05 + (1 - t) * 0.15
+  roofSnowMat.emissiveIntensity = 0.08 + (1 - t) * 0.2
+
+  // 环境光
+  ambient.intensity = 0.1 + t * 0.5
+
+  // 曝光
+  renderer.toneMappingExposure = 0.6 + t * 0.8
+}
+
+const gui = new GUI({ title: '积雪参数' })
+gui.add(params, 'snowfallIntensity', 0, 3, 0.01).name('降雪强度')
+gui.add(params, 'windStrength', 0, 2, 0.01).name('风力强度')
+gui.add(params, 'accumulationRate', 0, 1, 0.01).name('积雪速度')
+gui.add(params, 'roofSnowRate', 0, 0.5, 0.01).name('屋顶积雪速度')
+gui.add(params, 'timeOfDay', 0, 1, 0.01).name('时间段').onChange(updateTimeOfDay)
+gui.add(params, 'maxSnowHeight', 0.5, 4, 0.1).name('最大积雪厚度')
+
+// ============ 积雪累积逻辑 ============
+// 每帧在粒子落地位置累积少量积雪
+const clock = new THREE.Clock()
+let roofSnowAmount = 0
+let lastAccumTime = 0
+
+function accumulateSnow(dt) {
+  const rate = params.accumulationRate * params.snowfallIntensity
+  if (rate <= 0) return
+
+  const half = GROUND_SIZE / 2
+  const step = SNOW_COUNT // 每帧处理部分粒子效率更高，此处简化
+
+  for (let i = 0; i < SNOW_COUNT; i++) {
+    const x = snowPositions[i * 3]
+    const z = snowPositions[i * 3 + 2]
+
+    // 只在有效范围内积雪
+    if (Math.abs(x) > half || Math.abs(z) > half) continue
+
+    // 换算到网格索引
+    const ix = Math.floor((x + half) / GROUND_SIZE * SNOW_RES)
+    const iz = Math.floor((z + half) / GROUND_SIZE * SNOW_RES)
+    if (ix < 0 || ix > SNOW_RES || iz < 0 || iz > SNOW_RES) continue
+
+    // 跳过小屋内部区域（小屋占据大约 x: -6.65~0.65, z: -2.5~2.5）
+    if (x > -7 && x < 1 && z > -3 && z < 3) continue
+
+    const idx = iz * (SNOW_RES + 1) + ix
+    snowHeights[idx] = Math.min(snowHeights[idx] + dt * rate * 0.08, params.maxSnowHeight)
+  }
+}
+
+function updateRoofSnow(dt) {
+  roofSnowAmount = Math.min(roofSnowAmount + dt * params.roofSnowRate * params.snowfallIntensity, 0.8)
+  const pos = roofSnowGeo.attributes.position
+  for (let i = 0; i < pos.count; i++) {
+    const baseY = 4.55
+    // 中间积雪厚，两边薄
+    const lx = pos.getX(i)
+    const lz = pos.getZ(i)
+    // 距离中心越近积雪越多
+    const dist = Math.sqrt(lx * lx + lz * lz) / 4
+    const h = roofSnowAmount * Math.max(0, 1 - dist * 0.5)
+    pos.setY(i, h)
+  }
+  pos.needsUpdate = true
+  roofSnowGeo.computeVertexNormals()
+}
+
+function animate() {
+  requestAnimationFrame(animate)
+  const dt = Math.min(clock.getDelta(), 0.05) // 限制最大 dt
+  const elapsed = clock.getElapsedTime()
+
+  const wind = params.windStrength
+  const fallSpeed = params.snowfallIntensity
+
+  const pos = snowGeo.attributes.position
+
+  for (let i = 0; i < SNOW_COUNT; i++) {
+    let x = pos.getX(i)
+    let y = pos.getY(i)
+    let z = pos.getZ(i)
+
+    // 下降
+    y -= snowSpeeds[i] * fallSpeed * dt
+
+    // 正弦横飘
+    const sway = Math.sin(elapsed * 1.2 + snowSwayPhases[i]) * snowSwayAmps[i] * 0.5
+    // 风力偏转（随时间缓慢变化）
+    const windDrift = Math.sin(elapsed * 0.3 + i * 0.01) * wind * 1.5
+
+    x = snowOrigX[i] + sway + windDrift
+    z = snowOrigZ[i] + Math.cos(elapsed * 0.8 + snowSwayPhases[i]) * wind * 0.5
+
+    // 重置超出范围的粒子
+    if (y < -0.5) {
+      y = 25 + Math.random() * 8
+      snowOrigX[i] = (Math.random() - 0.5) * SPREAD
+      snowOrigZ[i] = (Math.random() - 0.5) * SPREAD
+      x = snowOrigX[i]
+      z = snowOrigZ[i]
+    }
+
+    pos.setX(i, x)
+    pos.setY(i, y)
+    pos.setZ(i, z)
+  }
+  pos.needsUpdate = true
+
+  // 积雪累积（每隔 0.1 秒执行一次，减少计算量）
+  if (elapsed - lastAccumTime > 0.1) {
+    accumulateSnow(0.1)
+    lastAccumTime = elapsed
+  }
+
+  updateSnowHeights()
+  updateRoofSnow(dt)
+
+  // 窗口暖光微微闪烁
+  warmLight1.intensity = 3 * (1 + Math.sin(elapsed * 3.7) * 0.05)
+  warmLight2.intensity = 3 * (1 + Math.sin(elapsed * 2.9 + 1) * 0.05)
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+animate()
+
+// ============ 响应式 ============
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+})

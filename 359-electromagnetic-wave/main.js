@@ -1,0 +1,111 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000008);
+const camera = new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,500);
+camera.position.set(0,20,80);
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+scene.add(new THREE.AmbientLight(0x112244,1.0));
+
+// Field plane
+const planeGeo = new THREE.PlaneGeometry(80,40,400,200);
+const planeMat = new THREE.ShaderMaterial({
+  uniforms:{uTime:{value:0},uPolar:{value:0}},
+  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+  fragmentShader:`
+    precision highp float;
+    uniform float uTime;
+    uniform float uPolar;
+    varying vec2 vUv;
+    const float PI=3.14159265;
+    void main(){
+      float k=2.0*PI/4.0;
+      float w=2.0*PI;
+      float x=(vUv.x-0.5)*80.0;
+      float z=(vUv.y-0.5)*40.0;
+      float Ex=0.0,Ey=0.0,Ez=0.0;
+      float phase=x-w*uTime;
+      if(uPolar<0.5){
+        // linear pol - y direction
+        Ey=sin(phase)*exp(-x*x/400.0);
+        Ez=0.0;
+      } else if(uPolar<1.5){
+        // circular
+        Ey=sin(phase)*exp(-x*x/400.0);
+        Ez=sin(phase+PI/2.0)*exp(-x*x/400.0);
+      } else {
+        // elliptic
+        Ey=sin(phase)*exp(-x*x/400.0);
+        Ez=sin(phase*1.5)*exp(-x*x/400.0);
+      }
+      float E=sqrt(Ey*Ey+Ez*Ez);
+      vec3 col=vec3(0.0);
+      col+=vec3(0.0,0.5,1.0)*abs(Ey)*2.0;
+      col+=vec3(1.0,0.2,0.1)*abs(Ez)*2.0;
+      float intensity=abs(Ex+Ey+Ez);
+      col+=vec3(0.1,0.1,0.2)+vec3(0.0,0.3,0.7)*intensity;
+      float alpha=clamp(E*2.0,0.0,1.0);
+      gl_FragColor=vec4(col,alpha);
+    }`,
+  transparent:true,
+  side:THREE.DoubleSide,
+  depthWrite:false,
+  blending:THREE.AdditiveBlending
+});
+const planeMesh = new THREE.Mesh(planeGeo,planeMat);
+planeMesh.position.x=0;
+scene.add(planeMesh);
+
+// E-field arrows along x axis
+const arrowGroup = new THREE.Group();
+scene.add(arrowGroup);
+const arrowMeshes=[];
+for(let i=0;i<30;i++){
+  const arrow = new THREE.ArrowHelper(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,0),2,0x0088ff,0.5,0.3);
+  arrowGroup.add(arrow);
+  arrowMeshes.push(arrow);
+}
+
+// B-field (perpendicular) arrows
+const barrowGroup = new THREE.Group();
+scene.add(barrowGroup);
+const barrowMeshes=[];
+for(let i=0;i<30;i++){
+  const arrow = new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,0),2,0xff4400,0.5,0.3);
+  barrowGroup.add(arrow);
+  barrowMeshes.push(arrow);
+}
+
+// polarization selector
+let polarType=0;
+const types=["Linear","Circular","Elliptical"];
+window.addEventListener("keydown",e=>{if(e.key===" ")polarType=(polarType+1)%3;planeMat.uniforms.uPolar.value=polarType;});
+
+// Wave direction
+const waveDir = new THREE.Vector3(1,0,0);
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const t=clock.getElapsedTime();
+  planeMat.uniforms.uTime.value=t;
+  for(let i=0;i<30;i++){
+    const x=i*2.5-35;
+    const phase=x-t*2.0;
+    const Ey=Math.sin(phase)*Math.exp(-x*x/400);
+    const Ez=Math.sin(phase+(polarType>0?Math.PI/2:0))*Math.exp(-x*x/400);
+    arrowMeshes[i].position.set(x,Ey*5,0);
+    arrowMeshes[i].setDirection(new THREE.Vector3(0,Math.sign(Ey),0));
+    barrowMeshes[i].position.set(x,0,Ez*5);
+    barrowMeshes[i].setDirection(new THREE.Vector3(0,0,Math.sign(Ez)));
+  }
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+window.addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});

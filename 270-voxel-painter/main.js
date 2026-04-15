@@ -1,0 +1,439 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Config ──────────────────────────────────────────────
+const GRID = 32;
+const MAX_VOXELS = GRID * GRID * GRID;
+const PALETTE = [
+  '#ff3b3b','#ff8c00','#ffd700','#7fff00','#00ff7f','#00ffff',
+  '#1e90ff','#8a2be2','#ff00ff','#ff69b4','#8b4513','#ffffff',
+  '#c0c0c0','#2f2f2f','#00ff00','#0000ff'
+];
+
+// ── State ────────────────────────────────────────────────
+const voxels = new Map();   // "x,y,z" -> { color, matrix }
+let activeColor = PALETTE[0];
+let hoveredKey = null;
+const tempObj = new THREE.Object3D();
+const tempColor = new THREE.Color();
+
+// ── Renderer ─────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d1a);
+scene.fog = new THREE.FogExp2(0x0d0d1a, 0.012);
+
+// ── Camera ────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(40, 28, 40);
+camera.lookAt(GRID / 2, GRID / 2, GRID / 2);
+
+// ── Controls ─────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(GRID / 2, GRID / 2, GRID / 2);
+controls.minDistance = 5;
+controls.maxDistance = 120;
+controls.update();
+
+// ── Lighting ─────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x4040a0, 0.7));
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+sun.position.set(40, 60, 30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 200;
+sun.shadow.camera.left = -50;
+sun.shadow.camera.right = 50;
+sun.shadow.camera.top = 50;
+sun.shadow.camera.bottom = -50;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0x8080ff, 0.3);
+fill.position.set(-20, 10, -20);
+scene.add(fill);
+
+// ── Grid Helper ───────────────────────────────────────────
+const gridHelper = new THREE.GridHelper(GRID, GRID, 0x3333aa, 0x1a1a44);
+gridHelper.position.set(GRID / 2 - 0.5, 0, GRID / 2 - 0.5);
+scene.add(gridHelper);
+
+// Ground plane for shadows
+const groundGeo = new THREE.PlaneGeometry(GRID * 2, GRID * 2);
+const groundMat = new THREE.ShadowMaterial({ opacity: 0.25 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.set(GRID / 2 - 0.5, -0.01, GRID / 2 - 0.5);
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ── Voxel Mesh (InstancedMesh) ────────────────────────────
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const boxMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+
+// We use a standard Mesh because InstancedMesh with per-instance color
+// is trickier with vertex colors. We'll manage a map for data.
+const voxelMesh = new THREE.InstancedMesh(boxGeo, boxMat, MAX_VOXELS);
+voxelMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+voxelMesh.count = 0;
+voxelMesh.castShadow = true;
+voxelMesh.receiveShadow = true;
+scene.add(voxelMesh);
+
+// ── Hover highlight cube ──────────────────────────────────
+const hoverGeo = new THREE.BoxGeometry(1.06, 1.06, 1.06);
+const hoverMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.18,
+  depthWrite: false
+});
+const hoverMesh = new THREE.Mesh(hoverGeo, hoverMat);
+hoverMesh.visible = false;
+scene.add(hoverMesh);
+
+// ── Raycaster ─────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const pointerRay = new THREE.Raycaster();
+
+// Invisible hit planes for each face of every existing voxel + base plane
+// We use a faster approach: track which voxel keys exist, then use them as targets
+const hitTargets = [];  // We'll rebuild this as voxels change
+
+function buildHitTargets() {
+  hitTargets.length = 0;
+  // Base plane at y=0
+  const baseGeo = new THREE.PlaneGeometry(GRID, GRID);
+  const baseMesh = new THREE.Mesh(baseGeo, new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
+  baseMesh.rotation.x = -Math.PI / 2;
+  baseMesh.position.set(GRID / 2 - 0.5, 0, GRID / 2 - 0.5);
+  baseMesh.userData.isBase = true;
+  hitTargets.push(baseMesh);
+
+  // For each voxel, add 6 faces as hit targets
+  for (const [key, data] of voxels) {
+    const [x, y, z] = key.split(',').map(Number);
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ visible: false }));
+    mesh.position.set(x, y, z);
+    mesh.userData.voxelKey = key;
+    hitTargets.push(mesh);
+  }
+}
+
+// ── Voxel helpers ─────────────────────────────────────────
+function clamp(v, min, max) { return Math.max(min, Math.min(max, Math.floor(v))); }
+
+function setVoxelMatrix(index, x, y, z) {
+  tempObj.position.set(x, y, z);
+  tempObj.updateMatrix();
+  voxelMesh.setMatrixAt(index, tempObj.matrix);
+}
+
+function addVoxel(x, y, z, color) {
+  if (x < 0 || x >= GRID || y < 0 || y >= GRID || z < 0 || z >= GRID) return;
+  const key = `${x},${y},${z}`;
+  if (voxels.has(key)) return;
+
+  const idx = voxelMesh.count;
+  voxels.set(key, { color, index: idx });
+
+  tempColor.set(color);
+  boxGeo.setAttribute('color', new THREE.InstancedBufferAttribute(
+    new Float32Array([...tempColor.toArray()]), 3
+  ));
+  // Re-create with color (crude approach; we rebuild color array below)
+  rebuildColors();
+
+  setVoxelMatrix(idx, x, y, z);
+  voxelMesh.count = idx + 1;
+  voxelMesh.instanceMatrix.needsUpdate = true;
+
+  updateCount();
+  rebuildHitTargets();
+}
+
+function removeVoxel(x, y, z) {
+  const key = `${x},${y},${z}`;
+  if (!voxels.has(key)) return;
+
+  voxels.delete(key);
+  rebuildMesh();
+  updateCount();
+  rebuildHitTargets();
+}
+
+function rebuildColors() {
+  const colors = new Float32Array(MAX_VOXELS * 3);
+  let i = 0;
+  for (const [, { color }] of voxels) {
+    tempColor.set(color);
+    colors[i++] = tempColor.r;
+    colors[i++] = tempColor.g;
+    colors[i++] = tempColor.b;
+  }
+  voxelMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+  voxelMesh.instanceColor.needsUpdate = true;
+}
+
+function rebuildMesh() {
+  voxelMesh.count = 0;
+  let i = 0;
+  for (const [key, { color, index }] of voxels) {
+    const [x, y, z] = key.split(',').map(Number);
+    setVoxelMatrix(i, x, y, z);
+    tempColor.set(color);
+    i++;
+  }
+  voxelMesh.count = i;
+  voxelMesh.instanceMatrix.needsUpdate = true;
+  rebuildColors();
+  rebuildHitTargets();
+}
+
+function rebuildHitTargets() {
+  // Dispose old geometries/materials
+  hitTargets.forEach(m => { m.geometry.dispose(); m.material.dispose(); });
+  buildHitTargets();
+}
+
+// ── Get voxel position from raycast ─────────────────────
+function getTargetVoxel(clientX, clientY) {
+  pointer.set(
+    (clientX / window.innerWidth) * 2 - 1,
+    -(clientY / window.innerHeight) * 2 + 1
+  );
+
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(hitTargets);
+  if (!hits.length) return null;
+
+  const hit = hits[0];
+  const obj = hit.object;
+
+  if (obj.userData.isBase) {
+    // Click on ground plane
+    const pt = hit.point;
+    const x = clamp(pt.x + 0.5, 0, GRID - 1);
+    const z = clamp(pt.z + 0.5, 0, GRID - 1);
+    return { x, y: 0, z, face: 'top' };
+  }
+
+  if (obj.userData.voxelKey) {
+    const [vx, vy, vz] = obj.userData.voxelKey.split(',').map(Number);
+    const norm = hit.face.normal;
+    const nx = Math.round(norm.x);
+    const ny = Math.round(norm.y);
+    const nz = Math.round(norm.z);
+    return {
+      x: vx + nx,
+      y: vy + ny,
+      z: vz + nz,
+      face: 'side'
+    };
+  }
+
+  return null;
+}
+
+// ── Event handlers ────────────────────────────────────────
+let isMouseDown = false;
+let mouseButton = -1;
+let shifted = false;
+
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+window.addEventListener('pointerdown', e => {
+  isMouseDown = true;
+  mouseButton = e.button;
+  shifted = e.shiftKey;
+});
+
+window.addEventListener('pointerup', () => { isMouseDown = false; });
+
+window.addEventListener('pointermove', e => {
+  if (isMouseDown) {
+    shifted = e.shiftKey;
+    handlePaint(e.clientX, e.clientY);
+  } else {
+    updateHover(e.clientX, e.clientY);
+  }
+});
+
+window.addEventListener('click', e => {
+  if (e.button !== 0) return;
+  shifted = e.shiftKey;
+  handlePaint(e.clientX, e.clientY);
+});
+
+function handlePaint(cx, cy) {
+  const target = getTargetVoxel(cx, cy);
+  if (!target) return;
+
+  if (mouseButton === 2 || (mouseButton === 0 && !isMouseDown)) {
+    // Right-click or standalone click remove (if we clicked an existing voxel)
+    // We'll check: if there's a voxel at target, remove it; else add
+  }
+
+  if (mouseButton === 0 || mouseButton === 2) {
+    const key = `${target.x},${target.y},${target.z}`;
+    if (voxels.has(key)) {
+      removeVoxel(target.x, target.y, target.z);
+    } else if (mouseButton === 0) {
+      addVoxel(target.x, target.y, target.z, activeColor);
+    }
+  }
+}
+
+function updateHover(cx, cy) {
+  pointer.set(
+    (cx / window.innerWidth) * 2 - 1,
+    -(cy / window.innerHeight) * 2 + 1
+  );
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(hitTargets);
+
+  if (hits.length && hits[0].object.userData.voxelKey) {
+    const key = hits[0].object.userData.voxelKey;
+    if (key !== hoveredKey) {
+      hoveredKey = key;
+      const [x, y, z] = key.split(',').map(Number);
+      hoverMesh.position.set(x, y, z);
+      hoverMesh.visible = true;
+    }
+  } else if (hoveredKey) {
+    hoveredKey = null;
+    hoverMesh.visible = false;
+  }
+}
+
+// Right-click to remove
+window.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const target = getTargetVoxel(e.clientX, e.clientY);
+  if (!target) return;
+  const key = `${target.x},${target.y},${target.z}`;
+  if (voxels.has(key)) removeVoxel(target.x, target.y, target.z);
+});
+
+// ── UI ───────────────────────────────────────────────────
+const paletteEl = document.getElementById('palette');
+PALETTE.forEach((c, i) => {
+  const sw = document.createElement('div');
+  sw.className = 'swatch' + (i === 0 ? ' active' : '');
+  sw.style.background = c;
+  sw.title = c;
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+    activeColor = c;
+  });
+  paletteEl.appendChild(sw);
+});
+
+function updateCount() {
+  document.getElementById('vc').textContent = voxels.size;
+}
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (voxels.size === 0) return;
+  voxels.clear();
+  voxelMesh.count = 0;
+  voxelMesh.instanceMatrix.needsUpdate = true;
+  rebuildHitTargets();
+  updateCount();
+});
+
+document.getElementById('fillBtn').addEventListener('click', () => {
+  voxels.clear();
+  let i = 0;
+  for (let x = 0; x < GRID; x++)
+    for (let y = 0; y < GRID; y++)
+      for (let z = 0; z < GRID; z++) {
+        const key = `${x},${y},${z}`;
+        voxels.set(key, { color: activeColor, index: i });
+        setVoxelMatrix(i++, x, y, z);
+      }
+  voxelMesh.count = voxels.size;
+  voxelMesh.instanceMatrix.needsUpdate = true;
+  rebuildColors();
+  rebuildHitTargets();
+  updateCount();
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const data = {
+    grid: GRID,
+    palette: PALETTE,
+    voxels: Array.from(voxels.entries()).map(([key, { color }]) => {
+      const [x, y, z] = key.split(',').map(Number);
+      return { x, y, z, color };
+    })
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `voxel-paint-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  document.getElementById('fileInput').click();
+});
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      voxels.clear();
+      let i = 0;
+      for (const { x, y, z, color } of data.voxels) {
+        const key = `${x},${y},${z}`;
+        voxels.set(key, { color, index: i });
+        setVoxelMatrix(i++, x, y, z);
+      }
+      voxelMesh.count = voxels.size;
+      voxelMesh.instanceMatrix.needsUpdate = true;
+      rebuildColors();
+      rebuildHitTargets();
+      updateCount();
+    } catch (err) {
+      alert('Failed to parse JSON file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+// ── Resize ───────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Build initial hit targets ────────────────────────────
+buildHitTargets();
+
+// ── Animate ──────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();

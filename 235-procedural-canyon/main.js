@@ -1,0 +1,366 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ─────────────────────────────────────────────
+   1.  SCENE SETUP
+───────────────────────────────────────────── */
+const canvas   = document.createElement('canvas');
+document.body.appendChild(canvas);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d14);
+scene.fog        = new THREE.FogExp2(0x0d0d14, 0.0045);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(0, 80, 160);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.minDistance   = 20;
+controls.maxDistance   = 400;
+
+/* ─────────────────────────────────────────────
+   2.  LIGHTING
+───────────────────────────────────────────── */
+const ambientLight = new THREE.AmbientLight(0x2a2a40, 1.4);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xfff0d0, 2.2);
+sunLight.position.set(80, 120, 60);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.near   = 1;
+sunLight.shadow.camera.far    = 500;
+sunLight.shadow.camera.left   = -160;
+sunLight.shadow.camera.right  =  160;
+sunLight.shadow.camera.top    =  160;
+sunLight.shadow.camera.bottom = -160;
+sunLight.shadow.bias = -0.001;
+scene.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0x4080ff, 0.5);
+fillLight.position.set(-60, 40, -80);
+scene.add(fillLight);
+
+/* ─────────────────────────────────────────────
+   3.  HEIGHTMAP + THERMAL EROSION
+───────────────────────────────────────────── */
+
+/**
+ * Generate initial terrain height using multi-octave value noise.
+ * Returns a Float32Array of size (N+1)×(N+1).
+ */
+function generateBaseHeight(N, scale) {
+  const data = new Float32Array((N + 1) * (N + 1));
+
+  // Simple pseudo-random hash (no external dependency)
+  const hash = (x, y) => {
+    let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+    return n - Math.floor(n);
+  };
+
+  const smooth = t => t * t * (3 - 2 * t);
+
+  const valueNoise = (x, y) => {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    const fx = x - ix,        fy = y - iy;
+    const ux = smooth(fx),   uy = smooth(fy);
+    const v00 = hash(ix,   iy);
+    const v10 = hash(ix+1, iy);
+    const v01 = hash(ix,   iy+1);
+    const v11 = hash(ix+1, iy+1);
+    return v00 + (v10 - v00) * ux + (v01 - v00) * uy + (v11 - v10 - v01 + v00) * ux * uy;
+  };
+
+  // FBM — 6 octaves
+  const fbm = (x, y) => {
+    let v = 0, a = 0.5, f = 1.0;
+    for (let i = 0; i < 6; i++) {
+      v += a * valueNoise(x * f, y * f);
+      a *= 0.5; f *= 2.1;
+    }
+    return v;
+  };
+
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      const nx = (i / N - 0.5) * 2;
+      const nz = (j / N - 0.5) * 2;
+      // Canyon cross-section: raise edges to form canyon walls, lower center
+      const dist   = Math.sqrt(nx * nx + nz * nz);
+      const radial = Math.max(0, 1 - dist * 0.9);
+      // Central valley carved out
+      const valley  = Math.exp(-dist * dist * 2.5) * 0.6;
+      const h = fbm(nx * scale, nz * scale) * radial - valley * 1.5;
+      data[j * (N + 1) + i] = Math.max(h, -0.3);
+    }
+  }
+  return data;
+}
+
+/**
+ * Thermal (heat) erosion: material slides down slopes when gradient > talusAngle.
+ * Each iteration moves a fraction of "excess" height from high cells to neighbours.
+ * @param {Float32Array} height  - heightmap (modified in place)
+ * @param {number}       N        - grid dimension (N+1 cells per side)
+ * @param {number}       talus   - talus angle threshold (radians)
+ * @param {number}       amount  - erosion strength (0–1)
+ */
+function thermalErosion(height, N, talus, amount) {
+  const idx = (i, j) => j * (N + 1) + i;
+
+  // Copy to avoid read/write conflict
+  const H = new Float32Array(height);
+
+  // 4-connected neighbours
+  const di = [1, -1, 0,  0];
+  const dj = [0,  0, 1, -1];
+
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      const h = H[idx(i, j)];
+      let totalDelta = 0;
+
+      for (let k = 0; k < 4; k++) {
+        const ni = i + di[k], nj = j + dj[k];
+        if (ni < 0 || ni > N || nj < 0 || nj > N) continue;
+
+        const diff = h - H[idx(ni, nj)];
+        if (diff > talus) {
+          const slide = (diff - talus) * amount * 0.25;
+          totalDelta += slide;
+        }
+      }
+
+      height[idx(i, j)] = h - totalDelta;
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────
+   4.  BUILD THREE.JS GEOMETRY
+───────────────────────────────────────────── */
+const SEGMENTS = 160;   // 161×161 vertices
+
+const geo = new THREE.PlaneGeometry(200, 200, SEGMENTS, SEGMENTS);
+geo.rotateX(-Math.PI / 2);
+
+/* ─────────────────────────────────────────────
+   5.  VERTEX SHADER (PER-VERTEX DISPLACEMENT)
+───────────────────────────────────────────── */
+// Pass heightmap texture to GPU for smooth vertex displacement
+const VERT = /* glsl */`
+  uniform sampler2D uHeightMap;
+  uniform float     uHeightScale;
+
+  varying float vHeight;
+  varying vec3  vNormal;
+  varying vec3  vWorldPos;
+
+  void main() {
+    // PlaneGeometry uv is pre-rotated (rotateX -PI/2), so uv.x=col, uv.y=row
+    float h    = texture2D(uHeightMap, uv).r * uHeightScale;
+    vec3  pos  = position + vec3(0.0, h, 0.0);
+
+    // Compute world-space normal via central differences in UV space
+    float eps = 1.0 / ${SEGMENTS.toFixed(1)};
+    float hL  = texture2D(uHeightMap, uv - vec2(eps, 0.0)).r * uHeightScale;
+    float hR  = texture2D(uHeightMap, uv + vec2(eps, 0.0)).r * uHeightScale;
+    float hD  = texture2D(uHeightMap, uv - vec2(0.0, eps)).r * uHeightScale;
+    float hU  = texture2D(uHeightMap, uv + vec2(0.0, eps)).r * uHeightScale;
+
+    vec3 tangX = normalize(vec3(2.0 * eps * 200.0, hR - hL, 0.0));
+    vec3 tangZ = normalize(vec3(0.0, hU - hD, 2.0 * eps * 200.0));
+    vNormal    = normalize(cross(tangZ, tangX));
+
+    vWorldPos  = (modelMatrix * vec4(pos, 1.0)).xyz;
+    vHeight    = h;
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+  }
+`;
+
+const FRAG = /* glsl */`
+  precision highp float;
+
+  uniform vec3  uSunDir;
+  uniform vec3  uSunColor;
+  uniform vec3  uAmbient;
+  uniform float uTime;
+
+  varying float vHeight;
+  varying vec3  vNormal;
+  varying vec3  vWorldPos;
+
+  // Rock/strata colour palette
+  vec3 rockColor(float h) {
+    vec3 deep  = vec3(0.28, 0.20, 0.14);  // dark sedimentary
+    vec3 mid   = vec3(0.52, 0.40, 0.28);  // warm sandstone
+    vec3 high  = vec3(0.72, 0.62, 0.48);  // pale limestone
+    float t    = clamp((h + 2.0) / 12.0, 0.0, 1.0);
+    return mix(deep, mix(mid, high, t * t), t);
+  }
+
+  // Layered strata effect
+  float strata(float h) {
+    return 0.5 + 0.5 * sin(h * 3.8);
+  }
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 L = normalize(uSunDir);
+
+    // Diffuse + ambient
+    float diff  = max(dot(N, L), 0.0);
+    float ao    = clamp(0.3 + vHeight * 0.07, 0.0, 1.0);  // fake AO
+    vec3  albedo = rockColor(vHeight) * (0.85 + 0.15 * strata(vHeight));
+
+    vec3 col = albedo * (uAmbient + uSunColor * diff * ao);
+
+    // Distance fog
+    float dist = length(vWorldPos - cameraPosition);
+    float fog  = 1.0 - exp(-0.003 * dist * dist);
+    col = mix(col, vec3(0.05, 0.05, 0.08), fog);
+
+    // Tone-map + gamma
+    col = col / (col + 1.0);
+    col = pow(col, vec3(1.0 / 2.2));
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+/* ─────────────────────────────────────────────
+   6.  HEIGHTMAP TEXTURE (CPU → GPU)
+───────────────────────────────────────────── */
+let heightData = generateBaseHeight(SEGMENTS, 3.0);
+
+/**
+ * Upload current heightData Float32Array to a THREE.DataTexture
+ * and return it. Format: Red channel, FloatType.
+ */
+function buildHeightTexture(data, N) {
+  // DataTexture expects row-major; PlaneGeometry vertex order after
+  // rotateX(-PI/2) maps uv.x = column, uv.y = row.
+  // We need to match vertex order: row j maps to texture row j.
+  const texData = new Float32Array((N + 1) * (N + 1));
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      // tex[j * (N+1) + i] = height of vertex at (i, j)
+      texData[j * (N + 1) + i] = data[j * (N + 1) + i];
+    }
+  }
+  const tex = new THREE.DataTexture(texData, N + 1, N + 1, THREE.RedFormat, THREE.FloatType);
+  tex.needsUpdate = true;
+  // Clamp to avoid black seams at edges
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+
+const heightTexture = buildHeightTexture(heightData, SEGMENTS);
+
+/* ─────────────────────────────────────────────
+   7.  MATERIAL + MESH
+───────────────────────────────────────────── */
+const uniforms = {
+  uHeightMap:   { value: heightTexture },
+  uHeightScale: { value: 18.0 },
+  uSunDir:      { value: new THREE.Vector3(0.6, 0.85, 0.4).normalize() },
+  uSunColor:    { value: new THREE.Color(0xfff0d0).multiplyScalar(2.2) },
+  uAmbient:     { value: new THREE.Color(0x2a2a40).multiplyScalar(1.4) },
+  uTime:        { value: 0 },
+};
+
+const mat = new THREE.ShaderMaterial({
+  vertexShader:   VERT,
+  fragmentShader: FRAG,
+  uniforms,
+  side: THREE.FrontSide,
+});
+
+const terrain = new THREE.Mesh(geo, mat);
+terrain.receiveShadow = true;
+terrain.castShadow     = true;
+scene.add(terrain);
+
+/* ─────────────────────────────────────────────
+   8.  lil-gui  CONTROLS
+───────────────────────────────────────────── */
+const params = {
+  erosionStrength: 0.55,   // 0–1
+  erosionIterations: 24,
+  terrainScale:    3.0,    // noise frequency
+  heightScale:     18.0,
+  noiseSeed:       1.0,    // (future: reseed noise)
+  runErosion() {
+    applyErosion();
+  },
+};
+
+function applyErosion() {
+  const talus = 0.05 * params.erosionStrength;  // radians
+  const steps = params.erosionIterations;
+  for (let i = 0; i < steps; i++) {
+    thermalErosion(heightData, SEGMENTS, talus, params.erosionStrength);
+  }
+  // Upload updated heights to GPU
+  heightTexture.image.data.set(heightData);
+  heightTexture.needsUpdate = true;
+  uniforms.uHeightScale.value = params.heightScale;
+}
+
+// Run initial erosion pass (default iterations for visible canyon)
+applyErosion();
+
+const gui = new lil.GUI({ title: '🌄 Canyon Controls', width: 240 });
+gui.add(params, 'terrainScale', 0.5, 8.0, 0.1).name('Noise Scale').onChange(() => {
+  heightData = generateBaseHeight(SEGMENTS, params.terrainScale);
+  applyErosion();
+});
+gui.add(params, 'heightScale', 5, 40, 0.5).name('Height Scale').onChange(v => {
+  uniforms.uHeightScale.value = v;
+});
+gui.add(params, 'erosionStrength', 0.0, 1.0, 0.01).name('Erosion Strength');
+gui.add(params, 'erosionIterations', 0, 120, 1).name('Erosion Iterations');
+gui.add(params, 'runErosion').name('▶ Apply Erosion');
+
+/* ─────────────────────────────────────────────
+   9.  RESIZE
+───────────────────────────────────────────── */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ─────────────────────────────────────────────
+   10.  ANIMATE
+───────────────────────────────────────────── */
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  uniforms.uTime.value = t;
+
+  // Slowly rotate sun direction for dynamic lighting
+  const angle = t * 0.04;
+  uniforms.uSunDir.value.set(
+    Math.cos(angle) * 0.6,
+    0.85,
+    Math.sin(angle) * 0.4
+  ).normalize();
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();

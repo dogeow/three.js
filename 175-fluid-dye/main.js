@@ -1,0 +1,477 @@
+import * as THREE from 'three';
+import GUI from 'lil-gui';
+
+// --- Config ---
+const config = {
+  resolution: 256,
+  viscosity: 0.0001,
+  dyeRadius: 0.003,
+  dyeColor: '#ff4400',
+  showVelocity: false,
+  multipleColors: true
+};
+
+// --- Renderer ---
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// --- Camera ---
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+// --- Scene ---
+const scene = new THREE.Scene();
+
+// --- Fullscreen quad ---
+const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+scene.add(quad);
+
+// --- Shader Material for display ---
+const displayMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uDensity: { value: null },
+    uVelocity: { value: null },
+    uShowVelocity: { value: false }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D uDensity;
+    uniform sampler2D uVelocity;
+    uniform bool uShowVelocity;
+    varying vec2 vUv;
+
+    vec3 firePalette(float t) {
+      t = clamp(t, 0.0, 1.0);
+      vec3 a = vec3(0.5, 0.0, 0.0);
+      vec3 b = vec3(0.9, 0.5, 0.0);
+      vec3 c = vec3(1.0, 0.9, 0.0);
+      vec3 d = vec3(1.0, 1.0, 1.0);
+      if (t < 0.33) return mix(a, b, t * 3.0);
+      if (t < 0.66) return mix(b, c, (t - 0.33) * 3.0);
+      return mix(c, d, (t - 0.66) * 3.0);
+    }
+
+    vec3 rainbowPalette(float t) {
+      t = clamp(t, 0.0, 1.0);
+      vec3 c = vec3(1.0);
+      c = mix(vec3(1,0,0), vec3(1,0.5,0), clamp(t*3.0,0.0,1.0));
+      c = mix(c, vec3(1,1,0), clamp(t*3.0-1.0,0.0,1.0));
+      c = mix(c, vec3(0,1,0), clamp(t*3.0-2.0,0.0,1.0));
+      c = mix(c, vec3(0,0.5,1), clamp(t*3.0-3.0,0.0,1.0));
+      c = mix(c, vec3(0.5,0,1), clamp(t*3.0-4.0,0.0,1.0));
+      c = mix(c, vec3(1,0,0.5), clamp(t*3.0-5.0,0.0,1.0));
+      return c;
+    }
+
+    void main() {
+      if (uShowVelocity) {
+        vec2 vel = texture2D(uVelocity, vUv).rg;
+        float speed = length(vel) * 50.0;
+        vec3 col = rainbowPalette(speed);
+        gl_FragColor = vec4(col, 1.0);
+      } else {
+        vec3 dye = texture2D(uDensity, vUv).rgb;
+        float intensity = length(dye);
+        vec3 col = firePalette(intensity * 2.0);
+        gl_FragColor = vec4(col * dye * 3.0, 1.0);
+      }
+    }
+  `
+});
+quad.material = displayMat;
+
+// --- Fluid Simulation Setup ---
+let simRes = config.resolution;
+
+// Helper: create render target
+function createRT(w, h) {
+  return new THREE.WebGLRenderTarget(w, h, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.FloatType,
+    wrapS: THREE.ClampToEdgeWrapping,
+    wrapT: THREE.ClampToEdgeWrapping
+  });
+}
+
+// Velocity FBO (stores velocity in RG, pressure in B, divergence in A)
+let velRT = [createRT(simRes, simRes), createRT(simRes, simRes)];
+let denRT = [createRT(simRes, simRes), createRT(simRes, simRes)];
+let pressureRT = [createRT(simRes, simRes), createRT(simRes, simRes)];
+let divergenceRT = createRT(simRes, simRes);
+
+// --- Shaders ---
+const baseVert = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position, 1.0);
+  }
+`;
+
+// Advection shader
+const advectMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uVelocity: { value: null },
+    uSource: { value: null },
+    uDt: { value: 0.016 },
+    uDissipation: { value: 0.999 }
+  },
+  vertexShader: baseVert,
+  fragmentShader: `
+    precision highp float;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uSource;
+    uniform float uDt;
+    uniform float uDissipation;
+    varying vec2 vUv;
+
+    void main() {
+      vec2 vel = texture2D(uVelocity, vUv).rg;
+      vec2 pos = vUv - vel * uDt;
+      pos = clamp(pos, 0.0, 1.0);
+      vec4 val = texture2D(uSource, pos);
+      gl_FragColor = val * uDissipation;
+    }
+  `
+});
+
+// Divergence shader
+const divergenceMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uVelocity: { value: null },
+    uTexelSize: { value: 1.0 / simRes }
+  },
+  vertexShader: baseVert,
+  fragmentShader: `
+    precision highp float;
+    uniform sampler2D uVelocity;
+    uniform float uTexelSize;
+    varying vec2 vUv;
+
+    void main() {
+      float L = texture2D(uVelocity, vUv - vec2(uTexelSize, 0.0)).r;
+      float R = texture2D(uVelocity, vUv + vec2(uTexelSize, 0.0)).r;
+      float B = texture2D(uVelocity, vUv - vec2(0.0, uTexelSize)).g;
+      float T = texture2D(uVelocity, vUv + vec2(0.0, uTexelSize)).g;
+      float div = 0.5 * ((R - L) + (T - B));
+      gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
+    }
+  `
+});
+
+// Pressure Jacobi shader
+const pressureMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uPressure: { value: null },
+    uDivergence: { value: null },
+    uTexelSize: { value: 1.0 / simRes }
+  },
+  vertexShader: baseVert,
+  fragmentShader: `
+    precision highp float;
+    uniform sampler2D uPressure;
+    uniform sampler2D uDivergence;
+    uniform float uTexelSize;
+    varying vec2 vUv;
+
+    void main() {
+      float L = texture2D(uPressure, vUv - vec2(uTexelSize, 0.0)).r;
+      float R = texture2D(uPressure, vUv + vec2(uTexelSize, 0.0)).r;
+      float B = texture2D(uPressure, vUv - vec2(0.0, uTexelSize)).r;
+      float T = texture2D(uPressure, vUv + vec2(0.0, uTexelSize)).r;
+      float div = texture2D(uDivergence, vUv).r;
+      float p = (L + R + B + T - div) * 0.25;
+      gl_FragColor = vec4(p, 0.0, 0.0, 1.0);
+    }
+  `
+});
+
+// Gradient subtraction shader
+const gradientSubtractMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uPressure: { value: null },
+    uVelocity: { value: null },
+    uTexelSize: { value: 1.0 / simRes }
+  },
+  vertexShader: baseVert,
+  fragmentShader: `
+    precision highp float;
+    uniform sampler2D uPressure;
+    uniform sampler2D uVelocity;
+    uniform float uTexelSize;
+    varying vec2 vUv;
+
+    void main() {
+      float L = texture2D(uPressure, vUv - vec2(uTexelSize, 0.0)).r;
+      float R = texture2D(uPressure, vUv + vec2(uTexelSize, 0.0)).r;
+      float B = texture2D(uPressure, vUv - vec2(0.0, uTexelSize)).r;
+      float T = texture2D(uPressure, vUv + vec2(0.0, uTexelSize)).r;
+      vec2 vel = texture2D(uVelocity, vUv).rg;
+      vel -= vec2(R - L, T - B) * 0.5;
+      gl_FragColor = vec4(vel, 0.0, 1.0);
+    }
+  `
+});
+
+// Splat shader (add force/dye)
+const splatMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTarget: { value: null },
+    uPoint: { value: new THREE.Vector2(0.5, 0.5) },
+    uColor: { value: new THREE.Vector3(1, 0.5, 0) },
+    uRadius: { value: 0.01 },
+    uAspect: { value: 1.0 }
+  },
+  vertexShader: baseVert,
+  fragmentShader: `
+    precision highp float;
+    uniform sampler2D uTarget;
+    uniform vec2 uPoint;
+    uniform vec3 uColor;
+    uniform float uRadius;
+    uniform float uAspect;
+    varying vec2 vUv;
+
+    void main() {
+      vec2 p = vUv - uPoint;
+      p.x *= uAspect;
+      float d = dot(p, p);
+      float strength = exp(-d / (uRadius * uRadius));
+      vec4 base = texture2D(uTarget, vUv);
+      gl_FragColor = base + vec4(uColor * strength, 0.0);
+    }
+  `
+});
+
+// Clear shader
+const clearMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uValue: { value: 0.0 }
+  },
+  vertexShader: baseVert,
+  fragmentShader: `
+    precision highp float;
+    uniform float uValue;
+    void main() {
+      gl_FragColor = vec4(uValue, 0.0, 0.0, 1.0);
+    }
+  `
+});
+
+// --- Simulation quad ---
+const simQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+scene.add(simQuad);
+
+function renderPass(mat, target) {
+  simQuad.material = mat;
+  renderer.setRenderTarget(target);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+}
+
+function swapBuffers(rts) {
+  let tmp = rts[0];
+  rts[0] = rts[1];
+  rts[1] = tmp;
+}
+
+// --- Color palette for multiple colors ---
+const colorPalette = [
+  new THREE.Vector3(1, 0.2, 0.05),
+  new THREE.Vector3(0.05, 0.8, 1),
+  new THREE.Vector3(0.2, 1, 0.1),
+  new THREE.Vector3(1, 0.05, 0.8),
+  new THREE.Vector3(1, 0.8, 0.0),
+  new THREE.Vector3(0.5, 0.1, 1)
+];
+let colorIdx = 0;
+let colorTimer = 0;
+
+// --- Mouse ---
+let mouse = { x: 0, y: 0, px: 0, py: 0, down: false };
+
+function onMouseMove(e) {
+  if (mouse.down) {
+    mouse.px = mouse.x;
+    mouse.py = mouse.y;
+    mouse.x = e.clientX / window.innerWidth;
+    mouse.y = 1.0 - e.clientY / window.innerHeight;
+  }
+}
+
+function onMouseDown(e) {
+  mouse.down = true;
+  mouse.x = e.clientX / window.innerWidth;
+  mouse.y = 1.0 - e.clientY / window.innerHeight;
+  mouse.px = mouse.x;
+  mouse.py = mouse.y;
+}
+
+function onMouseUp() {
+  mouse.down = false;
+}
+
+window.addEventListener('mousemove', onMouseMove);
+window.addEventListener('mousedown', onMouseDown);
+window.addEventListener('mouseup', onMouseUp);
+window.addEventListener('touchstart', e => {
+  e.preventDefault();
+  onMouseDown({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+}, { passive: false });
+window.addEventListener('touchmove', e => {
+  e.preventDefault();
+  onMouseMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+}, { passive: false });
+window.addEventListener('touchend', onMouseUp);
+
+// --- Resize ---
+function onResize() {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+window.addEventListener('resize', onResize);
+
+// --- GUI ---
+const gui = new GUI();
+gui.add(config, 'resolution', { '128': 128, '256': 256, '512': 512 }).name('Resolution').onChange(v => {
+  simRes = parseInt(v);
+  rebuildRTs();
+});
+gui.add(config, 'viscosity', 0.00001, 0.01).name('Viscosity');
+gui.add(config, 'dyeRadius', 0.001, 0.02).name('Dye Radius');
+gui.addColor(config, 'dyeColor').name('Dye Color');
+gui.add(config, 'showVelocity').name('Show Velocity');
+gui.add(config, 'multipleColors').name('Multiple Colors');
+
+function rebuildRTs() {
+  velRT = [createRT(simRes, simRes), createRT(simRes, simRes)];
+  denRT = [createRT(simRes, simRes), createRT(simRes, simRes)];
+  pressureRT = [createRT(simRes, simRes), createRT(simRes, simRes)];
+  divergenceRT = createRT(simRes, simRes);
+  divergenceMat.uniforms.uTexelSize.value = 1.0 / simRes;
+  pressureMat.uniforms.uTexelSize.value = 1.0 / simRes;
+  gradientSubtractMat.uniforms.uTexelSize.value = 1.0 / simRes;
+}
+
+function parseColor(hex) {
+  const c = new THREE.Color(hex);
+  return new THREE.Vector3(c.r, c.g, c.b);
+}
+
+// --- Helpers ---
+const prevTime = { v: performance.now() };
+
+// --- Animation Loop ---
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt = Math.min((now - prevTime.v) / 1000, 0.033);
+  prevTime.v = now;
+
+  const aspect = window.innerWidth / window.innerHeight;
+  advectMat.uniforms.uDt.value = dt;
+  advectMat.uniforms.uDissipation.value = 1.0 - config.viscosity * 0.1;
+
+  // Mouse velocity
+  if (mouse.down) {
+    const dx = (mouse.x - mouse.px) * 2.0;
+    const dy = (mouse.y - mouse.py) * 2.0;
+
+    // Add velocity splat
+    splatMat.uniforms.uTarget.value = velRT[0].texture;
+    splatMat.uniforms.uPoint.value.set(mouse.x, mouse.y);
+    splatMat.uniforms.uColor.value.set(dx, dy, 0);
+    splatMat.uniforms.uRadius.value = config.dyeRadius * 2;
+    splatMat.uniforms.uAspect.value = aspect;
+    renderPass(splatMat, velRT[1]);
+    swapBuffers(velRT);
+
+    // Add dye splat
+    colorTimer += dt;
+    if (config.multipleColors && colorTimer > 0.08) {
+      colorTimer = 0;
+      colorIdx = (colorIdx + 1) % colorPalette.length;
+    }
+    const dyeColor = config.multipleColors
+      ? colorPalette[colorIdx]
+      : parseColor(config.dyeColor);
+    splatMat.uniforms.uTarget.value = denRT[0].texture;
+    splatMat.uniforms.uColor.value.copy(dyeColor);
+    splatMat.uniforms.uRadius.value = config.dyeRadius;
+    renderPass(splatMat, denRT[1]);
+    swapBuffers(denRT);
+
+    mouse.px = mouse.x;
+    mouse.py = mouse.y;
+  }
+
+  // ---- Velocity step ----
+
+  // Advect velocity
+  advectMat.uniforms.uVelocity.value = velRT[0].texture;
+  advectMat.uniforms.uSource.value = velRT[0].texture;
+  advectMat.uniforms.uDissipation.value = 1.0 - config.viscosity;
+  renderPass(advectMat, velRT[1]);
+  swapBuffers(velRT);
+
+  // Diffuse velocity (simple diffusion via multiple advect passes)
+  const diffPasses = 4;
+  for (let i = 0; i < diffPasses; i++) {
+    advectMat.uniforms.uVelocity.value = velRT[0].texture;
+    advectMat.uniforms.uSource.value = velRT[0].texture;
+    advectMat.uniforms.uDissipation.value = 0.99;
+    advectMat.uniforms.uDt.value = 0.001;
+    renderPass(advectMat, velRT[1]);
+    swapBuffers(velRT);
+  }
+
+  // Compute divergence
+  divergenceMat.uniforms.uVelocity.value = velRT[0].texture;
+  renderPass(divergenceMat, divergenceRT);
+
+  // Clear pressure
+  clearMat.uniforms.uValue.value = 0.0;
+  renderPass(clearMat, pressureRT[0]);
+  renderPass(clearMat, pressureRT[1]);
+
+  // Pressure solve (Jacobi)
+  const pressureIterations = 20;
+  for (let i = 0; i < pressureIterations; i++) {
+    pressureMat.uniforms.uPressure.value = pressureRT[0].texture;
+    pressureMat.uniforms.uDivergence.value = divergenceRT.texture;
+    renderPass(pressureMat, pressureRT[1]);
+    swapBuffers(pressureRT);
+  }
+
+  // Gradient subtraction
+  gradientSubtractMat.uniforms.uPressure.value = pressureRT[0].texture;
+  gradientSubtractMat.uniforms.uVelocity.value = velRT[0].texture;
+  renderPass(gradientSubtractMat, velRT[1]);
+  swapBuffers(velRT);
+
+  // ---- Density step ----
+  advectMat.uniforms.uVelocity.value = velRT[0].texture;
+  advectMat.uniforms.uSource.value = denRT[0].texture;
+  advectMat.uniforms.uDissipation.value = 0.9995;
+  advectMat.uniforms.uDt.value = dt;
+  renderPass(advectMat, denRT[1]);
+  swapBuffers(denRT);
+
+  // ---- Display ----
+  displayMat.uniforms.uDensity.value = denRT[0].texture;
+  displayMat.uniforms.uVelocity.value = velRT[0].texture;
+  displayMat.uniforms.uShowVelocity.value = config.showVelocity;
+  renderer.setRenderTarget(null);
+  renderer.render(scene, camera);
+}
+
+animate();

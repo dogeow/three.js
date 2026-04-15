@@ -1,0 +1,378 @@
+import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    // --- Scene Setup ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0a);
+    scene.fog = new THREE.FogExp2(0x0a0a0a, 0.04);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 4, 10);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 3;
+    controls.maxDistance = 20;
+    controls.target.set(0, 0.5, 0);
+
+    // --- Lighting ---
+    const ambientLight = new THREE.AmbientLight(0x333344, 0.8);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffeedd, 2.5);
+    dirLight.position.set(6, 10, 4);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 40;
+    dirLight.shadow.camera.left = -12;
+    dirLight.shadow.camera.right = 12;
+    dirLight.shadow.camera.top = 12;
+    dirLight.shadow.camera.bottom = -12;
+    dirLight.shadow.bias = -0.001;
+    scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0x4466cc, 0.6);
+    fillLight.position.set(-5, 3, -3);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.PointLight(0xff6644, 1.2, 20);
+    rimLight.position.set(-4, 3, 5);
+    scene.add(rimLight);
+
+    // --- Ground ---
+    const groundGeo = new THREE.PlaneGeometry(24, 24, 40, 40);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1a2e,
+      roughness: 0.85,
+      metalness: 0.1,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Grid overlay
+    const gridHelper = new THREE.GridHelper(24, 24, 0x333355, 0x222244);
+    gridHelper.position.y = 0.01;
+    scene.add(gridHelper);
+
+    // --- Spheres ---
+    const sphereColors = [
+      0xff3366, 0xff6633, 0xffcc33,
+      0x33ff66, 0x33ccff, 0x6633ff,
+      0xff33cc, 0x33ffcc, 0xff9933,
+    ];
+
+    const spheres = [];
+    const sphereGroup = new THREE.Group();
+
+    sphereColors.forEach((color, i) => {
+      const radius = 0.35 + Math.random() * 0.25;
+      const geo = new THREE.SphereGeometry(radius, 32, 32);
+      const mat = new THREE.MeshStandardMaterial({
+        color: color,
+        roughness: 0.3,
+        metalness: 0.4,
+        emissive: new THREE.Color(color).multiplyScalar(0.08),
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      // Layout in a grid-ish pattern
+      const row = Math.floor(i / 3);
+      const col = i % 3;
+      mesh.position.set((col - 1) * 1.6, radius, (row - 1) * 1.6);
+      mesh.userData.baseX = mesh.position.x;
+      mesh.userData.baseZ = mesh.position.z;
+      mesh.userData.phase = Math.random() * Math.PI * 2;
+      mesh.userData.radius = radius;
+
+      spheres.push(mesh);
+      sphereGroup.add(mesh);
+    });
+
+    // Add a torus knot and a box as well
+    const torusGeo = new THREE.TorusKnotGeometry(0.5, 0.18, 100, 16);
+    const torusMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.2,
+      metalness: 0.8,
+    });
+    const torus = new THREE.Mesh(torusGeo, torusMat);
+    torus.position.set(0, 1.2, 0);
+    torus.castShadow = true;
+    sphereGroup.add(torus);
+
+    const boxGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+    const boxMat = new THREE.MeshStandardMaterial({
+      color: 0x88ffaa,
+      roughness: 0.4,
+      metalness: 0.5,
+    });
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.set(4, 0.4, 0);
+    box.castShadow = true;
+    box.receiveShadow = true;
+    sphereGroup.add(box);
+
+    scene.add(sphereGroup);
+
+    // --- Post-processing Dither Shader ---
+    const DitherShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uPaletteColors: { value: 8.0 },
+        uMode: { value: 0.0 }, // 0=none, 1=ordered, 2=random, 3=floyd-steinberg
+        uTime: { value: 0.0 },
+        uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+      },
+
+      vertexShader: /* glsl */`
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+
+      fragmentShader: /* glsl */`
+        uniform sampler2D tDiffuse;
+        uniform float uPaletteColors;
+        uniform float uMode;
+        uniform float uTime;
+        uniform vec2 uResolution;
+        varying vec2 vUv;
+
+        // --- Bayer 4x4 matrix ---
+        float bayer4x4(vec2 coord) {
+          float x = mod(coord.x, 4.0);
+          float y = mod(coord.y, 4.0);
+          int ix = int(x);
+          int iy = int(y);
+
+          // Bayer 4x4 threshold map (normalized 0-1)
+          float threshold = 0.0;
+          if (iy == 0) {
+            if (ix == 0) threshold = 0.0 / 16.0;
+            else if (ix == 1) threshold = 8.0 / 16.0;
+            else if (ix == 2) threshold = 2.0 / 16.0;
+            else threshold = 10.0 / 16.0;
+          } else if (iy == 1) {
+            if (ix == 0) threshold = 12.0 / 16.0;
+            else if (ix == 1) threshold = 4.0 / 16.0;
+            else if (ix == 2) threshold = 14.0 / 16.0;
+            else threshold = 6.0 / 16.0;
+          } else if (iy == 2) {
+            if (ix == 0) threshold = 3.0 / 16.0;
+            else if (ix == 1) threshold = 11.0 / 16.0;
+            else if (ix == 2) threshold = 1.0 / 16.0;
+            else threshold = 9.0 / 16.0;
+          } else {
+            if (ix == 0) threshold = 15.0 / 16.0;
+            else if (ix == 1) threshold = 7.0 / 16.0;
+            else if (ix == 2) threshold = 13.0 / 16.0;
+            else threshold = 5.0 / 16.0;
+          }
+          return threshold;
+        }
+
+        // --- Simple pseudo-random for noise ---
+        float random(vec2 st) {
+          return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+        }
+
+        // --- Quantize a channel to palette ---
+        float quantizeChannel(float v, float levels) {
+          return floor(v * levels + 0.5) / levels;
+        }
+
+        // --- Quantize color to limited palette ---
+        vec3 quantize(vec3 col, float levels) {
+          return vec3(
+            quantizeChannel(col.r, levels),
+            quantizeChannel(col.g, levels),
+            quantizeChannel(col.b, levels)
+          );
+        }
+
+        void main() {
+          vec4 texel = texture2D(tDiffuse, vUv);
+          vec3 color = texel.rgb;
+
+          if (uMode < 0.5) {
+            // None: just quantize without dithering
+            color = quantize(color, uPaletteColors);
+          } else if (uMode < 1.5) {
+            // Ordered: Bayer 4x4 threshold dithering
+            vec2 pixelCoord = vUv * uResolution;
+            float thresh = bayer4x4(pixelCoord);
+            // Spread threshold across a small range
+            float spread = 1.0 / uPaletteColors;
+            color = quantize(color, uPaletteColors) + (thresh - 0.5) * spread;
+            color = clamp(color, 0.0, 1.0);
+            color = quantize(color, uPaletteColors);
+          } else if (uMode < 2.5) {
+            // Random: white noise threshold
+            vec2 pixelCoord = vUv * uResolution;
+            float noise = random(pixelCoord + vec2(uTime * 0.001));
+            float spread = 1.0 / uPaletteColors;
+            color = quantize(color, uPaletteColors) + (noise - 0.5) * spread;
+            color = clamp(color, 0.0, 1.0);
+            color = quantize(color, uPaletteColors);
+          } else {
+            // Floyd-Steinberg error diffusion (approximate single-pass)
+            // We approximate by quantizing each channel with a noise offset based on error
+            vec2 pixelCoord = vUv * uResolution;
+            vec3 orig = color;
+            vec3 q = quantize(orig, uPaletteColors);
+            vec3 err = orig - q;
+
+            // Distribute error to neighbors based on position parity
+            // This is an approximation since we can't read neighboring pixels in a ShaderPass
+            float nx = mod(pixelCoord.x, 2.0);
+            float ny = mod(pixelCoord.y, 2.0);
+
+            // Spread 7/16 to right, 3/16 to bottom-left, 5/16 to bottom, 1/16 to bottom-right
+            // We approximate by adding a portion of error modulated by position
+            float rightW  = (1.0 - nx) * 7.0 / 16.0;
+            float blW     = ny * 3.0 / 16.0;
+            float bottomW = ny * 5.0 / 16.0;
+            float brW    = nx * 1.0 / 16.0;
+
+            float totalW = rightW + blW + bottomW + brW;
+            // Use a hash to simulate neighbor influence
+            float hash = random(pixelCoord * 0.13 + uTime * 0.01);
+            float factor = mix(-1.0, 1.0, hash);
+
+            vec3 diff = err * factor * 0.7;
+            color = clamp(q + diff, 0.0, 1.0);
+            color = quantize(color, uPaletteColors);
+          }
+
+          gl_FragColor = vec4(color, texel.a);
+        }
+      `,
+    };
+
+    // --- Effect Composer ---
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const ditherPass = new ShaderPass(DitherShader);
+    ditherPass.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+    composer.addPass(ditherPass);
+
+    // --- State ---
+    let currentMode = 'none';
+    const modeMap = { none: 0, ordered: 1, random: 2, 'floyd-steinberg': 3 };
+    let paletteColors = 8;
+
+    // --- UI ---
+    const modeButtons = document.querySelectorAll('.mode-btn');
+    const paletteSlider = document.getElementById('palette-slider');
+    const colorCountEl = document.getElementById('color-count');
+    const infoModeEl = document.getElementById('info-mode');
+    const infoPaletteEl = document.getElementById('info-palette');
+    const infoFpsEl = document.getElementById('info-fps');
+
+    modeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        modeButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentMode = btn.dataset.mode;
+        ditherPass.uniforms.uMode.value = modeMap[currentMode];
+        infoModeEl.textContent = btn.querySelector('.label').textContent;
+      });
+    });
+
+    paletteSlider.addEventListener('input', () => {
+      paletteColors = parseInt(paletteSlider.value);
+      colorCountEl.textContent = paletteColors;
+      ditherPass.uniforms.uPaletteColors.value = paletteColors;
+      infoPaletteEl.textContent = paletteColors;
+    });
+
+    // --- Animation ---
+    const clock = new THREE.Clock();
+    let frameCount = 0;
+    let lastFpsTime = 0;
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const elapsed = clock.getElapsedTime();
+      const delta = clock.getDelta();
+
+      // Animate spheres: gentle bobbing and slow orbit
+      spheres.forEach((sphere, i) => {
+        const phase = sphere.userData.phase;
+        const radius = sphere.userData.radius;
+        sphere.position.y = radius + Math.sin(elapsed * 0.8 + phase) * 0.12;
+        sphere.position.x = sphere.userData.baseX + Math.sin(elapsed * 0.3 + phase) * 0.3;
+        sphere.position.z = sphere.userData.baseZ + Math.cos(elapsed * 0.4 + phase * 0.7) * 0.3;
+      });
+
+      // Rotate torus knot
+      torus.rotation.x = elapsed * 0.4;
+      torus.rotation.y = elapsed * 0.6;
+      torus.position.y = 1.0 + Math.sin(elapsed * 0.5) * 0.2;
+
+      // Rotate box
+      box.rotation.y = elapsed * 0.35;
+      box.position.y = 0.4 + Math.abs(Math.sin(elapsed * 0.6)) * 0.15;
+
+      // Update shader time
+      ditherPass.uniforms.uTime.value = elapsed;
+
+      // Update controls
+      controls.update();
+
+      // Render
+      composer.render();
+
+      // FPS counter
+      frameCount++;
+      if (elapsed - lastFpsTime >= 1.0) {
+        infoFpsEl.textContent = frameCount;
+        frameCount = 0;
+        lastFpsTime = elapsed;
+      }
+    }
+
+    // --- Resize ---
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+      ditherPass.uniforms.uResolution.value.set(w, h);
+    });
+
+    // --- Attach to window for debugging ---
+    window.scene = scene;
+    window.camera = camera;
+    window.renderer = renderer;
+    window.controls = controls;
+    window.composer = composer;
+
+    // Start
+    animate();

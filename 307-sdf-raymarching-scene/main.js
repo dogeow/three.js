@@ -1,0 +1,433 @@
+import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+        // ─── Scene Setup ───────────────────────────────────────────────────────
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 4, 12);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 2, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 4;
+        controls.maxDistance = 40;
+        controls.update();
+
+        // ─── GUI State ─────────────────────────────────────────────────────────
+        const params = {
+            timeOfDay: 0.45,
+            fogDensity: 0.015,
+            autoRotate: false,
+            rotateSpeed: 0.3
+        };
+
+        // ─── Raymarching Vertex Shader ────────────────────────────────────────
+        const vertexShader = /* glsl */`
+            varying vec3 vWorldPos;
+
+            void main() {
+                vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+                gl_Position = vec4(position.xy, 0.0, 1.0);
+            }
+        `;
+
+        // ─── Raymarching Fragment Shader ──────────────────────────────────────
+        const fragmentShader = /* glsl */`
+            precision highp float;
+
+            uniform vec2  uResolution;
+            uniform float uTime;
+            uniform mat4  uCameraWorldMatrix;
+            uniform float uFov;
+            uniform float uTimeOfDay;
+            uniform float uFogDensity;
+
+            varying vec3 vWorldPos;
+
+            // ── Constants ──────────────────────────────────────────────────
+            #define MAX_STEPS  128
+            #define MAX_DIST   120.0
+            #define SURF_DIST  0.001
+            #define SHADOW_STEPS 32
+            #define PI         3.14159265359
+            #define TAU        6.28318530718
+
+            // ── SDF Primitives ─────────────────────────────────────────────
+            float sdSphere(vec3 p, float r) {
+                return length(p) - r;
+            }
+
+            float sdBox(vec3 p, vec3 b) {
+                vec3 q = abs(p) - b;
+                return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+            }
+
+            float sdCylinder(vec3 p, float r, float h) {
+                vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h);
+                return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+            }
+
+            float sdEllipsoid(vec3 p, vec3 r) {
+                float k0 = length(p / r);
+                float k1 = length(p / (r * r));
+                return k0 * (k0 - 1.0) / k1;
+            }
+
+            // ── Smooth Union ───────────────────────────────────────────────
+            float opSmoothUnion(float d1, float d2, float k) {
+                float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+                return mix(d2, d1, h) - k * h * (1.0 - h);
+            }
+
+            // ── Rotation Helpers ────────────────────────────────────────────
+            mat2 rot2(float a) {
+                float c = cos(a), s = sin(a);
+                return mat2(c, -s, s, c);
+            }
+
+            // ── Hash / Noise ────────────────────────────────────────────────
+            float hash(vec2 p) {
+                p = fract(p * vec2(123.34, 456.21));
+                p += dot(p, p + 45.32);
+                return fract(p.x * p.y);
+            }
+
+            float noise(vec2 p) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                f = f * f * (3.0 - 2.0 * f);
+                return mix(
+                    mix(hash(i),              hash(i + vec2(1.0, 0.0)), f.x),
+                    mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0, 1.0)), f.x),
+                    f.y
+                );
+            }
+
+            float fbm(vec2 p) {
+                float v = 0.0, a = 0.5;
+                for (int i = 0; i < 5; i++) {
+                    v += a * noise(p);
+                    p *= 2.1;
+                    a *= 0.5;
+                }
+                return v;
+            }
+
+            // ── Terrain Height ──────────────────────────────────────────────
+            float terrainHeight(vec2 x) {
+                return fbm(x * 0.4) * 1.2;
+            }
+
+            // ── Island SDF ──────────────────────────────────────────────────
+            float sdIsland(vec3 p, vec3 center, float radius, float height) {
+                vec3 q = p - center;
+                float base = sdEllipsoid(q, vec3(radius, height * 0.5, radius));
+
+                // Terrain on top
+                float terr = terrainHeight(q.xz * 1.5) * height * 0.4;
+                float topDome = sdEllipsoid(q - vec3(0.0, height * 0.45, 0.0), vec3(radius * 0.9, height * 0.6, radius * 0.9));
+                float withTerrain = topDome - terr;
+
+                return opSmoothUnion(base, withTerrain, 0.6);
+            }
+
+            // ── Tree SDF ────────────────────────────────────────────────────
+            float sdTree(vec3 p, vec3 pos) {
+                vec3 q = p - pos;
+
+                // Trunk
+                float trunk = sdCylinder(q, 0.08, 0.5);
+
+                // Canopy layers
+                float canopy1 = sdSphere(q - vec3(0.0, 0.9, 0.0), 0.55);
+                float canopy2 = sdSphere(q - vec3(0.0, 1.2, 0.0), 0.4);
+                float canopy3 = sdSphere(q - vec3(0.0, 1.45, 0.0), 0.25);
+                float canopy = opSmoothUnion(canopy1, canopy2, 0.4);
+                canopy = opSmoothUnion(canopy, canopy3, 0.3);
+
+                return min(trunk, canopy);
+            }
+
+            // ── Material IDs ────────────────────────────────────────────────
+            // 0 = sky, 1 = island, 2 = water, 3 = tree trunk, 4 = tree canopy
+            vec2 opU(vec2 a, vec2 b) {
+                return a.x < b.x ? a : b;
+            }
+
+            // ── Scene SDF ───────────────────────────────────────────────────
+            vec2 map(vec3 p) {
+                vec2 res = vec2(MAX_DIST, 0.0);
+
+                // Island 1 – left back
+                float i1 = sdIsland(p, vec3(-4.5, 1.5, -2.0), 2.0, 1.2);
+                res = opU(res, vec2(i1, 1.0));
+
+                // Island 2 – center (larger, with trees)
+                float i2 = sdIsland(p, vec3(0.0, 0.5, 0.0), 3.2, 2.0);
+                res = opU(res, vec2(i2, 1.0));
+
+                // Tree on center island
+                float t1 = sdTree(p, vec3(-0.8, 2.2, 0.5));
+                res = opU(res, vec2(t1, 3.0));
+                float t2 = sdTree(p, vec3(1.2, 2.0, -0.3));
+                res = opU(res, vec2(t2, 3.0));
+
+                // Island 3 – right front
+                float i3 = sdIsland(p, vec3(5.0, 2.5, 3.0), 1.8, 1.0);
+                res = opU(res, vec2(i3, 1.0));
+
+                // Water plane at y = -1.5
+                float water = p.y + 1.5;
+                res = opU(res, vec2(water, 2.0));
+
+                return res;
+            }
+
+            // ── Normal via Finite Differences ───────────────────────────────
+            vec3 getNormal(vec3 p) {
+                float eps = 0.001;
+                vec2 e = vec2(eps, 0.0);
+                return normalize(vec3(
+                    map(p + e.xyy).x - map(p - e.xyy).x,
+                    map(p + e.yxy).x - map(p - e.yxy).x,
+                    map(p + e.yyx).x - map(p - e.yyx).x
+                ));
+            }
+
+            // ── Ambient Occlusion ─────────────────────────────────────────────
+            float calcAO(vec3 p, vec3 n) {
+                float occ = 0.0, sca = 1.0;
+                for (int i = 0; i < 5; i++) {
+                    float h = 0.01 + 0.15 * float(i) / 4.0;
+                    float d = map(p + h * n).x;
+                    occ += (h - d) * sca;
+                    sca *= 0.85;
+                }
+                return clamp(1.0 - 2.5 * occ, 0.0, 1.0);
+            }
+
+            // ── Soft Shadow (Sphere Tracing) ────────────────────────────────
+            float softShadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
+                float res = 1.0;
+                float t = mint;
+                for (int i = 0; i < SHADOW_STEPS; i++) {
+                    float h = map(ro + rd * t).x;
+                    if (h < SURF_DIST) return 0.0;
+                    res = min(res, k * h / t);
+                    t += clamp(h, 0.02, 0.3);
+                    if (t > maxt) break;
+                }
+                return clamp(res, 0.0, 1.0);
+            }
+
+            // ── Sky Color ────────────────────────────────────────────────────
+            vec3 getSkyColor(vec3 rd, vec3 sunDir) {
+                float sunAmt = max(dot(rd, sunDir), 0.0);
+                float.y = rd.y;
+
+                // Horizon to zenith gradient
+                vec3 horizon  = mix(vec3(0.6, 0.75, 0.9), vec3(0.9, 0.6, 0.4), uTimeOfDay);
+                vec3 zenith   = mix(vec3(0.15, 0.3, 0.7), vec3(0.1, 0.2, 0.55), uTimeOfDay);
+                vec3 sky      = mix(horizon, zenith, smoothstep(0.0, 0.6, clamp(y, 0.0, 1.0)));
+
+                // Sun disc
+                float disc = smoothstep(0.995, 0.999, sunAmt);
+                vec3 sunColor = mix(vec3(1.0, 0.7, 0.3), vec3(1.0, 0.95, 0.8), uTimeOfDay);
+                sky += disc * sunColor * 4.0;
+
+                // Sun glow
+                sky += smoothstep(0.95, 0.995, sunAmt) * sunColor * 0.6;
+
+                return sky;
+            }
+
+            // ── Water Reflection ─────────────────────────────────────────────
+            vec3 waterColor(vec3 p, vec3 rd, vec3 n, vec3 sunDir, float ao, float sh) {
+                vec3 reflectDir = reflect(rd, n);
+                vec3 reflSky = getSkyColor(reflectDir, sunDir);
+                float fresnel = pow(1.0 - max(dot(-rd, n), 0.0), 3.0);
+                vec3 deep = vec3(0.02, 0.08, 0.15);
+                vec3 shallow = vec3(0.1, 0.3, 0.4);
+                vec3 col = mix(deep, shallow, fresnel);
+                col += reflSky * fresnel * 0.4;
+                col *= ao * (0.3 + sh * 0.7);
+                return col;
+            }
+
+            // ── PBR-like Shading ─────────────────────────────────────────────
+            vec3 shade(vec3 p, vec3 n, vec3 rd, float matId, vec3 sunDir, float ao, float sh) {
+                vec3 albedo;
+                float roughness, metallic;
+
+                if (matId < 1.5) {
+                    // Island – grass/rock blend
+                    float grass = smoothstep(0.3, 0.7, n.y);
+                    albedo = mix(vec3(0.35, 0.3, 0.22), vec3(0.25, 0.55, 0.18), grass);
+                    roughness = mix(0.8, 0.9, grass);
+                    metallic = 0.0;
+                } else if (matId < 2.5) {
+                    // Water
+                    return waterColor(p, rd, n, sunDir, ao, sh);
+                } else if (matId < 3.5) {
+                    // Tree trunk
+                    albedo = vec3(0.35, 0.22, 0.1);
+                    roughness = 0.9;
+                    metallic = 0.0;
+                } else {
+                    // Tree canopy
+                    albedo = vec3(0.15, 0.45, 0.1);
+                    roughness = 0.85;
+                    metallic = 0.0;
+                }
+
+                vec3 sunColor = mix(vec3(1.0, 0.7, 0.3), vec3(1.0, 0.95, 0.85), uTimeOfDay);
+                float diff = max(dot(n, sunDir), 0.0);
+                vec3 halfVec = normalize(sunDir - rd);
+                float spec = pow(max(dot(n, halfVec), 0.0), mix(8.0, 64.0, 1.0 - roughness));
+                float env = 0.3 * ao;
+
+                vec3 col = albedo * (diff * sh * sunColor + env)
+                         + spec * sh * sunColor * (1.0 - metallic) * 0.3;
+                return col;
+            }
+
+            // ── Raymarching ─────────────────────────────────────────────────
+            vec2 raymarch(vec3 ro, vec3 rd) {
+                float t = 0.0;
+                float matId = 0.0;
+                for (int i = 0; i < MAX_STEPS; i++) {
+                    vec3 p = ro + rd * t;
+                    vec2 res = map(p);
+                    if (res.x < SURF_DIST) {
+                        matId = res.y;
+                        break;
+                    }
+                    if (t > MAX_DIST) break;
+                    t += res.x * 0.9;
+                }
+                return vec2(t, matId);
+            }
+
+            // ── Fog ─────────────────────────────────────────────────────────
+            vec3 applyFog(vec3 col, float dist, float fogAmount) {
+                float f = 1.0 - exp(-dist * fogAmount);
+                return mix(col, vec3(0.7, 0.75, 0.85), f);
+            }
+
+            // ── Main ─────────────────────────────────────────────────────────
+            void main() {
+                vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y;
+
+                // Reconstruct camera ray
+                float fovScale = tan(uFov * 0.5);
+                vec3 ro = (uCameraWorldMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+                vec3 rd = normalize(mat3(uCameraWorldMatrix) * vec3(uv * fovScale, -1.0));
+
+                // Sun direction from time of day
+                float sunAngle = uTimeOfDay * PI;
+                vec3 sunDir = normalize(vec3(cos(sunAngle) * 0.6, sin(sunAngle) * 0.8 + 0.1, -0.3));
+
+                // Sky background
+                vec3 col = getSkyColor(rd, sunDir);
+
+                vec2 res = raymarch(ro, rd);
+                float t = res.x;
+                float matId = res.y;
+
+                if (t < MAX_DIST) {
+                    vec3 p = ro + rd * t;
+                    vec3 n = getNormal(p);
+                    float ao = calcAO(p, n);
+                    float sh = softShadow(p + n * 0.02, sunDir, 0.05, 20.0, 8.0);
+                    col = shade(p, n, rd, matId, sunDir, ao, sh);
+                    col = applyFog(col, t, uFogDensity);
+                }
+
+                // Vignette
+                vec2 q = gl_FragCoord.xy / uResolution;
+                col *= 0.5 + 0.5 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), 0.15);
+
+                // Gamma
+                col = pow(col, vec3(0.4545));
+
+                gl_FragColor = vec4(col, 1.0);
+            }
+        `;
+
+        // ─── Full-screen Quad ───────────────────────────────────────────────────
+        const geometry = new THREE.PlaneGeometry(2, 2);
+        const material = new THREE.ShaderMaterial({
+            vertexShader,
+            fragmentShader,
+            uniforms: {
+                uResolution:      { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                uTime:            { value: 0 },
+                uCameraWorldMatrix: { value: new THREE.Matrix4() },
+                uFov:             { value: THREE.MathUtils.degToRad(camera.fov) },
+                uTimeOfDay:       { value: params.timeOfDay },
+                uFogDensity:      { value: params.fogDensity }
+            },
+            depthWrite: false,
+            depthTest: false
+        });
+
+        const quad = new THREE.Mesh(geometry, material);
+        quad.frustumCulled = false;
+        scene.add(quad);
+
+        // ─── GUI ───────────────────────────────────────────────────────────────
+        const gui = new GUI();
+        gui.add(params, 'timeOfDay', 0, 1, 0.01).name('Time of Day').onChange(v => {
+            material.uniforms.uTimeOfDay.value = v;
+        });
+        gui.add(params, 'fogDensity', 0, 0.08, 0.001).name('Fog Density').onChange(v => {
+            material.uniforms.uFogDensity.value = v;
+        });
+        gui.add(params, 'autoRotate').name('Auto-Rotate');
+        gui.add(params, 'rotateSpeed', 0.05, 1.0, 0.05).name('Rotate Speed');
+
+        // ─── Resize ───────────────────────────────────────────────────────────
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            material.uniforms.uFov.value = THREE.MathUtils.degToRad(camera.fov);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            material.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+        });
+
+        // ─── Animation Loop ──────────────────────────────────────────────────
+        const clock = new THREE.Clock();
+        let autoAngle = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+
+            if (params.autoRotate) {
+                autoAngle += delta * params.rotateSpeed * 0.5;
+                const r = camera.position.length();
+                camera.position.x = Math.sin(autoAngle) * r;
+                camera.position.z = Math.cos(autoAngle) * r;
+                camera.position.y = 4 + Math.sin(autoAngle * 0.3) * 1.5;
+                camera.lookAt(controls.target);
+            } else {
+                controls.update();
+            }
+
+            material.uniforms.uTime.value = elapsed;
+            material.uniforms.uCameraWorldMatrix.value.copy(camera.matrixWorld);
+
+            renderer.render(scene, camera);
+        }
+
+        animate();

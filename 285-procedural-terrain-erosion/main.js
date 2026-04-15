@@ -1,0 +1,338 @@
+import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        // ─── Perlin Noise ───────────────────────────────────────────────────────
+        class PerlinNoise {
+            constructor(seed = 42) {
+                this.p = new Uint8Array(512);
+                const perm = new Uint8Array(256);
+                for (let i = 0; i < 256; i++) perm[i] = i;
+                // Seeded shuffle
+                let s = seed;
+                for (let i = 255; i > 0; i--) {
+                    s = (s * 16807) % 2147483647;
+                    const j = s % (i + 1);
+                    [perm[i], perm[j]] = [perm[j], perm[i]];
+                }
+                for (let i = 0; i < 512; i++) this.p[i] = perm[i & 255];
+            }
+            fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+            lerp(a, b, t) { return a + t * (b - a); }
+            grad(hash, x, y) {
+                const h = hash & 3;
+                const u = h < 2 ? x : y;
+                const v = h < 2 ? y : x;
+                return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+            }
+            noise(x, y) {
+                const X = Math.floor(x) & 255;
+                const Y = Math.floor(y) & 255;
+                x -= Math.floor(x);
+                y -= Math.floor(y);
+                const u = this.fade(x);
+                const v = this.fade(y);
+                const A = this.p[X] + Y, B = this.p[X + 1] + Y;
+                return this.lerp(
+                    this.lerp(this.grad(this.p[A], x, y), this.grad(this.p[B], x - 1, y), u),
+                    this.lerp(this.grad(this.p[A + 1], x, y - 1), this.grad(this.p[B + 1], x - 1, y - 1), u),
+                    v
+                );
+            }
+        }
+
+        const perlin = new PerlinNoise(137);
+
+        // FBM — multi-octave noise
+        function fbm(x, y, octaves, lacunarity = 2.0, gain = 0.5) {
+            let val = 0, amp = 1, freq = 1, maxAmp = 0;
+            for (let i = 0; i < octaves; i++) {
+                val += perlin.noise(x * freq, y * freq) * amp;
+                maxAmp += amp;
+                amp *= gain;
+                freq *= lacunarity;
+            }
+            return val / maxAmp;
+        }
+
+        // ─── Erosion ────────────────────────────────────────────────────────────
+        function hydraulicErosion(heights, cols, rows, iterations, seaLevel) {
+            const g = 4.0, l = 0.05, phi = 0.05, theta = 0.95;
+            const totalCells = cols * rows;
+            for (let i = 0; i < iterations; i++) {
+                if (i % 1000 === 0) {
+                    const pct = Math.round((i / iterations) * 100);
+                    updateProgress('Eroding...', pct, `${pct}%`);
+                }
+                // random water droplet
+                let cx = Math.random() * (cols - 1);
+                let cy = Math.random() * (rows - 1);
+                let dirX = 0, dirY = 0;
+                let speed = 1.0, water = 1.0, sediment = 0.0;
+
+                for (let step = 0; step < 50; step++) {
+                    const px = Math.floor(cx), py = Math.floor(cy);
+                    if (px < 1 || px >= cols - 1 || py < 1 || py >= rows - 1) break;
+
+                    const h = heights[py * cols + px];
+                    if (h < seaLevel) break;
+
+                    // gradient
+                    let gx = heights[py * cols + px + 1] - heights[py * cols + px - 1];
+                    let gy = heights[(py + 1) * cols + px] - heights[(py - 1) * cols + px];
+                    const gLen = Math.sqrt(gx * gx + gy * gy) + 1e-6;
+                    gx /= gLen; gy /= gLen;
+
+                    dirX = theta * dirX + (1 - theta) * gx;
+                    dirY = theta * dirY + (1 - theta) * gy;
+                    const dLen = Math.sqrt(dirX * dirX + dirY * dirY) + 1e-6;
+                    dirX /= dLen; dirY /= dLen;
+
+                    const newCX = cx - dirX, newCY = cy - dirY;
+                    if (newCX < 0 || newCX >= cols - 1 || newCY < 0 || newCY >= rows - 1) break;
+
+                    const hNew = heights[Math.floor(newCY) * cols + Math.floor(newCX)];
+                    const deltaH = Math.max(0, h - hNew);
+                    const capacity = Math.max(0, -deltaH * speed * water * l);
+                    const depositAmt = Math.min(deltaH * 0.3, sediment);
+
+                    heights[py * cols + px] += depositAmt;
+                    sediment -= depositAmt;
+                    water *= theta;
+                    speed = Math.sqrt(speed * speed + deltaH * g);
+                    sediment += deltaH * (1 - phi);
+
+                    const erosion = Math.min((capacity - sediment) * phi, deltaH * 0.5);
+                    if (erosion > 0) {
+                        heights[py * cols + px] -= erosion;
+                        sediment += erosion;
+                    }
+
+                    cx = newCX; cy = newCY;
+                }
+            }
+        }
+
+        // ─── Progress UI ───────────────────────────────────────────────────────
+        function showProgress() {
+            document.getElementById('progress').classList.remove('hidden');
+        }
+        function hideProgress() {
+            document.getElementById('progress').classList.add('hidden');
+        }
+        function updateProgress(text, pct, label) {
+            document.getElementById('progress-text').textContent = text;
+            document.getElementById('progress-bar').style.width = pct + '%';
+            document.getElementById('progress-label').textContent = label;
+        }
+
+        // ─── Scene Setup ────────────────────────────────────────────────────────
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
+        document.body.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+        scene.fog = new THREE.FogExp2(0x87ceeb, 0.0025);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 80, 160);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2.05;
+        controls.minDistance = 20;
+        controls.maxDistance = 500;
+
+        // ─── Lights ─────────────────────────────────────────────────────────────
+        const ambientLight = new THREE.AmbientLight(0xffeedd, 0.4);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff5e0, 1.4);
+        dirLight.position.set(120, 200, 80);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.set(2048, 2048);
+        dirLight.shadow.camera.near = 10;
+        dirLight.shadow.camera.far = 600;
+        dirLight.shadow.camera.left = -200;
+        dirLight.shadow.camera.right = 200;
+        dirLight.shadow.camera.top = 200;
+        dirLight.shadow.camera.bottom = -200;
+        dirLight.shadow.bias = -0.001;
+        scene.add(dirLight);
+
+        const hemiLight = new THREE.HemisphereLight(0xb1e1ff, 0x3d5c3d, 0.5);
+        scene.add(hemiLight);
+
+        // ─── Height Color ───────────────────────────────────────────────────────
+        const waterColor  = new THREE.Color(0x0a3d62);
+        const deepColor   = new THREE.Color(0x1e5f74);
+        const sandColor   = new THREE.Color(0xc8a96e);
+        const grassColor  = new THREE.Color(0x3a7d44);
+        const darkGrass   = new THREE.Color(0x2d5e30);
+        const rockColor   = new THREE.Color(0x7a6b5a);
+        const snowColor   = new THREE.Color(0xf5f5f5);
+
+        function heightColor(t, seaLevel) {
+            if (t < seaLevel * 0.6) return deepColor.clone();
+            if (t < seaLevel)        return waterColor.clone();
+            if (t < seaLevel + 0.04) return sandColor.clone();
+            if (t < seaLevel + 0.15) return grassColor.clone();
+            if (t < seaLevel + 0.35) return darkGrass.clone();
+            if (t < seaLevel + 0.65) return rockColor.clone();
+            return snowColor.clone();
+        }
+
+        // ─── Terrain Mesh ───────────────────────────────────────────────────────
+        const TERRAIN_SIZE = 200;
+        const SEGS = 256;
+
+        let terrainMesh = null;
+        let waterMesh = null;
+        let heights = null;
+
+        function buildColorsFromHeights(hArr, cols, seaLevel) {
+            const colors = [];
+            for (let i = 0; i < hArr.length; i++) {
+                const h = hArr[i];
+                const c = heightColor(h, seaLevel);
+                colors.push(c.r, c.g, c.b);
+            }
+            return new Float32Array(colors);
+        }
+
+        function createTerrainGeometry(heights, segs, size) {
+            const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+            const pos = geo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                pos.setY(i, heights[i]);
+            }
+            pos.needsUpdate = true;
+            geo.computeVertexNormals();
+            return geo;
+        }
+
+        function buildTerrain(params) {
+            const { noiseScale, octaves, seaLevel } = params;
+
+            // Generate heights with FBM
+            const cols = SEGS + 1, rows = SEGS + 1;
+            heights = new Float32Array(cols * rows);
+            const inv = 1 / noiseScale;
+
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    const nx = x * inv, ny = y * inv;
+                    let h = fbm(nx, ny, octaves);
+                    h = (h + 1) * 0.5; // normalize 0–1
+                    heights[y * cols + x] = h;
+                }
+            }
+
+            // Apply hydraulic erosion
+            updateProgress('Eroding...', 0, '0%');
+            hydraulicErosion(heights, cols, rows, params.erosionIterations, seaLevel);
+
+            // Build mesh
+            if (terrainMesh) {
+                scene.remove(terrainMesh);
+                terrainMesh.geometry.dispose();
+            }
+
+            const geo = createTerrainGeometry(heights, SEGS, TERRAIN_SIZE);
+            geo.setAttribute('color', new THREE.BufferAttribute(buildColorsFromHeights(heights, cols, seaLevel), 3));
+
+            const mat = new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                roughness: 0.85,
+                metalness: 0.0,
+                flatShading: false,
+            });
+
+            terrainMesh = new THREE.Mesh(geo, mat);
+            terrainMesh.receiveShadow = true;
+            terrainMesh.castShadow = true;
+            scene.add(terrainMesh);
+
+            // Water plane
+            if (waterMesh) scene.remove(waterMesh);
+            const waterGeo = new THREE.PlaneGeometry(TERRAIN_SIZE * 2, TERRAIN_SIZE * 2);
+            const waterMat = new THREE.MeshStandardMaterial({
+                color: 0x1e6fa3,
+                transparent: true,
+                opacity: 0.72,
+                roughness: 0.1,
+                metalness: 0.1,
+            });
+            waterMesh = new THREE.Mesh(waterGeo, waterMat);
+            waterMesh.rotation.x = -Math.PI / 2;
+            waterMesh.position.y = seaLevel - 0.005;
+            waterMesh.receiveShadow = true;
+            scene.add(waterMesh);
+        }
+
+        // ─── GUI ─────────────────────────────────────────────────────────────────
+        const params = {
+            noiseScale: 4.0,
+            octaves: 6,
+            erosionIterations: 2000,
+            seaLevel: 0.42,
+            terrainSize: 200,
+            regenerate: () => startBuild(),
+        };
+
+        const gui = new GUI({ title: 'Terrain Controls' });
+        gui.add(params, 'noiseScale', 1, 12, 0.5).name('Noise Scale');
+        gui.add(params, 'octaves', 1, 8, 1).name('Octaves');
+        gui.add(params, 'seaLevel', 0.2, 0.7, 0.01).name('Sea Level');
+        gui.add(params, 'terrainSize', 50, 400, 10).name('Terrain Size');
+        gui.add(params, 'erosionIterations', 100, 5000, 100).name('Erosion Iter').onFinishChange(() => startBuild());
+        gui.add(params, 'regenerate').name('🔄 Regenerate');
+
+        // ─── Build & Animate ────────────────────────────────────────────────────
+        let building = false;
+
+        function startBuild() {
+            if (building) return;
+            building = true;
+            showProgress();
+
+            // Use setTimeout to allow the progress overlay to render first
+            setTimeout(() => {
+                buildTerrain(params);
+                hideProgress();
+                building = false;
+                // Update camera target
+                controls.target.set(0, params.seaLevel * TERRAIN_SIZE * 0.15, 0);
+                controls.update();
+            }, 50);
+        }
+
+        startBuild();
+
+        // ─── Animation Loop ─────────────────────────────────────────────────────
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const t = clock.getElapsedTime();
+            if (waterMesh) {
+                waterMesh.position.y = params.seaLevel - 0.005 + Math.sin(t * 0.6) * 0.03;
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // ─── Resize ─────────────────────────────────────────────────────────────
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });

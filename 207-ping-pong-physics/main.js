@@ -1,0 +1,534 @@
+import * as THREE from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Game State ───────────────────────────────────────────────────────────────
+const state = {
+  playerScore: 0,
+  aiScore: 0,
+  playing: false,
+  gameStarted: false,
+};
+
+// ─── Audio ───────────────────────────────────────────────────────────────────
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound(freq, duration, type = 'sine', gain = 0.3) {
+  const osc = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+  osc.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gainNode.gain.setValueAtTime(gain, audioCtx.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function soundHit() { playSound(600, 0.08, 'sine', 0.25); }
+function soundPaddle() { playSound(800, 0.12, 'triangle', 0.35); }
+function soundScore() { playSound(300, 0.4, 'square', 0.15); playSound(450, 0.4, 'square', 0.1); }
+function soundWall() { playSound(200, 0.06, 'sine', 0.15); }
+function soundNet() { playSound(150, 0.15, 'sine', 0.2); }
+
+// ─── Scene Setup ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 15, 35);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 9, 8);
+camera.lookAt(0, 0, 0);
+
+// Lights
+const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+scene.add(ambientLight);
+
+const mainLight = new THREE.DirectionalLight(0xffffff, 1.5);
+mainLight.position.set(5, 12, 6);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 30;
+mainLight.shadow.camera.left = -8;
+mainLight.shadow.camera.right = 8;
+mainLight.shadow.camera.top = 8;
+mainLight.shadow.camera.bottom = -8;
+mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
+
+const fillLight = new THREE.DirectionalLight(0x4488ff, 0.4);
+fillLight.position.set(-4, 6, -3);
+scene.add(fillLight);
+
+const rimLight = new THREE.PointLight(0xff6644, 0.5, 20);
+rimLight.position.set(0, 5, -8);
+scene.add(rimLight);
+
+// ─── Table ────────────────────────────────────────────────────────────────────
+const TABLE_W = 9.12, TABLE_H = 5.06;
+const TABLE_COLOR = 0x1a4fc4;
+const LINE_COLOR = 0xffffff;
+
+// Ground plane (floor)
+const floorGeo = new THREE.PlaneGeometry(40, 40);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.9 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.01;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Table surface
+const tableSurfaceGeo = new THREE.BoxGeometry(TABLE_W, 0.05, TABLE_H);
+const tableSurfaceMat = new THREE.MeshStandardMaterial({ color: TABLE_COLOR, roughness: 0.5, metalness: 0.1 });
+const tableSurface = new THREE.Mesh(tableSurfaceGeo, tableSurfaceMat);
+tableSurface.position.y = 0.025;
+tableSurface.receiveShadow = true;
+tableSurface.castShadow = true;
+scene.add(tableSurface);
+
+// Table border (raised edges)
+function makeBorder(w, h, d, x, y, z) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x0a2a6a, roughness: 0.4 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+makeBorder(TABLE_W + 0.3, 0.06, 0.04, 0, 0.03, TABLE_H / 2 + 0.02);  // near
+makeBorder(TABLE_W + 0.3, 0.06, 0.04, 0, 0.03, -TABLE_H / 2 - 0.02); // far
+makeBorder(0.04, 0.06, TABLE_H, TABLE_W / 2 + 0.02, 0.03, 0);        // right
+makeBorder(0.04, 0.06, TABLE_H, -TABLE_W / 2 - 0.02, 0.03, 0);       // left
+
+// Table legs
+function makeLeg(x, z) {
+  const geo = new THREE.CylinderGeometry(0.06, 0.06, 0.76, 8);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.5 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, -0.38, z);
+  mesh.castShadow = true;
+  scene.add(mesh);
+}
+makeLeg(-TABLE_W / 2 + 0.2, TABLE_H / 2 - 0.2);
+makeLeg(TABLE_W / 2 - 0.2, TABLE_H / 2 - 0.2);
+makeLeg(-TABLE_W / 2 + 0.2, -TABLE_H / 2 + 0.2);
+makeLeg(TABLE_W / 2 - 0.2, -TABLE_H / 2 + 0.2);
+
+// Table lines
+function makeLine(w, d, x, z) {
+  const geo = new THREE.PlaneGeometry(w, d);
+  const mat = new THREE.MeshBasicMaterial({ color: LINE_COLOR, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, 0.028, z);
+  scene.add(mesh);
+}
+makeLine(TABLE_W, 0.02, 0, 0);  // center line
+makeLine(0.02, TABLE_H, 0, 0);  // center line vertical
+// Side lines
+makeLine(TABLE_W, 0.02, 0, TABLE_H / 2 - 0.04);
+makeLine(TABLE_W, 0.02, 0, -TABLE_H / 2 + 0.04);
+// Service lines
+makeLine(0.02, TABLE_H / 2 - 0.04, -TABLE_W / 4, TABLE_H / 4 - 0.02);
+makeLine(0.02, TABLE_H / 2 - 0.04, TABLE_W / 4, TABLE_H / 4 - 0.02);
+
+// Net
+function makeNet() {
+  const group = new THREE.Group();
+
+  // Posts
+  const postGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.18, 8);
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.3 });
+  const leftPost = new THREE.Mesh(postGeo, postMat);
+  leftPost.position.set(-0.02, 0.12, 0);
+  const rightPost = new THREE.Mesh(postGeo, postMat);
+  rightPost.position.set(0.02, 0.12, 0);
+  group.add(leftPost, rightPost);
+
+  // Net mesh (plane with grid)
+  const netGeo = new THREE.PlaneGeometry(0.04, TABLE_H - 0.04);
+  const netMat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, side: THREE.DoubleSide, wireframe: true, transparent: true, opacity: 0.6 });
+  const netMesh = new THREE.Mesh(netGeo, netMat);
+  netMesh.position.set(0, 0.11, 0);
+  group.add(netMesh);
+
+  // Solid net face
+  const netFaceGeo = new THREE.PlaneGeometry(0.015, TABLE_H - 0.04);
+  const netFaceMat = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
+  const netFace = new THREE.Mesh(netFaceGeo, netFaceMat);
+  netFace.position.set(0, 0.11, 0);
+  group.add(netFace);
+
+  // Top bar
+  const barGeo = new THREE.BoxGeometry(0.04, 0.01, TABLE_H - 0.04);
+  const barMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const bar = new THREE.Mesh(barGeo, barMat);
+  bar.position.set(0, 0.185, 0);
+  group.add(bar);
+
+  scene.add(group);
+  return group;
+}
+makeNet();
+
+// ─── Paddles ──────────────────────────────────────────────────────────────────
+const PADDLE_RADIUS = 0.22;
+const PADDLE_THICKNESS = 0.04;
+
+function makePaddle(isAI = false) {
+  const group = new THREE.Group();
+  // Paddle face
+  const faceGeo = new THREE.CylinderGeometry(PADDLE_RADIUS, PADDLE_RADIUS, PADDLE_THICKNESS, 32);
+  const faceMat = new THREE.MeshStandardMaterial({
+    color: isAI ? 0xff3333 : 0x33ff88,
+    roughness: 0.3, metalness: 0.2
+  });
+  const face = new THREE.Mesh(faceGeo, faceMat);
+  face.rotation.x = Math.PI / 2;
+  face.castShadow = true;
+  group.add(face);
+
+  // Handle
+  const handleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.3, 8);
+  const handleMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.6 });
+  const handle = new THREE.Mesh(handleGeo, handleMat);
+  handle.rotation.x = Math.PI / 2;
+  handle.position.z = isAI ? -0.16 : 0.16;
+  handle.castShadow = true;
+  group.add(handle);
+
+  // Rubber surface detail
+  const rubberGeo = new THREE.CylinderGeometry(PADDLE_RADIUS - 0.02, PADDLE_RADIUS - 0.02, 0.005, 32);
+  const rubberMat = new THREE.MeshStandardMaterial({ color: isAI ? 0xcc0000 : 0x00aa44, roughness: 0.5 });
+  const rubber = new THREE.Mesh(rubberGeo, rubberMat);
+  rubber.rotation.x = Math.PI / 2;
+  rubber.position.z = isAI ? -PADDLE_THICKNESS / 2 - 0.001 : PADDLE_THICKNESS / 2 + 0.001;
+  group.add(rubber);
+
+  group.userData = { isAI };
+  scene.add(group);
+  return group;
+}
+
+const playerPaddle = makePaddle(false);
+playerPaddle.position.set(0, 0.06, TABLE_H / 2 - 0.35);
+
+const aiPaddle = makePaddle(true);
+aiPaddle.position.set(0, 0.06, -TABLE_H / 2 + 0.35);
+
+// ─── Ball ────────────────────────────────────────────────────────────────────
+const ballGeo = new THREE.SphereGeometry(0.04, 16, 16);
+const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0.3 });
+const ball = new THREE.Mesh(ballGeo, ballMat);
+ball.castShadow = true;
+scene.add(ball);
+
+// Ball physics state
+const ballState = {
+  pos: new THREE.Vector3(0, 0.1, 1.5),
+  vel: new THREE.Vector3(0, 0, 0),
+  spin: new THREE.Vector3(0, 0, 0),
+};
+
+// ─── Particles ───────────────────────────────────────────────────────────────
+const MAX_PARTICLES = 60;
+const particles = [];
+const particleGroup = new THREE.Group();
+scene.add(particleGroup);
+
+function spawnParticles(position, color) {
+  for (let i = 0; i < 8; i++) {
+    const size = 0.03 + Math.random() * 0.05;
+    const geo = new THREE.SphereGeometry(size, 4, 4);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position);
+    const vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 4,
+      Math.random() * 3 + 1,
+      (Math.random() - 0.5) * 4
+    );
+    particleGroup.add(mesh);
+    particles.push({ mesh, vel, life: 1.0 });
+    if (particles.length > MAX_PARTICLES) {
+      const old = particles.shift();
+      particleGroup.remove(old.mesh);
+    }
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt * 2.5;
+    p.vel.y -= 9.8 * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.mesh.material.opacity = Math.max(0, p.life);
+    if (p.life <= 0) {
+      particleGroup.remove(p.mesh);
+      particles.splice(i, 1);
+    }
+  }
+}
+
+// ─── GUI ──────────────────────────────────────────────────────────────────────
+const guiParams = {
+  aiDifficulty: 1.0,   // 0 = slow, 1 = medium, 2 = fast
+  spinAmount: 0.5,
+  gravity: 2.0,
+};
+
+const gui = new GUI();
+gui.add(guiParams, 'aiDifficulty', 0, 2, 1).name('AI 难度').onChange(v => {
+  guiParams.aiDifficulty = v;
+});
+gui.add(guiParams, 'spinAmount', 0, 1, 0.01).name('旋转强度');
+gui.add(guiParams, 'gravity', 0, 5, 0.1).name('重力');
+
+// ─── Mouse Controls ───────────────────────────────────────────────────────────
+const mouse = new THREE.Vector2();
+let paddleTargetX = 0, paddleTargetZ = TABLE_H / 2 - 0.35;
+
+window.addEventListener('mousemove', (e) => {
+  // Map mouse to table coordinates
+  const nx = (e.clientX / window.innerWidth) * 2 - 1;
+  const nz = (e.clientY / window.innerHeight) * 2 - 1;
+
+  paddleTargetX = nx * (TABLE_W / 2 - PADDLE_RADIUS - 0.1);
+  paddleTargetZ = TABLE_H / 2 - 0.35 + nz * 0.8;
+  paddleTargetZ = Math.max(TABLE_H / 2 - PADDLE_RADIUS - 0.1, Math.min(TABLE_H / 2 + 0.3, paddleTargetZ));
+});
+
+// ─── Game Logic ───────────────────────────────────────────────────────────────
+const AI_SPEEDS = [1.8, 3.0, 5.5];
+const INITIAL_SPEED = 5.5;
+const SPEED_INCREMENT = 0.25;
+const MAX_SPEED = 14;
+
+function serveBall() {
+  ballState.pos.set(
+    (Math.random() - 0.5) * 1.5,
+    0.1,
+    TABLE_H / 2 - 0.5
+  );
+  const angle = (Math.random() - 0.5) * Math.PI / 4;
+  const speed = INITIAL_SPEED;
+  ballState.vel.set(Math.sin(angle) * speed * 0.5, 1.5, -Math.cos(angle) * speed);
+  ballState.spin.set(0, 0, 0);
+  state.playing = true;
+}
+
+function resetRound() {
+  ballState.pos.set(0, 0.1, 0);
+  ballState.vel.set(0, 0, 0);
+  ballState.spin.set(0, 0, 0);
+  state.playing = false;
+}
+
+function scorePoint(player) {
+  if (player === 'player') {
+    state.playerScore++;
+    document.getElementById('player-score').textContent = state.playerScore;
+    spawnParticles(ballState.pos.clone(), 0x33ff88);
+    soundScore();
+  } else {
+    state.aiScore++;
+    document.getElementById('ai-score').textContent = state.aiScore;
+    spawnParticles(ballState.pos.clone(), 0xff3333);
+    soundScore();
+  }
+  resetRound();
+  setTimeout(() => {
+    const msg = document.getElementById('start-msg');
+    msg.style.opacity = '1';
+    msg.textContent = '点击发球';
+    state.gameStarted = false;
+  }, 800);
+}
+
+function checkPaddleHit(paddle) {
+  const dx = ballState.pos.x - paddle.position.x;
+  const dz = ballState.pos.z - paddle.position.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist < PADDLE_RADIUS + 0.04 && Math.abs(ballState.pos.y - 0.1) < 0.12) {
+    return { dx, dz, dist };
+  }
+  return null;
+}
+
+function updateBall(dt) {
+  if (!state.playing) return;
+
+  // Apply spin effect on velocity
+  const spinEffect = ballState.spin.clone().multiplyScalar(guiParams.spinAmount * dt * 2);
+  ballState.vel.x += spinEffect.x;
+  ballState.vel.z += spinEffect.z;
+
+  // Apply gravity
+  ballState.vel.y -= guiParams.gravity * dt;
+
+  // Move ball
+  ballState.pos.addScaledVector(ballState.vel, dt);
+
+  // Bounce off floor
+  if (ballState.pos.y < 0.04) {
+    ballState.pos.y = 0.04;
+    ballState.vel.y = Math.abs(ballState.vel.y) * 0.75;
+    soundWall();
+  }
+
+  // Bounce off ceiling (for fun arcs)
+  if (ballState.pos.y > 3) {
+    ballState.vel.y = -Math.abs(ballState.vel.y) * 0.5;
+  }
+
+  // Side walls
+  const xLimit = TABLE_W / 2 - 0.06;
+  if (ballState.pos.x > xLimit) {
+    ballState.pos.x = xLimit;
+    ballState.vel.x = -Math.abs(ballState.vel.x) * 0.85;
+    soundWall();
+  }
+  if (ballState.pos.x < -xLimit) {
+    ballState.pos.x = -xLimit;
+    ballState.vel.x = Math.abs(ballState.vel.x) * 0.85;
+    soundWall();
+  }
+
+  // Near wall (player side)
+  const nearZ = TABLE_H / 2 - 0.04;
+  if (ballState.pos.z > nearZ) {
+    const hit = checkPaddleHit(playerPaddle);
+    if (hit) {
+      // Player hit
+      const speed = ballState.vel.length() + SPEED_INCREMENT;
+      const clampedSpeed = Math.min(speed, MAX_SPEED);
+      const nx = hit.dx / hit.dist;
+      const nz = -1;
+      const ny = 0.5 + Math.random() * 0.8;
+      ballState.vel.set(nx * clampedSpeed * 0.7, ny, nz * clampedSpeed);
+      ballState.spin.set((Math.random() - 0.5) * 3, 0, (Math.random() - 0.5) * 2);
+      ballState.pos.z = nearZ - 0.05;
+      soundPaddle();
+      spawnParticles(ballState.pos.clone(), 0x33ff88);
+    } else {
+      // Player missed
+      scorePoint('ai');
+    }
+    return;
+  }
+
+  // Far wall (AI side)
+  const farZ = -TABLE_H / 2 + 0.04;
+  if (ballState.pos.z < farZ) {
+    const hit = checkPaddleHit(aiPaddle);
+    if (hit) {
+      const speed = ballState.vel.length() + SPEED_INCREMENT;
+      const clampedSpeed = Math.min(speed, MAX_SPEED);
+      const nx = hit.dx / hit.dist;
+      const nz = 1;
+      const ny = 0.5 + Math.random() * 0.8;
+      ballState.vel.set(nx * clampedSpeed * 0.7, ny, nz * clampedSpeed);
+      ballState.spin.set((Math.random() - 0.5) * 3, 0, (Math.random() - 0.5) * 2);
+      ballState.pos.z = farZ + 0.05;
+      soundPaddle();
+      spawnParticles(ballState.pos.clone(), 0xff3333);
+    } else {
+      // AI missed
+      scorePoint('player');
+    }
+    return;
+  }
+
+  // Ball hit net
+  if (Math.abs(ballState.pos.z) < 0.08 && ballState.pos.y < 0.2 && Math.abs(ballState.vel.z) > 0.1) {
+    ballState.vel.z *= -0.4;
+    ballState.vel.y = Math.abs(ballState.vel.y) * 0.5 + 0.5;
+    ballState.pos.z = ballState.vel.z > 0 ? 0.09 : -0.09;
+    soundNet();
+  }
+
+  // Apply drag
+  ballState.vel.multiplyScalar(0.998);
+
+  // Sync mesh
+  ball.position.copy(ballState.pos);
+  ball.rotation.x += ballState.vel.z * dt * 2;
+  ball.rotation.y += ballState.vel.x * dt * 2;
+}
+
+function updateAI(dt) {
+  const speed = AI_SPEEDS[Math.round(guiParams.aiDifficulty)];
+  const targetX = ballState.pos.x + ballState.vel.x * 0.15;
+  const diffX = targetX - aiPaddle.position.x;
+
+  const moveAmount = Math.sign(diffX) * Math.min(Math.abs(diffX), speed * dt);
+  aiPaddle.position.x += moveAmount;
+  aiPaddle.position.x = Math.max(-TABLE_W / 2 + PADDLE_RADIUS + 0.05, Math.min(TABLE_W / 2 - PADDLE_RADIUS - 0.05, aiPaddle.position.x));
+
+  // AI paddle z follows ball slightly when ball is on AI side
+  if (ballState.vel.z < 0) {
+    const targetZ = -TABLE_H / 2 + 0.35 + Math.min(0.3, Math.abs(ballState.pos.z) * 0.1);
+    aiPaddle.position.z += (targetZ - aiPaddle.position.z) * dt * 3;
+  }
+
+  // Rotate paddle toward ball
+  aiPaddle.rotation.z = -diffX * 0.5;
+}
+
+function updatePlayerPaddle(dt) {
+  playerPaddle.position.x += (paddleTargetX - playerPaddle.position.x) * dt * 18;
+  playerPaddle.position.z += (paddleTargetZ - playerPaddle.position.z) * dt * 18;
+}
+
+// ─── Click to Serve ───────────────────────────────────────────────────────────
+window.addEventListener('click', () => {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (!state.gameStarted) {
+    state.gameStarted = true;
+    document.getElementById('start-msg').style.opacity = '0';
+    serveBall();
+  }
+});
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  updatePlayerPaddle(dt);
+  updateAI(dt);
+  updateBall(dt);
+  updateParticles(dt);
+
+  renderer.render(scene, camera);
+}
+
+// ─── Expose for Debugging ─────────────────────────────────────────────────────
+window.game = {
+  state, ballState, guiParams, ball, playerPaddle, aiPaddle, scene,
+  serveBall, resetRound, scorePoint
+};
+
+animate();

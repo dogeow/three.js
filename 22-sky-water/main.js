@@ -1,48 +1,3 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<title>20 · Sky + Water 海天</title>
-<style>
-  body { margin: 0; overflow: hidden; background: #000; }
-  canvas { display: block; }
-  .tip {
-    position: fixed; top: 12px; left: 12px;
-    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
-    background: rgba(0,0,0,.5); padding: 8px 12px; border-radius: 6px;
-    max-width: 340px;
-  }
-  .ctrl {
-    position: fixed; top: 12px; right: 12px;
-    color: #fff; font: 13px monospace;
-    background: rgba(0,0,0,.5); padding: 10px; border-radius: 6px;
-  }
-  .ctrl label { display: block; margin: 4px 0; }
-  input[type=range] { width: 160px; }
-</style>
-</head>
-<body>
-<div class="tip">
-  <b>技术点：Sky + Water addon</b><br>
-  · Sky —— 基于 Rayleigh/Mie 散射的真实天空<br>
-  · Water —— 带折射、反射、动态波纹的海面<br>
-  · 拖动滑块看清晨 → 正午 → 黄昏 → 日落
-</div>
-<div class="ctrl">
-  <label>太阳高度 <input id="elevation" type="range" min="-5" max="90" step="0.5" value="2"></label>
-  <label>方位角 <input id="azimuth" type="range" min="0" max="360" step="1" value="180"></label>
-</div>
-
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-  }
-}
-</script>
-
-<script type="module">
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Sky } from 'three/addons/objects/Sky.js'
@@ -86,7 +41,7 @@ const water = new Water(waterGeom, {
   textureWidth: 512,
   textureHeight: 512,
   waterNormals: new THREE.TextureLoader().load(
-    '../textures/waternormals.jpg',
+    'https://unpkg.com/three@0.160.0/examples/textures/waternormals.jpg',
     (tex) => { tex.wrapS = tex.wrapT = THREE.RepeatWrapping }
   ),
   sunDirection: new THREE.Vector3(),
@@ -151,6 +106,3 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix()
   renderer.setSize(innerWidth, innerHeight)
 })
-</script>
-</body>
-</html>

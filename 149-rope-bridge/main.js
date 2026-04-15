@@ -1,0 +1,538 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// --- Scene Setup ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 8, 22);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 3, 0);
+controls.minDistance = 5;
+controls.maxDistance = 50;
+controls.maxPolarAngle = Math.PI / 2 - 0.05;
+
+// --- Lighting ---
+const ambientLight = new THREE.AmbientLight(0x8899bb, 0.6);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffeedd, 2.0);
+dirLight.position.set(10, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 60;
+dirLight.shadow.camera.left = -20;
+dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 20;
+dirLight.shadow.camera.bottom = -20;
+dirLight.shadow.bias = -0.001;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x4466aa, 0.5);
+fillLight.position.set(-8, 5, -10);
+scene.add(fillLight);
+
+// --- Bridge Geometry Constants ---
+const BRIDGE_LENGTH = 14;       // Z direction
+const BRIDGE_WIDTH = 2.0;       // X direction
+const PILLAR_HEIGHT = 8;
+const PILLAR_SIZE = 1.2;
+const ROPE_RADIUS = 0.04;
+const PLANK_WIDTH = 2.4;
+const PLANK_HEIGHT = 0.12;
+const PLANK_DEPTH = 0.3;
+const NUM_PLANKS = 20;
+const SEGMENTS_PER_ROPE = 24;
+const POINT_MASSES = 20;
+
+// Plank attachment points (every few segments)
+const PLANK_ATTACH_INDICES = [];
+for (let i = 0; i < NUM_PLANKS; i++) {
+  PLANK_ATTACH_INDICES.push(Math.round((i / (NUM_PLANKS - 1)) * (POINT_MASSES - 1)));
+}
+
+// --- Materials ---
+const stoneMaterial = new THREE.MeshStandardMaterial({
+  color: 0x7a7060,
+  roughness: 0.9,
+  metalness: 0.05,
+});
+const stoneDarkMaterial = new THREE.MeshStandardMaterial({
+  color: 0x5a5048,
+  roughness: 0.95,
+  metalness: 0.02,
+});
+const ropeMaterial = new THREE.MeshStandardMaterial({
+  color: 0x8b6914,
+  roughness: 0.85,
+  metalness: 0.0,
+});
+const plankMaterial = new THREE.MeshStandardMaterial({
+  color: 0x8b5a2b,
+  roughness: 0.8,
+  metalness: 0.0,
+});
+const groundMaterial = new THREE.MeshStandardMaterial({
+  color: 0x3a3a28,
+  roughness: 1.0,
+  metalness: 0.0,
+});
+
+// --- Ground ---
+const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), groundMaterial);
+groundMesh.rotation.x = -Math.PI / 2;
+groundMesh.position.y = -0.01;
+groundMesh.receiveShadow = true;
+scene.add(groundMesh);
+
+// --- Pillars ---
+function createPillar(x) {
+  const group = new THREE.Group();
+
+  // Main body
+  const body = new THREE.Mesh(new THREE.BoxGeometry(PILLAR_SIZE, PILLAR_HEIGHT, PILLAR_SIZE), stoneMaterial);
+  body.position.y = PILLAR_HEIGHT / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  // Base cap
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(PILLAR_SIZE * 1.3, 0.3, PILLAR_SIZE * 1.3), stoneDarkMaterial);
+  cap.position.y = PILLAR_HEIGHT + 0.15;
+  cap.castShadow = true;
+  group.add(cap);
+
+  // Top cap
+  const top = new THREE.Mesh(new THREE.BoxGeometry(PILLAR_SIZE * 1.1, 0.25, PILLAR_SIZE * 1.1), stoneDarkMaterial);
+  top.position.y = PILLAR_HEIGHT + 0.3 + 0.125;
+  top.castShadow = true;
+  group.add(top);
+
+  // Decorative rings
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(new THREE.BoxGeometry(PILLAR_SIZE * 1.05, 0.1, PILLAR_SIZE * 1.05), stoneDarkMaterial);
+    ring.position.y = 1 + i * 2.5;
+    ring.castShadow = true;
+    group.add(ring);
+  }
+
+  group.position.x = x;
+  return group;
+}
+
+const pillarLeft = createPillar(-BRIDGE_LENGTH / 2 - PILLAR_SIZE / 2 - 0.3);
+const pillarRight = createPillar(BRIDGE_LENGTH / 2 + PILLAR_SIZE / 2 + 0.3);
+scene.add(pillarLeft);
+scene.add(pillarRight);
+
+// --- Verlet Rope Simulation ---
+class RopePoint {
+  constructor(x, y, z, pinned = false) {
+    this.pos = new THREE.Vector3(x, y, z);
+    this.oldPos = new THREE.Vector3(x, y, z);
+    this.pinned = pinned;
+    this.plankAttach = false;
+  }
+}
+
+class Rope {
+  constructor(startX, startY, startZ, endX, endY, endZ, numPoints) {
+    this.points = [];
+    this.numPoints = numPoints;
+    this.stiffness = 0.5;
+    this.gravity = -9.8;
+    this.damping = 0.98;
+    this.segmentLength = BRIDGE_LENGTH / (numPoints - 1);
+    this.meshes = [];
+    this.group = new THREE.Group();
+
+    for (let i = 0; i < numPoints; i++) {
+      const t = i / (numPoints - 1);
+      const x = startX + (endX - startX) * t;
+      const y = startY + (endY - startY) * t;
+      const z = startZ + (endZ - startZ) * t;
+      // Add catenary sag
+      const sag = Math.cosh((t - 0.5) * 3) - Math.cosh(0) * 0.3;
+      const pinned = (i === 0 || i === numPoints - 1);
+      const pt = new RopePoint(x, y - sag, z, pinned);
+      // Mark plank attachment points
+      if (PLANK_ATTACH_INDICES.includes(i)) {
+        pt.plankAttach = true;
+      }
+      this.points.push(pt);
+    }
+
+    // Create cylinder meshes for each segment
+    const cylGeo = new THREE.CylinderGeometry(ROPE_RADIUS, ROPE_RADIUS, 1, 6);
+    cylGeo.rotateX(Math.PI / 2); // align along Z
+    for (let i = 0; i < numPoints - 1; i++) {
+      const mesh = new THREE.Mesh(cylGeo, ropeMaterial);
+      mesh.castShadow = true;
+      this.meshes.push(mesh);
+      this.group.add(mesh);
+    }
+    scene.add(this.group);
+  }
+
+  update(dt) {
+    const substeps = 8;
+    const subDt = Math.min(dt, 0.03) / substeps;
+
+    for (let s = 0; s < substeps; s++) {
+      // Verlet integration
+      for (let i = 0; i < this.points.length; i++) {
+        const pt = this.points[i];
+        if (pt.pinned) continue;
+
+        const vel = pt.pos.clone().sub(pt.oldPos).multiplyScalar(this.damping);
+        pt.oldPos.copy(pt.pos);
+        pt.pos.add(vel);
+        pt.pos.y += this.gravity * subDt * subDt;
+      }
+
+      // Constraint satisfaction
+      for (let iter = 0; iter < 4; iter++) {
+        for (let i = 0; i < this.points.length - 1; i++) {
+          const p1 = this.points[i];
+          const p2 = this.points[i + 1];
+          const diff = p2.pos.clone().sub(p1.pos);
+          const dist = diff.length();
+          if (dist < 0.0001) continue;
+          const correction = diff.multiplyScalar((dist - this.segmentLength) / dist * this.stiffness);
+
+          if (!p1.pinned && !p1.plankAttach) p1.pos.add(correction.clone().multiplyScalar(0.5));
+          if (!p2.pinned && !p2.plankAttach) p2.pos.sub(correction.clone().multiplyScalar(0.5));
+        }
+      }
+    }
+
+    this._updateMeshes();
+  }
+
+  _updateMeshes() {
+    const up = new THREE.Vector3(0, 1, 0);
+    const tmp = new THREE.Vector3();
+    for (let i = 0; i < this.meshes.length; i++) {
+      const p1 = this.points[i];
+      const p2 = this.points[i + 1];
+      const mid = tmp.addVectors(p1.pos, p2.pos).multiplyScalar(0.5);
+      this.meshes[i].position.copy(mid);
+      const dir = tmp.subVectors(p2.pos, p1.pos);
+      const len = dir.length();
+      this.meshes[i].scale.y = len;
+      if (len > 0.001) {
+        this.meshes[i].quaternion.setFromUnitVectors(up, dir.normalize());
+      }
+    }
+  }
+
+  getPointAt(t) {
+    const idx = t * (this.points.length - 1);
+    const i0 = Math.floor(idx);
+    const i1 = Math.min(i0 + 1, this.points.length - 1);
+    const frac = idx - i0;
+    const p = new THREE.Vector3().lerpVectors(this.points[i0].pos, this.points[i1].pos, frac);
+    return p;
+  }
+
+  applyForceAt(t, force) {
+    const idx = Math.round(t * (this.points.length - 1));
+    for (let di = -1; di <= 1; di++) {
+      const i = idx + di;
+      if (i >= 0 && i < this.points.length && !this.points[i].pinned) {
+        this.points[i].pos.add(force.clone());
+      }
+    }
+  }
+}
+
+// --- Planks ---
+const planks = [];
+const plankGroup = new THREE.Group();
+scene.add(plankGroup);
+
+const plankGeo = new THREE.BoxGeometry(PLANK_WIDTH, PLANK_HEIGHT, PLANK_DEPTH);
+
+function createPlank(z) {
+  const mesh = new THREE.Mesh(plankGeo, plankMaterial);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  plankGroup.add(mesh);
+  return mesh;
+}
+
+for (let i = 0; i < NUM_PLANKS; i++) {
+  planks.push(createPlank());
+}
+
+// --- Ropes (two sides) ---
+const ropeY = PILLAR_HEIGHT + 0.6;
+const ropeOffsetX = BRIDGE_WIDTH / 2;
+
+const ropeL = new Rope(
+  -BRIDGE_LENGTH / 2, ropeY, -ropeOffsetX,
+  BRIDGE_LENGTH / 2, ropeY, -ropeOffsetX,
+  POINT_MASSES
+);
+const ropeR = new Rope(
+  -BRIDGE_LENGTH / 2, ropeY, ropeOffsetX,
+  BRIDGE_LENGTH / 2, ropeY, ropeOffsetX,
+  POINT_MASSES
+);
+
+const ropes = [ropeL, ropeR];
+
+// --- Handrail Ropes (2 more ropes higher up) ---
+const handrailY = ropeY + 1.5;
+const handrailL = new Rope(
+  -BRIDGE_LENGTH / 2, handrailY, -ropeOffsetX,
+  BRIDGE_LENGTH / 2, handrailY, -ropeOffsetX,
+  POINT_MASSES
+);
+const handrailR = new Rope(
+  -BRIDGE_LENGTH / 2, handrailY, ropeOffsetX,
+  BRIDGE_LENGTH / 2, handrailY, ropeOffsetX,
+  POINT_MASSES
+);
+
+[handrailL, handrailR].forEach(r => {
+  r.stiffness = 0.3;
+  ropes.push(r);
+});
+
+// --- Vertical rope connectors ---
+const vertRopes = [];
+const numVertSegments = 8;
+const numVertRopes = 4;
+const vertRopeGroup = new THREE.Group();
+scene.add(vertRopeGroup);
+const vertCylGeo = new THREE.CylinderGeometry(0.02, 0.02, 1, 4);
+vertCylGeo.rotateX(Math.PI / 2);
+
+function makeVertRope(lx, rz) {
+  const r = new Rope(
+    lx, ropeY, rz,
+    lx, handrailY, rz,
+    6
+  );
+  r.stiffness = 0.2;
+  // Use thinner rope
+  r.meshes.forEach(m => m.scale.set(0.5, 1, 0.5));
+  return r;
+}
+
+const vertRopePositions = [
+  [-BRIDGE_LENGTH / 2, -ropeOffsetX],
+  [BRIDGE_LENGTH / 2, -ropeOffsetX],
+  [-BRIDGE_LENGTH / 2, ropeOffsetX],
+  [BRIDGE_LENGTH / 2, ropeOffsetX],
+];
+
+vertRopePositions.forEach(([lx, rz]) => {
+  const vr = makeVertRope(lx, rz);
+  vertRopes.push(vr);
+  ropes.push(vr);
+});
+
+// --- Character ---
+const charGroup = new THREE.Group();
+
+const charBodyGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.8, 8);
+const charBodyMat = new THREE.MeshStandardMaterial({ color: 0xe05020, roughness: 0.6 });
+const charBody = new THREE.Mesh(charBodyGeo, charBodyMat);
+charBody.position.y = 0.4;
+charBody.castShadow = true;
+charGroup.add(charBody);
+
+const charHeadGeo = new THREE.SphereGeometry(0.22, 12, 8);
+const charHeadMat = new THREE.MeshStandardMaterial({ color: 0xf0d0a0, roughness: 0.7 });
+const charHead = new THREE.Mesh(charHeadGeo, charHeadMat);
+charHead.position.y = 1.0;
+charHead.castShadow = true;
+charGroup.add(charHead);
+
+scene.add(charGroup);
+
+const character = {
+  group: charGroup,
+  body: charBody,
+  head: charHead,
+  position: 0.5,   // 0..1 along bridge
+  velocity: 0,
+  onBridge: true,
+  bobPhase: 0,
+};
+
+// --- Update Planks & Character Position ---
+function updatePlanks() {
+  for (let i = 0; i < NUM_PLANKS; i++) {
+    const t = i / (NUM_PLANKS - 1);
+    const lPos = ropeL.getPointAt(t);
+    const rPos = ropeR.getPointAt(t);
+
+    const mid = new THREE.Vector3().addVectors(lPos, rPos).multiplyScalar(0.5);
+    planks[i].position.copy(mid);
+
+    const dir = new THREE.Vector3().subVectors(rPos, lPos);
+    const len = dir.length();
+    planks[i].scale.x = len / PLANK_WIDTH;
+    planks[i].scale.z = 1;
+
+    if (len > 0.001) {
+      const up = new THREE.Vector3(0, 1, 0);
+      planks[i].quaternion.setFromUnitVectors(up, dir.normalize());
+      planks[i].rotateX(Math.PI / 2);
+    }
+  }
+}
+
+function updateCharacter(dt) {
+  const t = character.position;
+  const lPos = ropeL.getPointAt(t);
+  const rPos = ropeR.getPointAt(t);
+  const mid = new THREE.Vector3().addVectors(lPos, rPos).multiplyScalar(0.5);
+
+  // Add gravity offset for planks
+  const bridgeY = Math.max(lPos.y, rPos.y) + 0.06;
+  const dir = new THREE.Vector3().subVectors(rPos, lPos);
+
+  character.group.position.set(mid.x, bridgeY + 0.5, mid.z);
+
+  // Slight tilt with bridge
+  const angle = Math.atan2(dir.z, dir.x);
+  character.group.rotation.y = -angle + Math.PI / 2;
+
+  // Walking bob
+  character.bobPhase += character.velocity * dt * 8;
+  const bob = Math.abs(Math.sin(character.bobPhase)) * 0.08;
+  character.body.position.y = 0.4 + bob;
+  character.head.position.y = 1.0 + bob;
+
+  // --- Apply character weight to ropes ---
+  const weight = new THREE.Vector3(0, -0.4 * Math.abs(character.velocity) * 3, 0);
+  ropeL.applyForceAt(t, weight);
+  ropeR.applyForceAt(t, weight);
+
+  // Affect nearby plank attachment points
+  for (let i = 0; i < ropeL.points.length; i++) {
+    const pt = ropeL.points[i];
+    if (pt.plankAttach) {
+      const ptT = i / (ropeL.points.length - 1);
+      const dist = Math.abs(ptT - t);
+      if (dist < 0.15) {
+        const factor = (0.15 - dist) / 0.15;
+        pt.pos.y -= factor * 0.05 * Math.abs(character.velocity);
+      }
+    }
+  }
+  for (let i = 0; i < ropeR.points.length; i++) {
+    const pt = ropeR.points[i];
+    if (pt.plankAttach) {
+      const ptT = i / (ropeR.points.length - 1);
+      const dist = Math.abs(ptT - t);
+      if (dist < 0.15) {
+        const factor = (0.15 - dist) / 0.15;
+        pt.pos.y -= factor * 0.05 * Math.abs(character.velocity);
+      }
+    }
+  }
+}
+
+// --- Input ---
+const keys = { a: false, d: false };
+window.addEventListener('keydown', e => {
+  if (e.key === 'a' || e.key === 'A') keys.a = true;
+  if (e.key === 'd' || e.key === 'D') keys.d = true;
+});
+window.addEventListener('keyup', e => {
+  if (e.key === 'a' || e.key === 'A') keys.a = false;
+  if (e.key === 'd' || e.key === 'D') keys.d = false;
+});
+
+let autoWalk = false;
+const walkBtn = document.getElementById('walkBtn');
+walkBtn.addEventListener('click', () => {
+  autoWalk = !autoWalk;
+  walkBtn.classList.toggle('active', autoWalk);
+  walkBtn.textContent = autoWalk ? 'Stop' : 'Walk (Auto)';
+});
+
+const stiffnessSlider = document.getElementById('stiffnessSlider');
+const stiffnessVal = document.getElementById('stiffnessVal');
+stiffnessSlider.addEventListener('input', () => {
+  const v = parseFloat(stiffnessSlider.value);
+  stiffnessVal.textContent = v.toFixed(2);
+  ropeL.stiffness = v;
+  ropeR.stiffness = v;
+  handrailL.stiffness = v * 0.5;
+  handrailR.stiffness = v * 0.5;
+});
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// --- Animation Loop ---
+let lastTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  // Character movement
+  const moveSpeed = 0.3;
+  if (keys.a) character.velocity = -moveSpeed;
+  else if (keys.d) character.velocity = moveSpeed;
+  else character.velocity *= 0.85;
+
+  if (autoWalk) {
+    character.velocity = moveSpeed * 0.7;
+    if (character.position > 1.02) {
+      character.position = -0.02;
+    }
+  }
+
+  character.position += character.velocity * dt;
+  character.position = Math.max(-0.05, Math.min(1.05, character.position));
+
+  // Update rope simulation
+  ropes.forEach(r => r.update(dt));
+
+  // Update planks and character
+  updatePlanks();
+  updateCharacter(dt);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// --- Expose to window ---
+window.scene = scene;
+window.camera = camera;
+window.renderer = renderer;
+window.controls = controls;
+window.ropes = ropes;
+window.character = character;

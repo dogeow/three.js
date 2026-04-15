@@ -1,0 +1,264 @@
+import * as THREE from 'three';
+    import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+    // ─── Scene Setup ───────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.fog   = new THREE.FogExp2(0x050510, 0.035);
+
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
+    camera.position.set(0, 6, 22);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping        = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.3;
+    renderer.outputColorSpace   = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping  = true;
+    controls.dampingFactor  = 0.05;
+    controls.minDistance    = 5;
+    controls.maxDistance    = 60;
+
+    // ─── Post-processing ────────────────────────────────────────────────────────
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(
+      new THREE.Vector2(innerWidth, innerHeight),
+      0.9,   // strength
+      0.35,  // radius
+      0.72   // threshold
+    );
+    composer.addPass(bloom);
+
+    // ─── Lighting ───────────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0x0a0a1a, 4));
+
+    // Key light — warm
+    const keyLight = new THREE.DirectionalLight(0xfff4e0, 3);
+    keyLight.position.set(8, 12, 8);
+    scene.add(keyLight);
+
+    // Fill light — cool blue
+    const fillLight = new THREE.DirectionalLight(0x8090ff, 1.8);
+    fillLight.position.set(-10, 4, -5);
+    scene.add(fillLight);
+
+    // Rim lights — magenta + cyan
+    const rimA = new THREE.PointLight(0xff00aa, 6, 35);
+    rimA.position.set(-12, 6, -10);
+    scene.add(rimA);
+
+    const rimB = new THREE.PointLight(0x00ffcc, 5, 35);
+    rimB.position.set(12, 6, -10);
+    scene.add(rimB);
+
+    const rimC = new THREE.PointLight(0x4444ff, 4, 30);
+    rimC.position.set(0, -8, 5);
+    scene.add(rimC);
+
+    // ─── Background Stars ───────────────────────────────────────────────────────
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 2500;
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i++) {
+      starPos[i] = (Math.random() - 0.5) * 220;
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({
+      color: 0x8888bb, size: 0.12, sizeAttenuation: true, transparent: true, opacity: 0.7
+    });
+    scene.add(new THREE.Points(starGeo, starMat));
+
+    // ─── Material Config ────────────────────────────────────────────────────────
+    const params = {
+      metalness:      0.92,
+      roughness:      0.08,
+      clearcoat:      0.4,
+      clearcoatRough: 0.05,
+      wireframe:      false,
+      rotationSpeed:  0.004,
+      // Shared p/q for live update
+      p: 2,
+      q: 3,
+    };
+
+    function makeMaterial() {
+      return new THREE.MeshPhysicalMaterial({
+        metalness:        params.metalness,
+        roughness:        params.roughness,
+        clearcoat:        params.clearcoat,
+        clearcoatRoughness: params.clearcoatRough,
+        color:            new THREE.Color().setHSL(Math.random(), 0.7, 0.55),
+        envMapIntensity:  1.2,
+      });
+    }
+
+    // ─── Torus Knot Definitions ─────────────────────────────────────────────────
+    const knotDefs = [
+      { p: 2, q: 3, label: '(2,3) Trefoil',  color: new THREE.Color(0xff3366) },
+      { p: 3, q: 4, label: '(3,4)',            color: new THREE.Color(0x33aaff) },
+      { p: 5, q: 2, label: '(5,2)',            color: new THREE.Color(0x44ff99) },
+    ];
+
+    const knotConfigs = [
+      { p: 2, q: 3, pos: [-8.5, 2,  0] },
+      { p: 3, q: 4, pos: [ 0,   2,  0] },
+      { p: 5, q: 2, pos: [ 8.5, 2,  0] },
+    ];
+
+    // ─── Build Knots ─────────────────────────────────────────────────────────────
+    window.knots = [];
+
+    function buildKnot(p, q, color) {
+      const geo = new THREE.TorusKnotGeometry(1.4, 0.38, 240, 24, p, q);
+
+      const mat  = new THREE.MeshPhysicalMaterial({
+        metalness:        params.metalness,
+        roughness:        params.roughness,
+        clearcoat:        params.clearcoat,
+        clearcoatRoughness: params.clearcoatRough,
+        color,
+        envMapIntensity:  1.2,
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+
+      // Wireframe overlay
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, wireframe: true, transparent: true, opacity: 0.06,
+      });
+      const wireMesh = new THREE.Mesh(geo, wireMat);
+      wireMesh.visible = params.wireframe;
+
+      const group = new THREE.Group();
+      group.add(mesh, wireMesh);
+      group.userData = { mesh, wireMesh, baseMat: mat, p, q };
+      return group;
+    }
+
+    function rebuildKnot(group) {
+      const { p, q, baseMat } = group.userData;
+      const color = baseMat.color.clone();
+      group.traverse(child => {
+        if (child.isMesh) child.geometry.dispose();
+      });
+      const newGeo = new THREE.TorusKnotGeometry(1.4, 0.38, 240, 24, p, q);
+      group.userData.mesh.geometry   = newGeo;
+      group.userData.wireMesh.geometry = newGeo;
+    }
+
+    knotConfigs.forEach(cfg => {
+      const hue   = (cfg.p * 0.1 + cfg.q * 0.07) % 1;
+      const color = new THREE.Color().setHSL(hue, 0.8, 0.55);
+      const group = buildKnot(cfg.p, cfg.q, color);
+      group.position.set(...cfg.pos);
+      scene.add(group);
+      window.knots.push(group);
+    });
+
+    // ─── Pedestal Rings ─────────────────────────────────────────────────────────
+    knotConfigs.forEach(cfg => {
+      const ringGeo = new THREE.TorusGeometry(2.2, 0.03, 16, 80);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x334466 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(cfg.pos[0], -1.6, cfg.pos[2]);
+      scene.add(ring);
+    });
+
+    // ─── GUI ────────────────────────────────────────────────────────────────────
+    const gui = new GUI({ title: '⚙ Torus Knot Controls', width: 260 });
+    gui.domElement.style.setProperty('--bg-color', '#0d0d20');
+
+    const materialFolder = gui.addFolder('Material');
+    materialFolder.add(params, 'metalness',      0, 1, 0.01).name('Metalness').onChange(v => updateMaterials());
+    materialFolder.add(params, 'roughness',       0, 1, 0.01).name('Roughness').onChange(v => updateMaterials());
+    materialFolder.add(params, 'clearcoat',       0, 1, 0.01).name('Clearcoat').onChange(v => updateMaterials());
+    materialFolder.add(params, 'clearcoatRough',  0, 1, 0.01).name('Clearcoat Rough').onChange(v => updateMaterials());
+    materialFolder.open();
+
+    const displayFolder = gui.addFolder('Display');
+    displayFolder.add(params, 'wireframe').name('Wireframe').onChange(v => {
+      window.knots.forEach(g => { g.userData.wireMesh.visible = v; });
+    });
+    displayFolder.add(params, 'rotationSpeed', 0, 0.02, 0.0005).name('Rotation Speed');
+    displayFolder.open();
+
+    const geometryFolder = gui.addFolder('Geometry (p,q)');
+    geometryFolder.add(params, 'p', 1, 10, 1).name('p (winding)').onChange(rebuildAll);
+    geometryFolder.add(params, 'q', 1, 10, 1).name('q (twist)').onChange(rebuildAll);
+    geometryFolder.open();
+
+    const bloomFolder = gui.addFolder('Bloom');
+    bloomFolder.add(bloom, 'strength', 0, 3, 0.01).name('Strength');
+    bloomFolder.add(bloom, 'radius',   0, 1, 0.01).name('Radius');
+    bloomFolder.add(bloom, 'threshold', 0, 1, 0.01).name('Threshold');
+    bloomFolder.close();
+
+    function updateMaterials() {
+      window.knots.forEach(g => {
+        const mat = g.userData.mesh.material;
+        mat.metalness        = params.metalness;
+        mat.roughness        = params.roughness;
+        mat.clearcoat        = params.clearcoat;
+        mat.clearcoatRoughness = params.clearcoatRough;
+        mat.needsUpdate      = true;
+      });
+    }
+
+    function rebuildAll() {
+      window.knots.forEach(g => {
+        // update p,q on first knot only for preview
+      });
+      // Reconstruct all knots with new p,q
+      window.knots.forEach(group => {
+        const newP = params.p;
+        const newQ = params.q;
+        const color = group.userData.baseMat.color.clone();
+        group.userData.p = newP;
+        group.userData.q = newQ;
+        rebuildKnot(group);
+        // Update base mat color to keep variety
+        group.userData.baseMat.color.copy(color);
+      });
+    }
+
+    // ─── Resize ─────────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      composer.setSize(innerWidth, innerHeight);
+    });
+
+    // ─── Animate ────────────────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    (function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+
+      // Subtle rim light animation
+      rimA.position.x = -12 + Math.sin(t * 0.4) * 2;
+      rimB.position.x =  12 + Math.cos(t * 0.35) * 2;
+      rimC.intensity   = 4 + Math.sin(t * 0.7) * 1.5;
+
+      // Rotate each knot
+      window.knots.forEach((group, i) => {
+        const offset = i * 1.2;
+        group.rotation.y = t * (params.rotationSpeed * 60 * 0.016) + offset;
+        group.rotation.x = Math.sin(t * 0.3 + i) * 0.08;
+        // Gentle float
+        group.position.y = knotConfigs[i].pos[1] + Math.sin(t * 0.5 + i * 1.1) * 0.3;
+      });
+
+      controls.update();
+      composer.render();
+    })();

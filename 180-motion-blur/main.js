@@ -1,0 +1,497 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { RenderTarget } from 'three/addons/three.module.js'
+
+// ─── Scene ────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x050810)
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200)
+camera.position.set(0, 6, 22)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.1
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.enablePan = false
+controls.minDistance = 5
+controls.maxDistance = 40
+controls.target.set(0, 0, 0)
+
+// ─── Lights ────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x334466, 0.5))
+
+const key = new THREE.PointLight(0x7dd3fc, 40, 40, 2)
+key.position.set(0, 12, 0)
+scene.add(key)
+
+const rim = new THREE.PointLight(0xff5cc8, 30, 30, 2)
+rim.position.set(-8, 4, 8)
+scene.add(rim)
+
+const fill = new THREE.PointLight(0xa78bfa, 20, 25, 2)
+fill.position.set(6, -3, -5)
+scene.add(fill)
+
+// ─── Floor Grid ────────────────────────────────────────────────────────────
+const gridHelper = new THREE.GridHelper(50, 50, 0x1a2a4a, 0x0a1530)
+gridHelper.position.y = -2.5
+scene.add(gridHelper)
+
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(50, 50),
+  new THREE.MeshStandardMaterial({ color: 0x060c18, metalness: 0.1, roughness: 0.9 })
+)
+floor.rotation.x = -Math.PI / 2
+floor.position.y = -2.51
+scene.add(floor)
+
+// ─── Central Objects ───────────────────────────────────────────────────────
+const coreGeo = new THREE.IcosahedronGeometry(1.6, 3)
+const coreMat = new THREE.MeshPhysicalMaterial({
+  color: 0x9ae6ff,
+  emissive: 0x2dd4ff,
+  emissiveIntensity: 0.6,
+  metalness: 0.3,
+  roughness: 0.1,
+  clearcoat: 1,
+  clearcoatRoughness: 0.05,
+  transmission: 0.2,
+  thickness: 2
+})
+const core = new THREE.Mesh(coreGeo, coreMat)
+core.position.y = 1.2
+scene.add(core)
+
+// ─── Spinning Rings ────────────────────────────────────────────────────────
+const rings = []
+const ringConfigs = [
+  { radius: 3.5, tube: 0.04, color: 0x7dd3fc, speed: 0.6,  tilt: 0.0 },
+  { radius: 4.8, tube: 0.03, color: 0xff5cc8, speed: -0.35, tilt: 0.3 },
+  { radius: 6.2, tube: 0.03, color: 0xa78bfa, speed: 0.22,  tilt: -0.25 },
+  { radius: 7.8, tube: 0.025, color: 0xfacc15, speed: -0.15, tilt: 0.5 }
+]
+ringConfigs.forEach(cfg => {
+  const mesh = new THREE.Mesh(
+    new THREE.TorusGeometry(cfg.radius, cfg.tube, 16, 120),
+    new THREE.MeshBasicMaterial({ color: cfg.color })
+  )
+  mesh.rotation.x = cfg.tilt
+  mesh.userData.speed = cfg.speed
+  scene.add(mesh)
+  rings.push(mesh)
+})
+
+// ─── Flying Cubes ───────────────────────────────────────────────────────────
+const cubes = []
+const cubeGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5)
+const cubeColors = [0x7dd3fc, 0xff5cc8, 0xfacc15, 0x4ade80, 0xa78bfa, 0xfb7185]
+
+for (let i = 0; i < 24; i++) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: cubeColors[i % cubeColors.length],
+    emissive: cubeColors[i % cubeColors.length],
+    emissiveIntensity: 0.8,
+    metalness: 0.4,
+    roughness: 0.2
+  })
+  const cube = new THREE.Mesh(cubeGeo, mat)
+  cube.userData = {
+    angle: (i / 24) * Math.PI * 2,
+    radius: 4 + (i % 5) * 1.2,
+    speedY: 1.5 + (i % 5) * 0.4,
+    speedAngle: 0.3 + (i % 7) * 0.08,
+    offset: (i % 4) * (Math.PI / 2)
+  }
+  scene.add(cube)
+  cubes.push(cube)
+}
+
+// ─── Particles ─────────────────────────────────────────────────────────────
+const pCount = 1200
+const pGeo = new THREE.BufferGeometry()
+const pPos = new Float32Array(pCount * 3)
+for (let i = 0; i < pPos.length; i++) {
+  pPos[i] = (Math.random() - 0.5) * 50
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3))
+scene.add(new THREE.Points(pGeo, new THREE.PointsMaterial({
+  color: 0x8fb3ff, size: 0.06, transparent: true, opacity: 0.7
+})))
+
+// ─── Motion Blur Shader ─────────────────────────────────────────────────────
+const MotionBlurShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    tVelocity: { value: null },
+    velocityFactor: { value: 0.5 },
+    numSamples: { value: 12 },
+    shutterAngle: { value: Math.PI / 2 }
+  },
+
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+
+  fragmentShader: /* glsl */`
+    precision highp float;
+
+    uniform sampler2D tDiffuse;
+    uniform sampler2D tVelocity;
+    uniform float velocityFactor;
+    uniform int numSamples;
+    uniform float shutterAngle;
+
+    varying vec2 vUv;
+
+    void main() {
+      vec2 velocity = texture2D(tVelocity, vUv).rg;
+      velocity = (velocity * 2.0 - 1.0) * velocityFactor;
+
+      vec4 color = vec4(0.0);
+      float total = 0.0;
+
+      // Circular sampling for more natural blur
+      float angleStep = shutterAngle / float(numSamples);
+
+      for (int i = 0; i < 32; i++) {
+        if (i >= numSamples) break;
+        float t = (float(i) / float(numSamples) - 0.5) * shutterAngle;
+        // Rotate velocity by shutter angle for exposure simulation
+        float cosT = cos(t);
+        float sinT = sin(t);
+        vec2 offset = vec2(
+          velocity.x * cosT - velocity.y * sinT,
+          velocity.x * sinT + velocity.y * cosT
+        );
+        vec2 sampleUv = clamp(vUv + offset, 0.0, 1.0);
+        float weight = 1.0 - abs(float(i) / float(numSamples) - 0.5) * 0.4;
+        color += texture2D(tDiffuse, sampleUv) * weight;
+        total += weight;
+      }
+
+      gl_FragColor = color / total;
+    }
+  `
+}
+
+// ─── Velocity Buffer (FBO-based) ────────────────────────────────────────────
+function createFBO(w, h) {
+  return new THREE.WebGLRenderTarget(w, h, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.HalfFloatType
+  })
+}
+
+const halfSize = () => ({
+  w: Math.max(1, Math.floor(innerWidth / 2)),
+  h: Math.max(1, Math.floor(innerHeight / 2))
+})
+
+let { w: hw, h: hh } = halfSize()
+let velocityFBO = createFBO(hw, hh)
+
+// Simple velocity generation shader — approximates per-pixel motion
+// from a "current position" render target
+const VelocityShader = {
+  uniforms: {
+    tCurrent: { value: null },
+    tPrev: { value: null }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    uniform sampler2D tCurrent;
+    uniform sampler2D tPrev;
+    varying vec2 vUv;
+
+    void main() {
+      vec4 curr = texture2D(tCurrent, vUv);
+      vec2 prev = texture2D(tPrev, vUv).rg;
+
+      // Simple difference-based velocity estimation
+      // In a real app you'd store world-space positions or clip-space positions
+      vec2 vel = (curr.rg - 0.5) * 0.1;
+      gl_FragColor = vec4(vel * 0.5 + 0.5, 0.0, 1.0);
+    }
+  `
+}
+
+// ─── Velocity Scene (fullscreen quads for cheap velocity) ──────────────────
+// Instead of complex velocity buffer, we project screen-space velocity
+// based on a proxy: we render a "velocity color" per object
+
+const velocityScene = new THREE.Scene()
+const velocityCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+const velocityMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    uVelocity: { value: new THREE.Vector2(0, 0) },
+    uCenter: { value: new THREE.Vector2(0.5, 0.5) }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    uniform vec2 uVelocity;
+    uniform vec2 uCenter;
+    varying vec2 vUv;
+
+    void main() {
+      vec2 vel = uVelocity * 0.5 + 0.5;
+      gl_FragColor = vec4(vel, 0.0, 1.0);
+    }
+  `
+})
+const velocityQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), velocityMaterial)
+velocityScene.add(velocityQuad)
+
+// ─── Full-screen velocity pass ─────────────────────────────────────────────
+const FullVelocityShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uVelocityCenter: { value: new THREE.Vector2(0, 0) }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform vec2 uVelocityCenter;
+    varying vec2 vUv;
+
+    void main() {
+      // Radial velocity from center of motion
+      vec2 dir = vUv - uVelocityCenter;
+      float dist = length(dir);
+      vec2 vel = normalize(dir + 0.0001) * dist * 0.12;
+      gl_FragColor = vec4(vel * 0.5 + 0.5, 0.0, 1.0);
+    }
+  `
+}
+
+const fullVelocityMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uVelocityCenter: { value: new THREE.Vector2(0.5, 0.5) }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform vec2 uVelocityCenter;
+    varying vec2 vUv;
+
+    vec2 velocity(vec2 uv) {
+      // Simulated camera-like motion: objects move radially from screen center
+      vec2 dir = uv - uVelocityCenter;
+      float dist = length(dir);
+      float speed = 0.1 + 0.05 * sin(uTime * 0.7);
+      return normalize(dir + 0.0001) * dist * speed;
+    }
+
+    void main() {
+      vec2 vel = velocity(vUv);
+      gl_FragColor = vec4(vel * 0.5 + 0.5, 0.0, 1.0);
+    }
+  `
+})
+
+// ─── Effect Composer ────────────────────────────────────────────────────────
+const composer = new EffectComposer(renderer)
+composer.addPass(new RenderPass(scene, camera))
+
+// Motion blur pass
+const motionBlurPass = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    velocityFactor: { value: 0.5 },
+    numSamples: { value: 12 },
+    shutterAngle: { value: Math.PI / 2 },
+    uTime: { value: 0 },
+    uVelocityCenter: { value: new THREE.Vector2(0.5, 0.5) }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+
+    uniform sampler2D tDiffuse;
+    uniform float velocityFactor;
+    uniform int numSamples;
+    uniform float shutterAngle;
+    uniform float uTime;
+    uniform vec2 uVelocityCenter;
+
+    varying vec2 vUv;
+
+    vec2 screenVelocity(vec2 uv) {
+      vec2 dir = uv - uVelocityCenter;
+      float dist = length(dir);
+      float speed = 0.1 + 0.05 * sin(uTime * 0.7);
+      return normalize(dir + 0.0001) * dist * speed;
+    }
+
+    void main() {
+      vec2 velocity = screenVelocity(vUv) * velocityFactor;
+
+      vec4 color = vec4(0.0);
+      float total = 0.0;
+
+      for (int i = 0; i < 32; i++) {
+        if (i >= numSamples) break;
+        float t = (float(i) / float(numSamples) - 0.5) * shutterAngle;
+        float cosT = cos(t);
+        float sinT = sin(t);
+        vec2 offset = vec2(
+          velocity.x * cosT - velocity.y * sinT,
+          velocity.x * sinT + velocity.y * cosT
+        );
+        vec2 sampleUv = clamp(vUv + offset, 0.0, 1.0);
+        float weight = 1.0 - abs(float(i) / float(numSamples) - 0.5) * 0.3;
+        color += texture2D(tDiffuse, sampleUv) * weight;
+        total += weight;
+      }
+
+      gl_FragColor = color / total;
+    }
+  `
+})
+composer.addPass(motionBlurPass)
+composer.addPass(new OutputPass())
+
+// ─── GUI Controls ───────────────────────────────────────────────────────────
+const strengthEl = document.getElementById('strength')
+const strengthValEl = document.getElementById('strength-val')
+const samplesEl = document.getElementById('samples')
+const samplesValEl = document.getElementById('samples-val')
+const shutterEl = document.getElementById('shutter')
+const shutterValEl = document.getElementById('shutter-val')
+
+strengthEl.addEventListener('input', () => {
+  const v = Number(strengthEl.value)
+  motionBlurPass.uniforms.velocityFactor.value = v
+  strengthValEl.textContent = v.toFixed(2)
+})
+
+samplesEl.addEventListener('input', () => {
+  const v = parseInt(samplesEl.value)
+  motionBlurPass.uniforms.numSamples.value = v
+  samplesValEl.textContent = v
+})
+
+shutterEl.addEventListener('input', () => {
+  const deg = parseInt(shutterEl.value)
+  const rad = (deg / 180) * Math.PI
+  motionBlurPass.uniforms.shutterAngle.value = rad
+  shutterValEl.textContent = deg + '°'
+})
+
+// ─── Resize ─────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  composer.setSize(innerWidth, innerHeight)
+  const hs = halfSize()
+  hw = hs.w
+  hh = hs.h
+  velocityFBO.dispose()
+  velocityFBO = createFBO(hw, hh)
+})
+
+// ─── Animate ────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+let prevTime = 0
+
+function animate() {
+  requestAnimationFrame(animate)
+
+  const delta = Math.min(clock.getDelta(), 0.05)
+  const elapsed = clock.elapsedTime
+  const time = elapsed
+
+  // Animate core
+  core.rotation.y += delta * 0.5
+  core.rotation.x += delta * 0.3
+  core.position.y = 1.2 + Math.sin(time * 1.2) * 0.3
+
+  // Animate rings
+  rings.forEach((ring, i) => {
+    ring.rotation.y += delta * ring.userData.speed
+    ring.rotation.z += delta * 0.1
+  })
+
+  // Animate cubes
+  cubes.forEach((cube, i) => {
+    const d = cube.userData
+    const angle = time * d.speedAngle + d.angle
+    const wobble = Math.sin(time * d.speedY + d.offset) * 1.5
+    cube.position.set(
+      Math.cos(angle) * d.radius,
+      wobble,
+      Math.sin(angle) * d.radius
+    )
+    cube.rotation.x += delta * 1.2
+    cube.rotation.y += delta * 0.8
+  })
+
+  // Update motion blur uniforms
+  motionBlurPass.uniforms.uTime.value = elapsed
+
+  // Subtle camera sway to trigger motion blur on still objects
+  const swayX = Math.sin(time * 0.4) * 0.3
+  const swayY = Math.cos(time * 0.3) * 0.2
+  camera.position.x = swayX
+  camera.position.y = 6 + swayY
+
+  controls.update()
+  composer.render(delta)
+}
+
+renderer.setAnimationLoop(animate)

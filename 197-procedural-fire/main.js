@@ -1,0 +1,457 @@
+import * as THREE from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Renderer ───────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.autoClear = false;
+document.body.appendChild(renderer.domElement);
+
+// ─── Scenes & Camera ────────────────────────────────────────────────────────
+const mainScene  = new THREE.Scene();
+const postScene  = new THREE.Scene();
+const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 2.5, 8);
+camera.lookAt(0, 1.5, 0);
+
+// ─── Render Target (for heat distortion) ────────────────────────────────────
+const rtW = window.innerWidth  * renderer.getPixelRatio();
+const rtH = window.innerHeight * renderer.getPixelRatio();
+const renderTarget = new THREE.WebGLRenderTarget(rtW, rtH, {
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+  format: THREE.RGBAFormat,
+});
+
+// ─── Post-processing Quad ────────────────────────────────────────────────────
+const postMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse:   { value: renderTarget.texture },
+    uTime:      { value: 0.0 },
+    uIntensity: { value: 0.6 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform float uIntensity;
+    varying vec2 vUv;
+
+    float hash(vec2 p) {
+      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(hash(i), hash(i + vec2(1,0)), f.x),
+        mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);
+    }
+
+    void main() {
+      vec2 uv = vUv;
+      float nx = noise(vec2(uv.x * 8.0, uv.y * 6.0 - uTime * 2.2));
+      float ny = noise(vec2(uv.x * 6.0 + 19.3, uv.y * 8.0 - uTime * 2.8));
+      uv.x += (nx - 0.5) * 0.012 * uIntensity;
+      uv.y += (ny - 0.5) * 0.008 * uIntensity;
+      gl_FragColor = texture2D(tDiffuse, clamp(uv, 0.0, 1.0));
+    }
+  `,
+  depthWrite: false,
+  depthTest: false,
+});
+const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial);
+postScene.add(postQuad);
+
+// ─── Parameters ─────────────────────────────────────────────────────────────
+const params = {
+  intensity:    1.2,
+  flameHeight:  1.8,
+  particleCount: 2800,
+  windX:        0.0,
+  windZ:        0.0,
+  baseColor:    '#ff4400',
+  coreColor:    '#ffffaa',
+  smokeColor:   '#221111',
+  heatIntensity: 0.6,
+};
+
+// ─── Shader Sources ──────────────────────────────────────────────────────────
+const vertexShader = /* glsl */`
+  precision highp float;
+
+  uniform float uTime;
+  uniform float uHeight;
+  uniform float uWindX;
+  uniform float uWindZ;
+  uniform float uIntensity;
+
+  attribute float aLifetime;
+  attribute float aOffset;
+  attribute float aLayer;
+
+  varying float vAlpha;
+  varying float vLayer;
+  varying vec2  vSeed;
+
+  void main() {
+    float age = fract(uTime * 0.7 + aOffset);
+    float t   = age * aLifetime;
+
+    float baseY  = position.y + t * uHeight * 1.6;
+    float rise   = t * uHeight;
+    float swayX  = sin(t * 5.0 + aOffset * 12.566) * 0.18 * rise * uWindX;
+    float swayZ  = cos(t * 4.2 + aOffset * 9.42)  * 0.10 * rise * uWindZ;
+    float blowX  = uWindX * rise * 0.5;
+    float blowZ  = uWindZ * rise * 0.3;
+
+    vec3 pos = position;
+    pos.x += baseY * uWindX * 0.4 + swayX + blowX;
+    pos.z += baseY * uWindZ * 0.4 + swayZ + blowZ;
+    pos.y += rise;
+
+    // acceleration: faster near top
+    float speedFactor = 1.0 + t * 1.2;
+    pos.y += (speedFactor - 1.0) * uHeight * 0.3;
+
+    // size shrinks with age, grows with intensity
+    float sizeBase = mix(8.0, 28.0, aLayer);
+    float sizeFade = (1.0 - pow(age, 0.5)) * speedFactor;
+    float pointSize = sizeBase * sizeFade * uIntensity;
+    pointSize = max(1.0, pointSize);
+
+    vAlpha = (1.0 - age) * uIntensity;
+    vLayer = aLayer;
+    vSeed  = vec2(position.x * 31.7 + position.z * 17.3, aOffset * 99.3);
+
+    vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+    gl_PointSize = pointSize * (280.0 / -mvPos.z);
+    gl_Position  = projectionMatrix * mvPos;
+  }
+`;
+
+const fragmentShader = /* glsl */`
+  precision highp float;
+
+  uniform vec3  uBaseColor;
+  uniform vec3  uCoreColor;
+  uniform vec3  uSmokeColor;
+  uniform float uTime;
+
+  varying float vAlpha;
+  varying float vLayer;
+  varying vec2  vSeed;
+
+  void main() {
+    vec2  uv   = gl_PointCoord - 0.5;
+    float dist = length(uv);
+
+    // soft radial falloff
+    float core  = 1.0 - smoothstep(0.0, 0.28, dist);
+    float glow  = 1.0 - smoothstep(0.0, 0.50, dist);
+    float outer = 1.0 - smoothstep(0.0, 0.50, dist);
+
+    vec3 color;
+    float alpha;
+
+    if (vLayer < 0.5) {
+      // smoke — dark, wispy, soft outer edge
+      color = uSmokeColor;
+      alpha = outer * vAlpha * 0.45;
+    } else if (vLayer < 1.5) {
+      // base fire — orange/red
+      float flicker = 0.85 + 0.15 * sin(uTime * 18.0 + vSeed.x * 8.0);
+      color = mix(uBaseColor, vec3(1.0, 0.55, 0.05), core * 0.6) * flicker;
+      alpha = glow * vAlpha * 0.85;
+    } else {
+      // core — yellow/white, bright, small
+      float flicker = 0.9 + 0.1 * sin(uTime * 25.0 + vSeed.y * 14.0);
+      color = mix(vec3(1.0, 0.92, 0.4), uCoreColor, core);
+      color *= flicker;
+      alpha = core * vAlpha * 1.1;
+    }
+
+    if (alpha < 0.005) discard;
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+// ─── Particle System Builder ─────────────────────────────────────────────────
+function buildFire(layer, count, layerType) {
+  // layerType: 0 = smoke, 1 = base, 2 = core
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const offsets = new Float32Array(count);
+  const lifetimes = new Float32Array(count);
+  const layers = new Float32Array(count);
+
+  const radius = layerType === 0 ? 0.35 : layerType === 1 ? 0.22 : 0.12;
+
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.random() * radius;
+    pos[i * 3]     = Math.cos(angle) * r;
+    pos[i * 3 + 1] = 0.0;
+    pos[i * 3 + 2] = Math.sin(angle) * r;
+    offsets[i]  = Math.random();
+    lifetimes[i] = layerType === 0
+      ? 0.8 + Math.random() * 0.6   // smoke lives longer
+      : layerType === 1
+        ? 0.5 + Math.random() * 0.5 // base medium
+        : 0.3 + Math.random() * 0.3; // core short
+    layers[i] = layerType;
+  }
+
+  geo.setAttribute('position',  new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aOffset',   new THREE.BufferAttribute(offsets, 1));
+  geo.setAttribute('aLifetime', new THREE.BufferAttribute(lifetimes, 1));
+  geo.setAttribute('aLayer',    new THREE.BufferAttribute(layers, 1));
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:      { value: 0 },
+      uHeight:    { value: params.flameHeight },
+      uWindX:     { value: params.windX },
+      uWindZ:     { value: params.windZ },
+      uIntensity: { value: params.intensity },
+      uBaseColor: { value: new THREE.Color(params.baseColor) },
+      uCoreColor: { value: new THREE.Color(params.coreColor) },
+      uSmokeColor:{ value: new THREE.Color(params.smokeColor) },
+    },
+    vertexShader,
+    fragmentShader,
+    transparent: true,
+    depthWrite: false,
+    blending: layerType === 0 ? THREE.NormalBlending : THREE.AdditiveBlending,
+  });
+
+  return new THREE.Points(geo, mat);
+}
+
+// Layer counts (proportions of total)
+const smokeCount = Math.floor(params.particleCount * 0.30);
+const baseCount  = Math.floor(params.particleCount * 0.45);
+const coreCount  = Math.floor(params.particleCount * 0.25);
+
+const smokeSystem = buildFire(0, smokeCount, 0);
+const baseSystem  = buildFire(1, baseCount,  1);
+const coreSystem  = buildFire(2, coreCount,  2);
+
+const fireGroup = new THREE.Group();
+fireGroup.add(smokeSystem, baseSystem, coreSystem);
+fireGroup.position.set(0, -0.5, 0);
+mainScene.add(fireGroup);
+
+// ─── Ground / Environment ────────────────────────────────────────────────────
+const floorGeo = new THREE.PlaneGeometry(20, 20);
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x1a0e06,
+  roughness: 0.95,
+  metalness: 0.0,
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.5;
+mainScene.add(floor);
+
+// Stone/torch base geometry
+const baseGroup = new THREE.Group();
+const baseMatStone = new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.9 });
+const baseMatIron  = new THREE.MeshStandardMaterial({ color: 0x2a1a0a, roughness: 0.7, metalness: 0.3 });
+
+// Log left
+const logL = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.4, 8), baseMatStone);
+logL.rotation.z = Math.PI / 2;
+logL.position.set(-0.3, -0.15, 0);
+baseGroup.add(logL);
+
+// Log right
+const logR = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.4, 8), baseMatStone);
+logR.rotation.z = Math.PI / 2;
+logR.position.set(0.3, -0.15, 0);
+baseGroup.add(logR);
+
+// Log front-back
+const logF = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.0, 8), baseMatStone);
+logF.rotation.z = Math.PI / 2;
+logF.position.set(0, -0.2, 0.25);
+baseGroup.add(logF);
+
+// Ember glow disk
+const emberGeo = new THREE.CircleGeometry(0.4, 24);
+const emberMat = new THREE.MeshBasicMaterial({ color: 0xff5500, transparent: true, opacity: 0.6, depthWrite: false });
+const ember = new THREE.Mesh(emberGeo, emberMat);
+ember.rotation.x = -Math.PI / 2;
+ember.position.y = -0.38;
+baseGroup.add(ember);
+
+mainScene.add(baseGroup);
+
+// ─── Lights ───────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x110800, 0.4);
+mainScene.add(ambientLight);
+
+const fireLight = new THREE.PointLight(0xff5500, 3.0, 8);
+fireLight.position.set(0, 0.5, 0);
+mainScene.add(fireLight);
+
+const fireLightB = new THREE.PointLight(0xff2200, 1.5, 6);
+fireLightB.position.set(0, 1.0, 0);
+mainScene.add(fireLightB);
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '🔥 Fire Controls' });
+gui.add(params, 'intensity',   0.1, 3.0, 0.01).name('Intensity').onChange(syncUniforms);
+gui.add(params, 'flameHeight', 0.3, 4.0, 0.05).name('Flame Height').onChange(syncUniforms);
+gui.add(params, 'particleCount', 500, 6000, 50).name('Particles').onChange(rebuildFire);
+gui.add(params, 'windX', -1.5, 1.5, 0.01).name('Wind X').onChange(syncUniforms);
+gui.add(params, 'windZ', -1.0, 1.0, 0.01).name('Wind Z').onChange(syncUniforms);
+gui.addColor(params, 'baseColor').name('Base Color').onChange(v => {
+  [smokeSystem, baseSystem, coreSystem].forEach(s => {
+    s.material.uniforms.uBaseColor.value.set(v);
+  });
+});
+gui.addColor(params, 'coreColor').name('Core Color').onChange(v => {
+  coreSystem.material.uniforms.uCoreColor.value.set(v);
+});
+gui.addColor(params, 'smokeColor').name('Smoke Color').onChange(v => {
+  smokeSystem.material.uniforms.uSmokeColor.value.set(v);
+});
+gui.add(params, 'heatIntensity', 0.0, 1.5, 0.01).name('Heat Shimmer').onChange(v => {
+  postMaterial.uniforms.uIntensity.value = v;
+});
+
+function syncUniforms() {
+  [smokeSystem, baseSystem, coreSystem].forEach(s => {
+    s.material.uniforms.uHeight.value    = params.flameHeight;
+    s.material.uniforms.uWindX.value    = params.windX;
+    s.material.uniforms.uWindZ.value    = params.windZ;
+    s.material.uniforms.uIntensity.value = params.intensity;
+  });
+}
+
+function rebuildFire() {
+  const newSmoke = Math.floor(params.particleCount * 0.30);
+  const newBase  = Math.floor(params.particleCount * 0.45);
+  const newCore  = Math.floor(params.particleCount * 0.25);
+
+  fireGroup.remove(smokeSystem, baseSystem, coreSystem);
+  smokeSystem.geometry.dispose(); smokeSystem.material.dispose();
+  baseSystem.geometry.dispose();  baseSystem.material.dispose();
+  coreSystem.geometry.dispose();  coreSystem.material.dispose();
+
+  const smokeNew = buildFire(0, newSmoke, 0);
+  const baseNew  = buildFire(1, newBase,  1);
+  const coreNew = buildFire(2, newCore,  2);
+
+  // sync uniforms
+  [smokeNew, baseNew, coreNew].forEach(s => {
+    s.material.uniforms.uHeight.value    = params.flameHeight;
+    s.material.uniforms.uWindX.value    = params.windX;
+    s.material.uniforms.uWindZ.value    = params.windZ;
+    s.material.uniforms.uIntensity.value = params.intensity;
+    s.material.uniforms.uBaseColor.value  = new THREE.Color(params.baseColor);
+    s.material.uniforms.uCoreColor.value  = new THREE.Color(params.coreColor);
+    s.material.uniforms.uSmokeColor.value = new THREE.Color(params.smokeColor);
+  });
+
+  smokeSystem = smokeNew;
+  baseSystem  = baseNew;
+  coreSystem  = coreNew;
+  fireGroup.add(smokeSystem, baseSystem, coreSystem);
+}
+
+// ─── Click to Blow ────────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let blowTarget = new THREE.Vector3();
+let blowTimer = 0;
+let blowDir = new THREE.Vector3();
+
+renderer.domElement.addEventListener('click', (e) => {
+  mouse.x = (e.clientX / window.innerWidth)  * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  raycaster.ray.intersectPlane(plane, blowTarget);
+  if (blowTarget) {
+    blowDir.subVectors(blowTarget, new THREE.Vector3(0, 0, 0)).normalize();
+    blowTimer = 1.5;
+  }
+});
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  const dpr = renderer.getPixelRatio();
+  renderTarget.setSize(w * dpr, h * dpr);
+});
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let blowX = 0, blowZ = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t  = clock.getElapsedTime();
+  const dt = clock.getDelta ? Math.min(clock.getDelta() / 2, 0.05) : 0.016;
+
+  // blow effect decay
+  if (blowTimer > 0) {
+    blowTimer -= 0.016;
+    const strength = Math.max(0, blowTimer) / 1.5;
+    blowX = blowDir.x * strength * 1.8;
+    blowZ = blowDir.z * strength * 1.2;
+  } else {
+    blowX *= 0.92;
+    blowZ *= 0.92;
+  }
+
+  // smooth wind params with blow overlay
+  const windX = params.windX + blowX;
+  const windZ = params.windZ + blowZ;
+
+  // update fire uniforms
+  [smokeSystem, baseSystem, coreSystem].forEach(s => {
+    s.material.uniforms.uTime.value   = t;
+    s.material.uniforms.uWindX.value   = windX;
+    s.material.uniforms.uWindZ.value   = windZ;
+  });
+
+  // flickering lights
+  const flicker = 0.85 + 0.15 * Math.sin(t * 18.7) * Math.cos(t * 11.3);
+  fireLight.intensity  = 3.0 * params.intensity * flicker;
+  fireLightB.intensity = 1.5 * params.intensity * (1.1 - flicker * 0.2);
+  fireLight.position.x = windX * 0.3;
+  fireLight.position.z = windZ * 0.2;
+
+  // ember glow pulse
+  ember.material.opacity = 0.4 + 0.25 * flicker;
+
+  // post-processing time
+  postMaterial.uniforms.uTime.value = t;
+
+  // ── Render pass 1: scene → render target ──────────────────────────────────
+  renderer.setRenderTarget(renderTarget);
+  renderer.clear();
+  renderer.render(mainScene, camera);
+
+  // ── Render pass 2: apply heat distortion → screen ────────────────────────
+  renderer.setRenderTarget(null);
+  renderer.clear();
+  renderer.render(postScene, postCamera);
+}
+
+animate();

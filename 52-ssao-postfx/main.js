@@ -1,0 +1,261 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { GammaCorrectionShader } from 'three/addons/shaders/GammaCorrectionShader.js'
+
+// ============ 渲染器 ============
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+document.body.appendChild(renderer.domElement)
+
+// ============ 主场景 ============
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0a0a0f)
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.025)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 80)
+camera.position.set(10, 8, 12)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.target.set(0, 1.5, 0)
+
+// ============ 灯光 ============
+const ambient = new THREE.AmbientLight(0xffffff, 0.3)
+scene.add(ambient)
+
+const dirLight = new THREE.DirectionalLight(0xfff4e6, 1.8)
+dirLight.position.set(8, 12, 6)
+dirLight.castShadow = true
+dirLight.shadow.mapSize.set(2048, 2048)
+dirLight.shadow.camera.near = 0.5
+dirLight.shadow.camera.far = 60
+dirLight.shadow.camera.left = -20
+dirLight.shadow.camera.right = 20
+dirLight.shadow.camera.top = 20
+dirLight.shadow.camera.bottom = -20
+dirLight.shadow.bias = -0.0005
+scene.add(dirLight)
+
+const fillLight = new THREE.PointLight(0x4080ff, 0.4, 30)
+fillLight.position.set(-6, 4, -4)
+scene.add(fillLight)
+
+// ============ 地面 ============
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({
+    color: 0x1a1a2e,
+    roughness: 0.85,
+    metalness: 0.1
+  })
+)
+floor.rotation.x = -Math.PI / 2
+floor.receiveShadow = true
+scene.add(floor)
+
+// ============ 密集物体：SSAO 效果明显 ============
+const boxMat = new THREE.MeshStandardMaterial({ color: 0x3a3a5c, roughness: 0.6, metalness: 0.3 })
+const sphereMat = new THREE.MeshStandardMaterial({ color: 0x5c3a5c, roughness: 0.4, metalness: 0.4 })
+const torusMat = new THREE.MeshStandardMaterial({ color: 0x3a5c3a, roughness: 0.5, metalness: 0.2 })
+const cylinderMat = new THREE.MeshStandardMaterial({ color: 0x5c4a3a, roughness: 0.7, metalness: 0.2 })
+
+const objects = []
+
+function addBox(x, y, z, w, h, d) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), boxMat.clone())
+  m.position.set(x, y, z)
+  m.castShadow = true
+  m.receiveShadow = true
+  scene.add(m)
+  objects.push(m)
+  return m
+}
+
+function addSphere(x, y, z, r) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), sphereMat.clone())
+  m.position.set(x, y, z)
+  m.castShadow = true
+  m.receiveShadow = true
+  scene.add(m)
+  objects.push(m)
+  return m
+}
+
+function addTorus(x, y, z, R, r) {
+  const m = new THREE.Mesh(new THREE.TorusGeometry(R, r, 16, 48), torusMat.clone())
+  m.position.set(x, y, z)
+  m.castShadow = true
+  m.receiveShadow = true
+  scene.add(m)
+  objects.push(m)
+  return m
+}
+
+function addCylinder(x, y, z, rt, rb, h) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 20), cylinderMat.clone())
+  m.position.set(x, y, z)
+  m.castShadow = true
+  m.receiveShadow = true
+  scene.add(m)
+  objects.push(m)
+  return m
+}
+
+// 中心高塔
+addBox(0, 2, 0, 2.5, 4, 2.5)
+addSphere(0, 5, 0, 0.9)
+addTorus(0, 5.8, 0, 1.1, 0.18).rotation.x = Math.PI / 2
+
+// 周围小建筑群
+addBox(-4, 1, -3, 2, 2, 2)
+addBox(-4.2, 2.6, -3.2, 1.4, 0.4, 1.4)
+addCylinder(-4.5, 3.2, -3, 0.12, 0.12, 1.2)
+
+addBox(4, 1.5, -2, 2.5, 3, 2)
+addSphere(4, 3.8, -2, 0.5)
+addBox(4.2, 2.2, -1.2, 0.4, 0.4, 0.8)
+
+addBox(3, 1, 4, 2, 2, 2)
+addCylinder(3.5, 2.4, 4.4, 0.3, 0.3, 0.8)
+
+addBox(-3.5, 0.75, 3.5, 1.5, 1.5, 1.5)
+addTorus(-3.5, 1.8, 3.5, 0.6, 0.12, 16, 48).rotation.x = Math.PI / 2
+
+// 散落的球体
+addSphere(-2, 0.6, -1.5, 0.6)
+addSphere(2.2, 0.5, 1.5, 0.5)
+addSphere(-1.5, 0.4, 2.8, 0.4)
+addSphere(1.8, 0.8, -4, 0.8)
+addSphere(-2.8, 0.5, -4.5, 0.5)
+
+// 小圆柱
+addCylinder(-1, 0.8, -2.5, 0.3, 0.3, 1.6)
+addCylinder(1.5, 0.6, -3.5, 0.25, 0.25, 1.2)
+
+// 地面散落的小盒子
+addBox(-6, 0.3, 0, 0.6, 0.6, 0.6)
+addBox(5.5, 0.4, 1.5, 0.8, 0.8, 0.8)
+addBox(-5, 0.25, -1, 0.5, 0.5, 0.5)
+addBox(0, 0.25, 5.5, 0.5, 0.5, 0.5)
+
+// 大型地板上的地板格子
+for (let i = -3; i <= 3; i++) {
+  const line = new THREE.Mesh(
+    new THREE.PlaneGeometry(40, 0.05),
+    new THREE.MeshBasicMaterial({ color: 0x2a2a40 })
+  )
+  line.rotation.x = -Math.PI / 2
+  line.position.set(0, 0.001, i * 2)
+  scene.add(line)
+}
+for (let i = -3; i <= 3; i++) {
+  const line = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.05, 40),
+    new THREE.MeshBasicMaterial({ color: 0x2a2a40 })
+  )
+  line.rotation.x = -Math.PI / 2
+  line.position.set(i * 2, 0.001, 0)
+  scene.add(line)
+}
+
+// ============ 后期处理 ============
+// 普通渲染链（无 SSAO）
+const composerDefault = new EffectComposer(renderer)
+composerDefault.addPass(new RenderPass(scene, camera))
+composerDefault.addPass(new OutputPass())
+
+// SSAO 渲染链
+const composerSSAO = new EffectComposer(renderer)
+
+// 启用超采样抗锯齿以获得更好的 SSAO 质量
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+
+const ssaoPass = new SSAOPass(scene, camera, innerWidth, innerHeight)
+ssaoPass.kernelRadius = 8
+ssaoPass.minDistance = 0.001
+ssaoPass.maxDistance = 0.08
+ssaoPass.output = SSAOPass.OUTPUT.Default
+
+composerSSAO.addPass(new RenderPass(scene, camera))
+composerSSAO.addPass(ssaoPass)
+composerSSAO.addPass(new OutputPass())
+
+// ============ lil-gui 控制面板 ============
+const params = {
+  ssaoEnabled: true,
+  radius: 8,
+  minDistance: 0.001,
+  maxDistance: 0.08
+}
+
+const gui = new lil.GUI({ container: document.getElementById('gui-container'), title: 'SSAO 控制' })
+gui.add(params, 'ssaoEnabled').name('SSAO 开关').onChange(v => {
+  // 切换渲染链
+})
+gui.add(params, 'radius', 1, 32, 0.5).name('半径').onChange(v => {
+  ssaoPass.kernelRadius = v
+})
+gui.add(params, 'minDistance', 0.0001, 0.01, 0.0001).name('最小距离').onChange(v => {
+  ssaoPass.minDistance = v
+})
+gui.add(params, 'maxDistance', 0.01, 0.5, 0.01).name('最大距离').onChange(v => {
+  ssaoPass.maxDistance = v
+})
+gui.add({ output: 'SSAO' }, 'output', ['SSAO', 'Depth', 'Normal']).name('调试视图').onChange(v => {
+  if (v === 'SSAO') ssaoPass.output = SSAOPass.OUTPUT.Default
+  else if (v === 'Depth') ssaoPass.output = SSAOPass.OUTPUT.Depth
+  else ssaoPass.output = SSAOPass.OUTPUT.Normal
+})
+
+// ============ 渲染循环 ============
+const clock = new THREE.Clock()
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  objects.forEach((obj, i) => {
+    if (obj.geometry.type === 'TorusGeometry') {
+      obj.rotation.y = t * 0.3 + i
+      obj.rotation.x = t * 0.15 + i * 0.5
+    } else if (obj.geometry.type === 'SphereGeometry') {
+      obj.position.y = obj.userData.baseY !== undefined
+        ? obj.userData.baseY + Math.sin(t * 1.2 + i) * 0.15
+        : obj.position.y
+    }
+  })
+
+  // 存储球的原始 Y 位置
+  objects.forEach(obj => {
+    if (obj.geometry.type === 'SphereGeometry' && obj.userData.baseY === undefined) {
+      obj.userData.baseY = obj.position.y
+    }
+  })
+
+  controls.update()
+
+  // 根据开关选择渲染链
+  if (params.ssaoEnabled) {
+    composerSSAO.render()
+  } else {
+    composerDefault.render()
+  }
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+  composerDefault.setSize(innerWidth, innerHeight)
+  composerSSAO.setSize(innerWidth, innerHeight)
+  ssaoPass.setSize(innerWidth, innerHeight)
+})

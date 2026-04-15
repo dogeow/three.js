@@ -1,0 +1,274 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// ─── Scene setup ───────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.045);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 22, 38);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.maxPolarAngle = Math.PI / 2 - 0.04;
+
+// ─── Lights ────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x1a1f3a, 2.5));
+
+const dirLight = new THREE.DirectionalLight(0x5090ff, 2.2);
+dirLight.position.set(10, 25, 15);
+scene.add(dirLight);
+
+const rimLight = new THREE.DirectionalLight(0xff44aa, 1.0);
+rimLight.position.set(-15, 5, -20);
+scene.add(rimLight);
+
+const pointLight = new THREE.PointLight(0x44ffcc, 1.8, 60);
+pointLight.position.set(0, 15, 0);
+scene.add(pointLight);
+
+// ─── Grid & Plane ──────────────────────────────────────────────────────────
+const gridHelper = new THREE.GridHelper(60, 30, 0x112244, 0x0a1525);
+gridHelper.position.y = -0.05;
+scene.add(gridHelper);
+
+const planeMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshStandardMaterial({ color: 0x060a14, roughness: 0.95, metalness: 0.05 })
+);
+planeMesh.rotation.x = -Math.PI / 2;
+planeMesh.position.y = -0.1;
+scene.add(planeMesh);
+
+// ─── Particle grid (InstancedMesh) ─────────────────────────────────────────
+const GRID = 60;
+const COUNT = GRID * GRID;
+const SPACING = 0.7;
+
+const baseGeom = new THREE.SphereGeometry(0.14, 10, 10);
+const baseMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  emissive: 0x003366,
+  emissiveIntensity: 0.6,
+  roughness: 0.3,
+  metalness: 0.7
+});
+
+const mesh = new THREE.InstancedMesh(baseGeom, baseMat, COUNT);
+mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(mesh);
+
+// ─── Ripple system ─────────────────────────────────────────────────────────
+const MAX_RIPPLES = 6;
+const ripples = []; // { cx, cz, startTime, radius, strength }
+
+function addRipple(cx, cz) {
+  if (ripples.length >= MAX_RIPPLES) ripples.shift();
+  ripples.push({ cx, cz, startTime: clock.getElapsedTime(), radius: 0, strength: 4.5 });
+}
+
+// ─── State arrays ───────────────────────────────────────────────────────────
+const heights  = new Float32Array(COUNT);
+const velocities = new Float32Array(COUNT);
+const prevHeights = new Float32Array(COUNT);
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+const dummy = new THREE.Object3D();
+const color  = new THREE.Color();
+const _rippleForce = new Float32Array(COUNT);
+
+function idx(i, j) { return j * GRID + i; }
+
+function particleWorldXZ(i, j) {
+  return {
+    x: (i - GRID / 2) * SPACING,
+    z: (j - GRID / 2) * SPACING
+  };
+}
+
+function rippleForceAt(px, pz, r) {
+  let total = 0;
+  for (const rip of ripples) {
+    const dx = px - rip.cx;
+    const dz = pz - rip.cz;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const rippleAge = r - rip.startTime;
+    const rippleRadius = rippleAge * 12;
+    const ringWidth = 5.5;
+    const envelope = Math.exp(-Math.pow(dist - rippleRadius, 2) / (ringWidth * ringWidth));
+    const decay = Math.max(0, 1 - rippleAge * 0.28);
+    total += envelope * decay * rip.strength;
+  }
+  return total;
+}
+
+// ─── GUI ────────────────────────────────────────────────────────────────────
+const params = {
+  waveSpeed: 1.4,
+  frequency: 2.0,
+  amplitude: 2.2,
+  damping:   0.985,
+  spacing:   0.7,
+  rippleStrength: 4.5,
+  colorLow:  '#0033aa',
+  colorMid: '#00ddcc',
+  colorHigh: '#ff33aa',
+};
+
+const gui = new GUI({ title: 'Wave Params', width: 210 });
+gui.add(params, 'waveSpeed',      0.1, 5.0).name('Wave Speed');
+gui.add(params, 'frequency',      0.2, 6.0).name('Frequency');
+gui.add(params, 'amplitude',      0.1, 5.0).name('Amplitude');
+gui.add(params, 'damping',        0.900, 0.999).name('Damping').step(0.001);
+gui.add(params, 'rippleStrength', 0.5, 10.0).name('Ripple Strength');
+gui.addColor(params, 'colorLow').name('Color · Low');
+gui.addColor(params, 'colorMid').name('Color · Mid');
+gui.addColor(params, 'colorHigh').name('Color · High');
+
+// ─── Mouse ──────────────────────────────────────────────────────────────────
+const mouse = new THREE.Vector2(-9999, -9999);
+window.addEventListener('mousemove', e => {
+  mouse.x = (e.clientX / window.innerWidth)  * 2 - 1;
+  mouse.y = (e.clientY / window.innerHeight) * 2 - 1;
+});
+window.addEventListener('click', e => {
+  // raycast to find click on y=0 plane
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(
+    (e.clientX / window.innerWidth)  * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  ), camera);
+  const hits = raycaster.intersectObject(planeMesh);
+  if (hits.length) {
+    addRipple(hits[0].point.x, hits[0].point.z);
+  }
+});
+
+// ─── Resize ─────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Color mapping ──────────────────────────────────────────────────────────
+const cLow  = new THREE.Color();
+const cMid  = new THREE.Color();
+const cHigh = new THREE.Color();
+
+function updateColors() {
+  cLow.set(params.colorLow);
+  cMid.set(params.colorMid);
+  cHigh.set(params.colorHigh);
+}
+updateColors();
+
+// ─── Animation loop ─────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const t   = clock.getElapsedTime();
+  const dt  = Math.min(clock.getDelta(), 0.05);
+
+  // mouse-driven frequency & amplitude
+  const mouseFreq = params.frequency + mouse.y * 1.8 + 0.001;
+  const mouseAmp  = Math.max(0.05, params.amplitude + mouse.x * 1.5);
+
+  updateColors();
+
+  // Build ripple force array each frame
+  _rippleForce.fill(0);
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const k = idx(i, j);
+      const { x: px, z: pz } = particleWorldXZ(i, j);
+      _rippleForce[k] = rippleForceAt(px, pz, t);
+    }
+  }
+
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const k = idx(i, j);
+
+      const { x: px, z: pz } = particleWorldXZ(i, j);
+
+      // Base sinusoidal wave
+      const baseWave = Math.sin(px * mouseFreq * 0.18 - t * params.waveSpeed)
+                     * Math.cos(pz * mouseFreq * 0.18 - t * params.waveSpeed * 0.7)
+                     * mouseAmp;
+
+      // Coupling with neighbours (spring-like)
+      let耦合 = 0.0;
+      if (i > 0)          耦合 += (heights[idx(i-1, j)] - heights[k]) * 0.06;
+      if (i < GRID - 1)   耦合 += (heights[idx(i+1, j)] - heights[k]) * 0.06;
+      if (j > 0)          耦合 += (heights[idx(i, j-1)] - heights[k]) * 0.06;
+      if (j < GRID - 1)   耦合 += (heights[idx(i, j+1)] - heights[k]) * 0.06;
+
+      const rippleF = _rippleForce[k];
+      const acceleration = baseWave * 0.35 + 耦合 + rippleF * 0.5;
+
+      velocities[k] = (velocities[k] + acceleration * dt * 8.0) * params.damping;
+      prevHeights[k] = heights[k];
+      heights[k] += velocities[k] * dt * 4.0;
+    }
+  }
+
+  // Update instance matrices & colors
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const k = idx(i, j);
+      const h = heights[k];
+      const vel = Math.abs(velocities[k]);
+
+      dummy.position.set(
+        (i - GRID / 2) * params.spacing,
+        h,
+        (j - GRID / 2) * params.spacing
+      );
+
+      const scale = 0.7 + Math.min(vel * 0.4, 0.8);
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(k, dummy.matrix);
+
+      // Color: low→mid→high based on height
+      const norm = (h / (mouseAmp + 0.1) + 1.0) * 0.5; // 0..1
+      if (norm < 0.5) {
+        color.lerpColors(cLow, cMid, norm * 2.0);
+      } else {
+        color.lerpColors(cMid, cHigh, (norm - 0.5) * 2.0);
+      }
+      mesh.setColorAt(k, color);
+    }
+  }
+
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+  // Animate point light
+  pointLight.position.x = Math.sin(t * 0.4) * 12;
+  pointLight.position.z = Math.cos(t * 0.3) * 12;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// seed initial heights slightly
+for (let k = 0; k < COUNT; k++) {
+  heights[k] = (Math.random() - 0.5) * 0.05;
+}
+
+clock.start();
+animate();

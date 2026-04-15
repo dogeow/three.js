@@ -1,0 +1,659 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+
+// ─── Renderer ────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.2
+document.body.appendChild(renderer.domElement)
+
+// ─── Scene ───────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x050510)
+scene.fog = new THREE.FogExp2(0x050510, 0.018)
+
+// ─── Camera ──────────────────────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500)
+camera.position.set(0, 4, 14)
+camera.lookAt(0, 0, 0)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.06
+controls.minDistance = 5
+controls.maxDistance = 40
+
+// ─── Lights ───────────────────────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0x1a1030, 2.0)
+scene.add(ambient)
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.0)
+dirLight.position.set(5, 10, 8)
+scene.add(dirLight)
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function wavelengthToRGB(wavelength) {
+  // Approximate sRGB from wavelength (380-750 nm)
+  let r = 0, g = 0, b = 0
+  if (wavelength >= 380 && wavelength < 440) {
+    r = -(wavelength - 440) / (440 - 380)
+    g = 0
+    b = 1
+  } else if (wavelength >= 440 && wavelength < 490) {
+    r = 0
+    g = (wavelength - 440) / (490 - 440)
+    b = 1
+  } else if (wavelength >= 490 && wavelength < 510) {
+    r = 0
+    g = 1
+    b = -(wavelength - 510) / (510 - 490)
+  } else if (wavelength >= 510 && wavelength < 580) {
+    r = (wavelength - 510) / (580 - 510)
+    g = 1
+    b = 0
+  } else if (wavelength >= 580 && wavelength < 645) {
+    r = 1
+    g = -(wavelength - 645) / (645 - 580)
+    b = 0
+  } else if (wavelength >= 645 && wavelength <= 750) {
+    r = 1
+    g = 0
+    b = 0
+  }
+
+  // Intensity falloff at edges
+  let factor = 1.0
+  if (wavelength >= 380 && wavelength < 420) {
+    factor = 0.3 + 0.7 * (wavelength - 380) / (420 - 380)
+  } else if (wavelength >= 645 && wavelength <= 750) {
+    factor = 0.3 + 0.7 * (750 - wavelength) / (750 - 645)
+  }
+  return { r: r * factor, g: g * factor, b: b * factor }
+}
+
+// ─── Grating parameters ───────────────────────────────────────────────────────
+const params = {
+  slitSpacing: 1.0,       // µm (converted to m internally)
+  gratingAngle: 0.0,      // degrees
+  numOrders: 2,           // max diffraction order to show (±1, ±2)
+  showOrder0: true,
+  showOrderP1: true,
+  showOrderN1: true,
+  showOrderP2: true,
+  showOrderN2: true,
+  lightSpread: 0.05,     // angular spread of incident beam
+  slitWidth: 0.08,       // visual slit width
+  glowIntensity: 1.0,
+  showRuler: true,
+  incidentAngle: 0.0,     // angle of incident beam from normal
+}
+
+// Convert µm to meters
+function getD() { return params.slitSpacing * 1e-6 }
+
+// ─── Build scene groups ───────────────────────────────────────────────────────
+const gratingGroup = new THREE.Group()
+scene.add(gratingGroup)
+
+const spectraGroup = new THREE.Group()
+scene.add(spectraGroup)
+
+const rulerGroup = new THREE.Group()
+scene.add(rulerGroup)
+
+// ─── Grating plane ────────────────────────────────────────────────────────────
+const gratingGeo = new THREE.PlaneGeometry(4, 3, 80, 60)
+const gratingMat = new THREE.MeshStandardMaterial({
+  color: 0x8888cc,
+  metalness: 0.9,
+  roughness: 0.15,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.55,
+})
+const gratingMesh = new THREE.Mesh(gratingGeo, gratingMat)
+gratingMesh.position.set(0, 0, 0)
+gratingMesh.rotation.x = THREE.MathUtils.degToRad(-90)
+gratingGroup.add(gratingMesh)
+
+// Grating lines (transparent slits drawn as dark lines)
+const gratingLineMat = new THREE.MeshBasicMaterial({
+  color: 0x111133,
+  transparent: true,
+  opacity: 0.85,
+  side: THREE.DoubleSide,
+})
+
+const LINES_COUNT = 80
+for (let i = 0; i <= LINES_COUNT; i++) {
+  const t = (i / LINES_COUNT - 0.5) * 4
+  const lineGeo = new THREE.PlaneGeometry(0.008, 3)
+  const line = new THREE.Mesh(lineGeo, gratingLineMat)
+  line.position.set(t, 0, 0)
+  line.rotation.x = THREE.MathUtils.degToRad(-90)
+  gratingGroup.add(line)
+}
+
+// Grating frame
+const frameGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(4, 3, 0.05))
+const frameMat = new THREE.LineBasicMaterial({ color: 0x4455aa, transparent: true, opacity: 0.6 })
+const frame = new THREE.LineSegments(frameGeo, frameMat)
+frame.position.copy(gratingMesh.position)
+frame.rotation.copy(gratingMesh.rotation)
+frame.position.z += 0.03
+gratingGroup.add(frame)
+
+// ─── Incident light beam (white ray) ─────────────────────────────────────────
+function buildIncidentBeam() {
+  // Remove old
+  while (scene.children.length > 0) {
+    const c = scene.children[scene.children.length - 1]
+    if (c.isLine || c.isLineSegments || c.isPoints) {
+      scene.remove(c)
+      break
+    } else {
+      break
+    }
+  })
+
+  const beamGroup = new THREE.Group()
+  scene.add(beamGroup)
+
+  const incidentAngleRad = THREE.MathUtils.degToRad(params.incidentAngle)
+  const beamDir = new THREE.Vector3(Math.sin(incidentAngleRad), 0, -Math.cos(incidentAngleRad))
+
+  // Beam cone geometry
+  const coneLength = 6
+  const coneRadius = coneLength * Math.tan(params.lightSpread * 0.5 * Math.PI / 180)
+
+  const coneGeo = new THREE.ConeGeometry(coneRadius, coneLength, 32, 1, true)
+  const coneMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.07,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  })
+  const cone = new THREE.Mesh(coneGeo, coneMat)
+  cone.rotation.x = Math.PI / 2
+  cone.position.set(-coneLength / 2 * beamDir.x, 0, -coneLength / 2 * beamDir.z)
+  cone.lookAt(new THREE.Vector3(0, 0, 0))
+  cone.rotateY(Math.PI / 2)
+  beamGroup.add(cone)
+
+  // Central bright ray
+  const rayGeo = new THREE.CylinderGeometry(0.02, 0.04, coneLength * 0.6, 8)
+  const rayMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+  const ray = new THREE.Mesh(rayGeo, rayMat)
+  ray.position.set(-coneLength * 0.3 * beamDir.x, 0, -coneLength * 0.3 * beamDir.z)
+  ray.lookAt(0, 0, 0)
+  ray.rotateX(Math.PI / 2)
+  beamGroup.add(ray)
+
+  return beamGroup
+}
+
+let incidentBeamGroup = buildIncidentBeam()
+
+// ─── Build spectral lines ─────────────────────────────────────────────────────
+const SPECTRAL_RESOLUTION = 300  // wavelengths sampled
+const WAVELENGTH_MIN = 380
+const WAVELENGTH_MAX = 750
+
+function buildSpectralLines() {
+  // Clear
+  while (spectraGroup.children.length) spectraGroup.remove(spectraGroup.children[0])
+
+  const gratingAngleRad = THREE.MathUtils.degToRad(params.gratingAngle)
+  const incidentAngleRad = THREE.MathUtils.degToRad(params.incidentAngle)
+  const d = getD()
+
+  const maxOrder = params.numOrders + 1  // show up to numOrders
+
+  // For each diffraction order m
+  for (let m = -maxOrder; m <= maxOrder; m++) {
+    if (m === 0 && !params.showOrder0) continue
+    if (m === 1 && !params.showOrderP1) continue
+    if (m === -1 && !params.showOrderN1) continue
+    if (m === 2 && !params.showOrderP2) continue
+    if (m === -2 && !params.showOrderN2) continue
+
+    const orderGroup = new THREE.Group()
+    orderGroup.name = `order_${m}`
+    spectraGroup.add(orderGroup)
+
+    // Collect spectral segments
+    const segments = []
+
+    for (let i = 0; i < SPECTRAL_RESOLUTION; i++) {
+      const wl = WAVELENGTH_MIN + (WAVELENGTH_MAX - WAVELENGTH_MIN) * i / SPECTRAL_RESOLUTION
+
+      // Grating equation with incident angle:
+      // d * (sin(theta_diff) - sin(theta_incident)) = m * lambda
+      // We assume incident at angle theta_incident from normal
+      // diffracted angle = arcsin(m * lambda / d + sin(theta_incident))
+      const sinThetaInc = Math.sin(incidentAngleRad)
+      const arg = m * wl * 1e-9 / d + sinThetaInc
+
+      if (Math.abs(arg) > 1.0) continue  // evanescent, no propagation
+
+      const sinThetaDiff = arg
+      const thetaDiff = Math.asin(sinThetaDiff)
+      const thetaDeg = THREE.MathUtils.radToDeg(thetaDiff)
+
+      // Convert diffracted angle to 3D direction
+      // The grating lies in XZ plane (normal along Z), grooves along X
+      // diffracted angle measured from grating normal in XZ plane
+      const thetaFromNormal = thetaDiff + gratingAngleRad * 0  // just thetaDiff
+      const phi = 0  // in XZ plane only
+
+      // Projected direction
+      const kx = Math.sin(thetaDiff)
+      const kz = -Math.cos(thetaDiff)
+
+      // Arc position: center of grating at z=0, spectra diverge at z<0 (behind grating)
+      const arcDistance = 5.0  // virtual screen distance
+
+      const x = arcDistance * kx / (Math.abs(kz) + 0.001) * (kz < 0 ? 1 : -1)
+      const z = -arcDistance * Math.sign(kz)
+
+      const { r, g, b } = wavelengthToRGB(wl)
+      segments.push({ x, z, wl, r, g, b })
+    }
+
+    if (segments.length < 2) continue
+
+    // Sort by x position
+    segments.sort((a, b_) => a.x - b_.x)
+
+    // Create continuous spectral band geometry per order
+    const halfWidth = 0.12  // half-height of spectral band
+    const bandVertices = []
+    const bandColors = []
+
+    for (let i = 0; i < segments.length - 1; i++) {
+      const s0 = segments[i]
+      const s1 = segments[i + 1]
+
+      // Skip if huge jump (discontinuity)
+      if (Math.abs(s1.x - s0.x) > 1.5) continue
+
+      const y0t = halfWidth
+      const y0b = -halfWidth
+      const y1t = halfWidth
+      const y1b = -halfWidth
+
+      // Two triangles per segment pair
+      const vCount = bandVertices.length / 3
+
+      // Triangle 1: (s0_top, s0_bottom, s1_top)
+      bandVertices.push(s0.x, y0t, s0.z,  s0.x, y0b, s0.z,  s1.x, y1t, s1.z)
+      // Triangle 2: (s0_bottom, s1_bottom, s1_top)
+      bandVertices.push(s0.x, y0b, s0.z,  s1.x, y1b, s1.z,  s1.x, y1t, s1.z)
+
+      // Colors (6 vertices per quad, each vertex gets its wavelength color)
+      const col0 = new THREE.Color(s0.r, s0.g, s0.b)
+      const col1 = new THREE.Color(s1.r, s1.g, s1.b)
+      for (let v = 0; v < 6; v++) {
+        const t = (v === 1 || v === 4) ? 0 : 1  // bottom vs top
+        const c = t === 1 ? col0 : col0  // use col0 for top-ish
+        bandColors.push(c.r * 2.5, c.g * 2.5, c.b * 2.5)
+      }
+    }
+
+    if (bandVertices.length === 0) continue
+
+    const bandGeo = new THREE.BufferGeometry()
+    bandGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(bandVertices), 3))
+    bandGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(bandColors), 3))
+    bandGeo.computeVertexNormals()
+
+    const bandMat = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    })
+
+    const bandMesh = new THREE.Mesh(bandGeo, bandMat)
+    orderGroup.add(bandMesh)
+
+    // Bright emissive line at the center of each order
+    const lineVertices = []
+    const lineColors = []
+
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i]
+      const yCenter = 0
+      lineVertices.push(s.x, yCenter, s.z)
+      lineColors.push(s.r * 4, s.g * 4, s.b * 4)
+    }
+
+    const lineGeo = new THREE.BufferGeometry()
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lineVertices), 3))
+    lineGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(lineColors), 3))
+
+    const lineMat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+    const spectralLine = new THREE.Line(lineGeo, lineMat)
+    orderGroup.add(spectralLine)
+
+    // Glow halos behind the line
+    for (let w = 0; w < segments.length; w++) {
+      const s = segments[w]
+      const haloGeo = new THREE.PlaneGeometry(0.18, 0.35)
+      const col = new THREE.Color(s.r, s.g, s.b)
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: col,
+        transparent: true,
+        opacity: 0.25 * params.glowIntensity,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      })
+      const halo = new THREE.Mesh(haloGeo, haloMat)
+      halo.position.set(s.x, 0, s.z - 0.02)
+      orderGroup.add(halo)
+    }
+  }
+}
+
+// ─── Wavelength ruler ─────────────────────────────────────────────────────────
+function buildWavelengthRuler() {
+  while (rulerGroup.children.length) rulerGroup.remove(rulerGroup.children[0])
+  if (!params.showRuler) return
+
+  const rulerX = 7.5
+  const rulerY = -3.5
+  const rulerLength = 5.5
+  const pxPerNm = rulerLength / (WAVELENGTH_MAX - WAVELENGTH_MIN)
+
+  // Ruler background
+  const rulerBgGeo = new THREE.PlaneGeometry(rulerLength + 0.4, 0.7)
+  const rulerBgMat = new THREE.MeshBasicMaterial({
+    color: 0x0a0a18,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  })
+  const rulerBg = new THREE.Mesh(rulerBgGeo, rulerBgMat)
+  rulerBg.position.set(rulerX, rulerY, -0.1)
+  rulerGroup.add(rulerBg)
+
+  // Tick marks
+  for (let wl = 380; wl <= 750; wl += 10) {
+    const t = (wl - WAVELENGTH_MIN) / (WAVELENGTH_MAX - WAVELENGTH_MIN)
+    const x = rulerX - rulerLength / 2 + t * rulerLength
+    const { r, g, b } = wavelengthToRGB(wl)
+    const col = new THREE.Color(r, g, b)
+
+    // Major tick every 50nm
+    const isMajor = wl % 50 === 0
+    const tickLen = isMajor ? 0.25 : 0.12
+    const tickGeo = new THREE.PlaneGeometry(0.04, tickLen)
+    const tickMat = new THREE.MeshBasicMaterial({
+      color: col,
+      transparent: true,
+      opacity: isMajor ? 0.9 : 0.5,
+      side: THREE.DoubleSide,
+    })
+    const tick = new THREE.Mesh(tickGeo, tickMat)
+    tick.position.set(x, rulerY - 0.35 - tickLen / 2, 0)
+    rulerGroup.add(tick)
+
+    if (isMajor) {
+      // Label using canvas texture
+      const canvas = document.createElement('canvas')
+      canvas.width = 128
+      canvas.height = 48
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = 'rgba(0,0,0,0)'
+      ctx.fillRect(0, 0, 128, 48)
+      ctx.font = 'bold 22px Courier New'
+      ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`
+      ctx.textAlign = 'center'
+      ctx.fillText(`${wl}`, 64, 30)
+
+      const tex = new THREE.CanvasTexture(canvas)
+      const labelGeo = new THREE.PlaneGeometry(0.5, 0.2)
+      const labelMat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+      const label = new THREE.Mesh(labelGeo, labelMat)
+      label.position.set(x, rulerY - 0.65, 0)
+      rulerGroup.add(label)
+    }
+  }
+
+  // nm label
+  const labelCanvas = document.createElement('canvas')
+  labelCanvas.width = 128
+  labelCanvas.height = 64
+  const lctx = labelCanvas.getContext('2d')
+  lctx.font = 'bold 26px Courier New'
+  lctx.fillStyle = 'rgba(200,180,255,0.9)'
+  lctx.textAlign = 'center'
+  lctx.fillText('波长 nm', 64, 40)
+  const labelTex = new THREE.CanvasTexture(labelCanvas)
+  const labelBgGeo = new THREE.PlaneGeometry(1.2, 0.5)
+  const labelBgMat = new THREE.MeshBasicMaterial({
+    map: labelTex,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const labelMesh = new THREE.Mesh(labelBgGeo, labelBgMat)
+  labelMesh.position.set(rulerX, rulerY - 1.1, 0)
+  rulerGroup.add(labelMesh)
+}
+
+// ─── Build optical axis lines ─────────────────────────────────────────────────
+function buildOpticalAxis() {
+  const axisGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-12, 0, 0),
+    new THREE.Vector3(12, 0, 0),
+  ])
+  const axisMat = new THREE.LineDashedMaterial({
+    color: 0x334466,
+    dashSize: 0.3,
+    gapSize: 0.2,
+    transparent: true,
+    opacity: 0.4,
+  })
+  const axis = new THREE.Line(axisGeo, axisMat)
+  axis.computeLineDistances()
+  scene.add(axis)
+}
+buildOpticalAxis()
+
+// ─── Grating label ─────────────────────────────────────────────────────────────
+function addLabel(text, position) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  ctx.font = 'bold 28px -apple-system, sans-serif'
+  ctx.fillStyle = 'rgba(150,130,220,0.9)'
+  ctx.textAlign = 'center'
+  ctx.fillText(text, 128, 40)
+  const tex = new THREE.CanvasTexture(canvas)
+  const geo = new THREE.PlaneGeometry(1.8, 0.45)
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.copy(position)
+  return mesh
+}
+
+const gratingLabel = addLabel('光栅 Grating', new THREE.Vector3(0, -2.2, 0.5))
+scene.add(gratingLabel)
+
+const sourceLabel = addLabel('光源 Source', new THREE.Vector3(-8, 0, 0))
+scene.add(sourceLabel)
+
+// Source (slit) glow
+const slitGeo = new THREE.SphereGeometry(0.15, 16, 16)
+const slitMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
+const slit = new THREE.Mesh(slitGeo, slitMat)
+slit.position.set(-8, 0, 0)
+scene.add(slit)
+
+const slitGlowGeo = new THREE.SphereGeometry(0.35, 16, 16)
+const slitGlowMat = new THREE.MeshBasicMaterial({
+  color: 0x8888ff,
+  transparent: true,
+  opacity: 0.12,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+})
+const slitGlow = new THREE.Mesh(slitGlowGeo, slitGlowMat)
+slitGlow.position.copy(slit.position)
+scene.add(slitGlow)
+
+// ─── Order labels ─────────────────────────────────────────────────────────────
+function addOrderLabel(m, pos) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  const label = m === 0 ? 'm = 0' : `m = ${m > 0 ? '+' : ''}${m}`
+  ctx.font = 'bold 26px -apple-system, sans-serif'
+  ctx.fillStyle = m === 0 ? 'rgba(255,255,255,0.7)' : 'rgba(180,220,255,0.8)'
+  ctx.textAlign = 'center'
+  ctx.fillText(label, 64, 38)
+  const tex = new THREE.CanvasTexture(canvas)
+  const geo = new THREE.PlaneGeometry(1.0, 0.5)
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.copy(pos)
+  return mesh
+}
+
+// ─── Build all ────────────────────────────────────────────────────────────────
+function rebuildAll() {
+  buildSpectralLines()
+  buildWavelengthRuler()
+  buildIncidentBeam()
+}
+
+rebuildAll()
+
+// ─── GUI ──────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '衍射光栅参数 Diffraction Grating' })
+gui.add(params, 'slitSpacing', 0.2, 5.0, 0.01).name('狭缝间距 d (µm)').onChange(rebuildAll)
+gui.add(params, 'gratingAngle', -30, 30, 0.5).name('光栅角度 (°)').onChange(rebuildAll)
+gui.add(params, 'incidentAngle', -20, 20, 0.5).name('入射角度 (°)').onChange(rebuildAll)
+gui.add(params, 'numOrders', 1, 3, 1).name('最大衍射级次').onChange(rebuildAll)
+gui.add(params, 'lightSpread', 0.01, 1.0, 0.01).name('光束发散角 (°)').onChange(rebuildAll)
+gui.add(params, 'glowIntensity', 0.1, 3.0, 0.05).name('光谱辉光强度').onChange(rebuildAll)
+gui.add(params, 'showRuler').name('显示波长尺').onChange(rebuildAll)
+
+const ordersFolder = gui.addFolder('衍射级次 Orders')
+ordersFolder.add(params, 'showOrder0').name('m = 0 (中央)').onChange(rebuildAll)
+ordersFolder.add(params, 'showOrderP1').name('m = +1').onChange(rebuildAll)
+ordersFolder.add(params, 'showOrderN1').name('m = -1').onChange(rebuildAll)
+ordersFolder.add(params, 'showOrderP2').name('m = +2').onChange(rebuildAll)
+ordersFolder.add(params, 'showOrderN2').name('m = -2').onChange(rebuildAll)
+ordersFolder.open()
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(window.innerWidth, window.innerHeight)
+})
+
+// ─── Animate ─────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+let orderLabels = []
+
+function updateOrderLabels() {
+  orderLabels.forEach(l => scene.remove(l))
+  orderLabels = []
+
+  spectraGroup.children.forEach(orderGroup => {
+    const m = parseInt(orderGroup.name.split('_')[1])
+    if (isNaN(m)) return
+
+    // Find average position of this order
+    let sumX = 0, sumZ = 0, count = 0
+    orderGroup.children.forEach(child => {
+      if (child.isMesh) {
+        sumX += child.position.x
+        sumZ += child.position.z
+        count++
+      }
+    })
+    if (count === 0) return
+
+    const avgX = sumX / count
+    const avgZ = sumZ / count
+    const labelY = avgZ < 0 ? -0.7 : 0.7
+    const labelZ = avgZ
+
+    const lbl = addOrderLabel(m, new THREE.Vector3(avgX, labelY, labelZ))
+    scene.add(lbl)
+    orderLabels.push(lbl)
+  })
+}
+
+function animate() {
+  requestAnimationFrame(animate)
+  const elapsed = clock.getElapsedTime()
+
+  // Rotate grating slightly
+  gratingMesh.rotation.y = THREE.MathUtils.degToRad(params.gratingAngle)
+
+  // Pulse slit glow
+  slitGlow.scale.setScalar(1.0 + Math.sin(elapsed * 3.0) * 0.15)
+  slitGlow.material.opacity = 0.08 + Math.sin(elapsed * 3.0) * 0.04
+
+  // Subtle grating shimmer
+  gratingMat.opacity = 0.45 + Math.sin(elapsed * 1.5) * 0.05
+
+  // Animate spectral line intensity pulse
+  spectraGroup.children.forEach((orderGroup, oi) => {
+    orderGroup.children.forEach(child => {
+      if (child.isMesh && child.material.opacity < 1) {
+        // glow halos
+        child.material.opacity = 0.2 * params.glowIntensity * (0.8 + Math.sin(elapsed * 2 + oi) * 0.2)
+      }
+    })
+  })
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+animate()
+
+// Build order labels after first render
+setTimeout(updateOrderLabels, 100)
+
+// ─── Expose ────────────────────────────────────────────────────────────────────
+window.scene = scene
+window.camera = camera
+window.renderer = renderer
+window.params = params

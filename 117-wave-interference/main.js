@@ -1,0 +1,440 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Scene Setup ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000508);
+scene.fog = new THREE.FogExp2(0x000510, 0.015);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 28, 22);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+controls.maxPolarAngle = Math.PI / 2 - 0.02;
+controls.target.set(0, 0, 0);
+
+// ─── Lights ───────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x0a0a20, 1.5);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0x4488ff, 0.8);
+dirLight.position.set(10, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 1024;
+dirLight.shadow.mapSize.height = 1024;
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 80;
+dirLight.shadow.camera.left = -20;
+dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 20;
+dirLight.shadow.camera.bottom = -20;
+scene.add(dirLight);
+
+const pointLight = new THREE.PointLight(0x00ffff, 1.0, 30);
+pointLight.position.set(0, 8, 0);
+scene.add(pointLight);
+
+// ─── Grid Plane (base) ────────────────────────────────────────────────────────
+const gridHelper = new THREE.GridHelper(40, 40, 0x112244, 0x081830);
+gridHelper.position.y = -0.01;
+scene.add(gridHelper);
+
+// ─── Wave Surface Shader ───────────────────────────────────────────────────────
+const vertexShader = /* glsl */`
+  uniform float uTime;
+  uniform int uNumSources;
+  uniform float uWavelength;
+  uniform float uDamping;
+  uniform float uSpeed;
+  uniform vec2 uSources[8];
+
+  varying float vHeight;
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+
+  float waveHeight(vec3 pos, float time) {
+    float h = 0.0;
+    for (int i = 0; i < 8; i++) {
+      if (i >= uNumSources) break;
+      vec2 src = uSources[i];
+      float d = distance(pos.xz, src);
+      float k = 6.28318 / uWavelength;
+      float omega = k * uSpeed;
+      float amp = exp(-uDamping * d) * exp(-0.3 * d);
+      h += amp * sin(k * d - omega * time);
+    }
+    return h;
+  }
+
+  void main() {
+    vUv = uv;
+    vec3 pos = position;
+
+    float h = waveHeight(pos, uTime);
+    pos.y += h;
+
+    vHeight = h;
+    vWorldPos = pos;
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+  }
+`;
+
+const fragmentShader = /* glsl */`
+  uniform float uTime;
+  uniform float uWavelength;
+
+  varying float vHeight;
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+
+  // Neon colormap: blue -> cyan -> green -> yellow -> red
+  vec3 heightColor(float t) {
+    // t in [-1, 1] range approx
+    t = clamp(t * 0.5 + 0.5, 0.0, 1.0);
+
+    vec3 c;
+    if (t < 0.2) {
+      c = mix(vec3(0.0, 0.0, 0.5), vec3(0.0, 0.2, 1.0), t / 0.2);
+    } else if (t < 0.4) {
+      c = mix(vec3(0.0, 0.2, 1.0), vec3(0.0, 1.0, 1.0), (t - 0.2) / 0.2);
+    } else if (t < 0.6) {
+      c = mix(vec3(0.0, 1.0, 1.0), vec3(0.0, 1.0, 0.0), (t - 0.4) / 0.2);
+    } else if (t < 0.8) {
+      c = mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), (t - 0.6) / 0.2);
+    } else {
+      c = mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (t - 0.8) / 0.2);
+    }
+    return c;
+  }
+
+  void main() {
+    float h = vHeight;
+    vec3 col = heightColor(h);
+
+    // Add glow based on absolute height
+    float glow = pow(abs(h) * 1.5, 1.8) * 0.4;
+    col += glow * col;
+
+    // Subtle grid lines
+    vec2 grid = abs(fract(vWorldPos.xz * 0.5) - 0.5);
+    float gridLine = smoothstep(0.48, 0.5, max(grid.x, grid.y));
+    col = mix(col, col * 0.6, gridLine * 0.3);
+
+    // Fresnel-like rim
+    float rim = pow(1.0 - abs(h) * 0.5, 3.0) * 0.15;
+    col += rim * vec3(0.5, 0.8, 1.0);
+
+    // Emissive boost for crests
+    float emissive = pow(max(h, 0.0), 2.0) * 0.8;
+    col += emissive * vec3(1.0, 1.0, 1.0) * 0.3;
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+// ─── Wave Surface ─────────────────────────────────────────────────────────────
+const PLANE_SIZE = 30;
+const SEGMENTS = 200;
+const waveGeometry = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE, SEGMENTS, SEGMENTS);
+waveGeometry.rotateX(-Math.PI / 2);
+
+const waveUniforms = {
+  uTime:       { value: 0 },
+  uNumSources: { value: 3 },
+  uWavelength: { value: 2.5 },
+  uDamping:    { value: 0.08 },
+  uSpeed:       { value: 3.0 },
+  uSources:     { value: [
+    new THREE.Vector2(-5, -5),
+    new THREE.Vector2(5, 3),
+    new THREE.Vector2(0, -2),
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(0, 0),
+  ]},
+};
+
+const waveMaterial = new THREE.ShaderMaterial({
+  vertexShader,
+  fragmentShader,
+  uniforms: waveUniforms,
+  side: THREE.DoubleSide,
+});
+
+const waveMesh = new THREE.Mesh(waveGeometry, waveMaterial);
+waveMesh.receiveShadow = true;
+scene.add(waveMesh);
+
+// ─── Raycaster for Click ──────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const clickPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const intersectPoint = new THREE.Vector3();
+
+function addWaveSource(x, z) {
+  const num = waveUniforms.uNumSources.value;
+  if (num >= 8) {
+    // Replace oldest
+    for (let i = 0; i < 7; i++) {
+      waveUniforms.uSources.value[i].copy(waveUniforms.uSources.value[i + 1]);
+    }
+    waveUniforms.uSources.value[7].set(x, z);
+  } else {
+    waveUniforms.uSources.value[num].set(x, z);
+    waveUniforms.uNumSources.value = num + 1;
+  }
+  updateSourceMarkers();
+}
+
+function onMouseClick(event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  if (raycaster.ray.intersectPlane(clickPlane, intersectPoint)) {
+    const half = PLANE_SIZE / 2 - 0.5;
+    const x = Math.max(-half, Math.min(half, intersectPoint.x));
+    const z = Math.max(-half, Math.min(half, intersectPoint.z));
+    addWaveSource(x, z);
+  }
+}
+
+window.addEventListener('click', onMouseClick);
+
+// ─── Source Markers ───────────────────────────────────────────────────────────
+const markerGroup = new THREE.Group();
+scene.add(markerGroup);
+
+const markerGeo = new THREE.SphereGeometry(0.15, 16, 16);
+const markerColors = [0x00ffff, 0xff00ff, 0xffff00, 0x00ff88, 0xff8800, 0x8800ff, 0xff4488, 0x44ff88];
+
+function updateSourceMarkers() {
+  while (markerGroup.children.length) markerGroup.remove(markerGroup.children[0]);
+  const count = waveUniforms.uNumSources.value;
+  for (let i = 0; i < count; i++) {
+    const pos = waveUniforms.uSources.value[i];
+    const mat = new THREE.MeshBasicMaterial({ color: markerColors[i % markerColors.length] });
+    const m = new THREE.Mesh(markerGeo, mat);
+    m.position.set(pos.x, 0.1, pos.y);
+    markerGroup.add(m);
+
+    // Ring
+    const ringGeo = new THREE.RingGeometry(0.3, 0.35, 32);
+    const ringMat = new THREE.MeshBasicMaterial({ color: markerColors[i % markerColors.length], side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.set(pos.x, 0.05, pos.y);
+    ring.rotation.x = -Math.PI / 2;
+    markerGroup.add(ring);
+  }
+}
+updateSourceMarkers();
+
+// ─── Particle system for auto sources ───────────────────────────────────────
+const particleCount = 200;
+const particleGeo = new THREE.BufferGeometry();
+const positions = new Float32Array(particleCount * 3);
+const particleSpeeds = new Float32Array(particleCount);
+
+for (let i = 0; i < particleCount; i++) {
+  const r = Math.random() * (PLANE_SIZE / 2 - 2);
+  const theta = Math.random() * Math.PI * 2;
+  positions[i * 3] = Math.cos(theta) * r;
+  positions[i * 3 + 1] = 0;
+  positions[i * 3 + 2] = Math.sin(theta) * r;
+  particleSpeeds[i] = 0.5 + Math.random() * 1.5;
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+const particleMat = new THREE.PointsMaterial({
+  size: 0.08,
+  color: 0x4488ff,
+  transparent: true,
+  opacity: 0.6,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const particles = new THREE.Points(particleGeo, particleMat);
+scene.add(particles);
+
+// ─── Auto Source System ───────────────────────────────────────────────────────
+const autoState = {
+  enabled: false,
+  timer: 0,
+  spawnInterval: 2.0,
+  life: 6.0,
+  sources: [], // { x, z, born }
+};
+
+function updateAutoSources(dt) {
+  if (!autoState.enabled) return;
+
+  autoState.timer += dt;
+  if (autoState.timer >= autoState.spawnInterval) {
+    autoState.timer = 0;
+    const r = Math.random() * (PLANE_SIZE / 2 - 3);
+    const theta = Math.random() * Math.PI * 2;
+    const x = Math.cos(theta) * r;
+    const z = Math.sin(theta) * r;
+
+    autoState.sources.push({ x, z, born: clock.getElapsedTime() });
+    if (autoState.sources.length > 8) autoState.sources.shift();
+
+    // Sync to uniforms
+    const count = Math.min(autoState.sources.length, 8);
+    waveUniforms.uNumSources.value = count;
+    for (let i = 0; i < count; i++) {
+      waveUniforms.uSources.value[i].set(autoState.sources[i].x, autoState.sources[i].z);
+    }
+    for (let i = count; i < 8; i++) {
+      waveUniforms.uSources.value[i].set(0, 0);
+    }
+    updateSourceMarkers();
+  }
+
+  // Remove old sources
+  const now = clock.getElapsedTime();
+  let changed = false;
+  for (let i = autoState.sources.length - 1; i >= 0; i--) {
+    if (now - autoState.sources[i].born > autoState.life) {
+      autoState.sources.splice(i, 1);
+      changed = true;
+    }
+  }
+  if (changed) {
+    const count = Math.min(autoState.sources.length, 8);
+    waveUniforms.uNumSources.value = count;
+    for (let i = 0; i < count; i++) {
+      waveUniforms.uSources.value[i].set(autoState.sources[i].x, autoState.sources[i].z);
+    }
+    for (let i = count; i < 8; i++) {
+      waveUniforms.uSources.value[i].set(0, 0);
+    }
+    updateSourceMarkers();
+  }
+}
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const params = {
+  numSources: 3,
+  wavelength: 2.5,
+  damping: 0.08,
+  speed: 3.0,
+  autoSources: false,
+};
+
+function syncUniforms() {
+  waveUniforms.uNumSources.value = params.numSources;
+  waveUniforms.uWavelength.value = params.wavelength;
+  waveUniforms.uDamping.value = params.damping;
+  waveUniforms.uSpeed.value = params.speed;
+
+  if (!autoState.enabled) {
+    updateSourceMarkers();
+  }
+}
+
+const gui = new GUI({ title: 'Wave Controls' });
+gui.add(params, 'numSources', 1, 8, 1).name('Wave Sources').onChange(syncUniforms);
+gui.add(params, 'wavelength', 0.5, 8.0, 0.1).name('Wavelength').onChange(syncUniforms);
+gui.add(params, 'damping', 0.0, 0.3, 0.005).name('Damping').onChange(syncUniforms);
+gui.add(params, 'speed', 0.5, 8.0, 0.1).name('Speed').onChange(syncUniforms);
+gui.add(params, 'autoSources').name('Auto Sources').onChange(v => {
+  autoState.enabled = v;
+  if (v) {
+    autoState.sources = [];
+    autoState.timer = autoState.spawnInterval; // spawn immediately
+    // Seed initial sources
+    for (let i = 0; i < 3; i++) {
+      const r = Math.random() * (PLANE_SIZE / 2 - 3);
+      const theta = Math.random() * Math.PI * 2;
+      autoState.sources.push({ x: Math.cos(theta) * r, z: Math.sin(theta) * r, born: clock.getElapsedTime() });
+    }
+  } else {
+    autoState.sources = [];
+    waveUniforms.uNumSources.value = 0;
+    for (let i = 0; i < 8; i++) waveUniforms.uSources.value[i].set(0, 0);
+    updateSourceMarkers();
+  }
+});
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Animate ─────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  waveUniforms.uTime.value = elapsed;
+
+  // Animate source markers (bob up and down)
+  const count = waveUniforms.uNumSources.value;
+  for (let i = 0; i < count && i < markerGroup.children.length; i++) {
+    const m = markerGroup.children[i * 2];
+    m.position.y = 0.15 + Math.sin(elapsed * 3 + i * 1.2) * 0.1;
+    const ring = markerGroup.children[i * 2 + 1];
+    if (ring) {
+      ring.scale.setScalar(1 + Math.sin(elapsed * 2 + i) * 0.15);
+      ring.material.opacity = 0.6 + Math.sin(elapsed * 2 + i) * 0.3;
+    }
+  }
+
+  // Animate particles
+  const posArr = particleGeo.attributes.position.array;
+  for (let i = 0; i < particleCount; i++) {
+    const idx = i * 3;
+    const x = posArr[idx];
+    const z = posArr[idx + 2];
+    const angle = Math.atan2(z, x) + particleSpeeds[i] * dt * 0.2;
+    const r = Math.sqrt(x * x + z * z);
+    posArr[idx] = Math.cos(angle) * r;
+    posArr[idx + 2] = Math.sin(angle) * r;
+  }
+  particleGeo.attributes.position.needsUpdate = true;
+
+  // Move point light in circle
+  pointLight.position.x = Math.cos(elapsed * 0.5) * 8;
+  pointLight.position.z = Math.sin(elapsed * 0.5) * 8;
+  pointLight.intensity = 0.8 + Math.sin(elapsed * 2) * 0.2;
+
+  updateAutoSources(dt);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// ─── Expose to window ─────────────────────────────────────────────────────────
+window.THREE = THREE;
+window.scene = scene;
+window.camera = camera;
+window.renderer = renderer;
+window.controls = controls;
+window.waveMesh = waveMesh;
+window.waveUniforms = waveUniforms;
+window.params = params;
+window.gui = gui;
+window.markerGroup = markerGroup;
+window.particleSystem = particles;

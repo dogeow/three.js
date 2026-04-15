@@ -1,0 +1,265 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// ─── Scene Setup ───────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.FogExp2(0xaecfdf, 0.008);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 2000);
+camera.position.set(0, 30, 120);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.maxDistance = 400;
+controls.minDistance = 10;
+
+// ─── Lighting ───────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffeedd, 0.7);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.2);
+sunLight.position.set(80, 120, 60);
+scene.add(sunLight);
+
+// ─── Sky Gradient Background ────────────────────────────────────────────────
+const skyCanvas = document.createElement('canvas');
+skyCanvas.width = 2;
+skyCanvas.height = 512;
+const skyCtx = skyCanvas.getContext('2d');
+const skyGrad = skyCtx.createLinearGradient(0, 0, 0, 512);
+skyGrad.addColorStop(0,    '#1a6ab5');
+skyGrad.addColorStop(0.4,  '#5ba8d4');
+skyGrad.addColorStop(0.75, '#9fd0e8');
+skyGrad.addColorStop(1,    '#dceef9');
+skyCtx.fillStyle = skyGrad;
+skyCtx.fillRect(0, 0, 2, 512);
+const skyTex = new THREE.CanvasTexture(skyCanvas);
+scene.background = skyTex;
+
+// ─── Cloud Shader ────────────────────────────────────────────────────────────
+const cloudVertexShader = `
+  varying vec3 vWorldPosition;
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPos.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const cloudFragmentShader = `
+  precision highp float;
+
+  uniform float uTime;
+  uniform float uDensity;
+  uniform float uScale;
+  uniform float uSpeed;
+  uniform float uOpacity;
+  uniform vec3  uTint;
+
+  varying vec3 vWorldPosition;
+  varying vec2 vUv;
+
+  // ── Hash & Noise ─────────────────────────────────────────────────────────
+  float hash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+
+  float noise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
+          mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+      mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+          mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y),
+      f.z);
+  }
+
+  float fbm(vec3 p) {
+    float v = 0.0;
+    float a = 0.5;
+    vec3 shift = vec3(100.0);
+    for (int i = 0; i < 7; i++) {
+      v += a * noise(p);
+      p = p * 2.3 + shift;
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  void main() {
+    // Animated UV drift
+    vec3 p = vWorldPosition * uScale * 0.008;
+    p.x += uTime * uSpeed * 0.12;
+    p.z += uTime * uSpeed * 0.07;
+
+    float n = fbm(p);
+    float cloud = smoothstep(0.38, 0.72, n);
+    cloud = pow(cloud, 1.5 - uDensity * 1.2);
+
+    float alpha = cloud * uOpacity;
+
+    // Soft edge fade on sphere silhouette
+    float edge = length(vUv - 0.5) * 2.0;
+    alpha *= 1.0 - smoothstep(0.7, 1.0, edge);
+
+    // Tint clouds
+    vec3 color = mix(vec3(1.0), uTint, 0.35) * (0.95 + 0.05 * n);
+
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+// ─── Cloud Parameters ───────────────────────────────────────────────────────
+const params = {
+  density:      0.65,
+  scale:        1.0,
+  speed:        1.0,
+  opacity:      0.82,
+  tint:         '#ddeeff',
+  fogDensity:   0.008,
+  skyBlue:      '#5ba8d4',
+};
+
+// ─── Cloud Cluster ────────────────────────────────────────────────────────────
+const NUM_CLOUDS  = 14;
+const cloudMeshes = [];
+
+function makeCloudMaterial() {
+  return new THREE.ShaderMaterial({
+    vertexShader:   cloudVertexShader,
+    fragmentShader: cloudFragmentShader,
+    uniforms: {
+      uTime:    { value: 0 },
+      uDensity: { value: params.density },
+      uScale:   { value: params.scale },
+      uSpeed:   { value: params.speed },
+      uOpacity: { value: params.opacity },
+      uTint:    { value: new THREE.Color(params.tint) },
+    },
+    transparent: true,
+    depthWrite:  false,
+    side:        THREE.DoubleSide,
+  });
+}
+
+function createCloudCluster() {
+  const group = new THREE.Group();
+
+  const numPuffs = 5 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < numPuffs; i++) {
+    const r  = 6 + Math.random() * 7;
+    const geo = new THREE.SphereGeometry(r, 20, 16);
+    const mat = makeCloudMaterial();
+    const mesh = new THREE.Mesh(geo, mat);
+
+    mesh.position.set(
+      (Math.random() - 0.5) * 22,
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 12,
+    );
+    mesh.rotation.y = Math.random() * Math.PI;
+    group.add(mesh);
+    cloudMeshes.push(mesh);
+  }
+
+  return group;
+}
+
+// Spread clouds across altitude layers
+const altitudes = [18, 32, 48, 65, 80, 95, 110, 125, 140];
+const clouds = [];
+
+for (let i = 0; i < NUM_CLOUDS; i++) {
+  const cluster = createCloudCluster();
+  const alt = altitudes[i % altitudes.length] + (Math.random() - 0.5) * 14;
+  cluster.position.set(
+    (Math.random() - 0.5) * 340,
+    alt,
+    (Math.random() - 0.5) * 260,
+  );
+  scene.add(cluster);
+  clouds.push(cluster);
+}
+
+// ─── Ground Plane (distant terrain hint) ────────────────────────────────────
+const groundGeo = new THREE.PlaneGeometry(800, 600, 1, 1);
+const groundMat = new THREE.MeshLambertMaterial({ color: 0x7db87d });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -15;
+scene.add(ground);
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '☁️ 程序化云参数' });
+
+const cloudFolder = gui.addFolder('云朵');
+cloudFolder.add(params, 'density',  0.1, 1.0, 0.01).name('密度').onChange(v => {
+  cloudMeshes.forEach(m => m.material.uniforms.uDensity.value = v);
+});
+cloudFolder.add(params, 'scale',    0.3, 3.0, 0.05).name('缩放').onChange(v => {
+  cloudMeshes.forEach(m => m.material.uniforms.uScale.value = v);
+});
+cloudFolder.add(params, 'speed',    0.0, 3.0, 0.05).name('漂移速度').onChange(v => {
+  cloudMeshes.forEach(m => m.material.uniforms.uSpeed.value = v);
+});
+cloudFolder.add(params, 'opacity',  0.1, 1.0, 0.01).name('透明度').onChange(v => {
+  cloudMeshes.forEach(m => m.material.uniforms.uOpacity.value = v);
+});
+cloudFolder.addColor(params, 'tint').name('色调').onChange(v => {
+  cloudMeshes.forEach(m => m.material.uniforms.uTint.value.set(v));
+});
+cloudFolder.open();
+
+const envFolder = gui.addFolder('环境');
+envFolder.add(params, 'fogDensity', 0.001, 0.025, 0.001).name('雾浓度').onChange(v => {
+  scene.fog.density = v;
+});
+envFolder.addColor(params, 'skyBlue').name('天空色').onChange(v => {
+  skyGrad.removeColorStop(0.4);
+  skyGrad.addColorStop(0.4, v);
+  skyTex.needsUpdate = true;
+});
+envFolder.open();
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─── Animation ───────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+(function animate() {
+  requestAnimationFrame(animate);
+  const elapsed = clock.getElapsedTime();
+
+  cloudMeshes.forEach(m => {
+    m.material.uniforms.uTime.value = elapsed;
+  });
+
+  // Slow cloud drift
+  clouds.forEach((c, i) => {
+    c.position.x += Math.sin(elapsed * 0.05 + i * 1.3) * 0.04 * params.speed;
+    c.position.z += Math.cos(elapsed * 0.04 + i * 0.9) * 0.03 * params.speed;
+  });
+
+  controls.update();
+  renderer.render(scene, camera);
+})();

@@ -1,0 +1,335 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { FontLoader } from 'three/addons/geometries/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js';
+
+// ============================================================
+// 场景
+// ============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080810);
+scene.fog = new THREE.FogExp2(0x080810, 0.035);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 4, 28);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 1, 0);
+
+// ============================================================
+// 灯光
+// ============================================================
+const ambientLight = new THREE.AmbientLight(0x334466, 0.9);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(5, 15, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+scene.add(dirLight);
+
+const ptL = new THREE.PointLight(0x4488ff, 1.0, 30);
+ptL.position.set(-10, 5, 5);
+scene.add(ptL);
+
+const ptR = new THREE.PointLight(0xff4488, 0.8, 30);
+ptR.position.set(10, 5, -5);
+scene.add(ptR);
+
+// ============================================================
+// 字距调整数据（模拟，字面量字符）
+// ============================================================
+const PAIRS = [
+  { a: 'A', b: 'V', kern: -2.5 },  // AV 典型紧排
+  { a: 'W', b: 'A', kern: -1.5 },
+  { a: 'T', b: 'o', kern: -1.0 },  // To 紧排
+  { a: 'F', b: 'i', kern: -1.5 },  // Fi 连字
+  { a: 'L', b: 'y', kern: -1.0 },  // Ly 紧排
+  { a: 'R', b: 'e', kern: -0.5 },
+  { a: 'B', b: 'e', kern: -0.5 },
+  { a: 'f', b: 'f', kern: -2.0 },  // ff 连字
+  { a: 'A', b: 'W', kern: -1.0 },
+  { a: 'T', b: 'Y', kern: -1.0 },
+];
+
+const PAIR_COLORS = [
+  0x4488ff, 0xff4488, 0x44ff88, 0xffaa22,
+  0xaa44ff, 0xff8844, 0x44aaff, 0xff44aa,
+  0xaaff44, 0x44ffaa
+];
+
+// ============================================================
+// 3D 字符（使用 TextGeometry，需要字体）
+// ============================================================
+const FONT_URL = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json';
+
+let font = null;
+let glyphMeshes = [];
+const group = new THREE.Group();
+scene.add(group);
+
+const params = {
+  spacing: 3.5,
+  kernScale: 2.0,   // 字距调整倍数
+  fontSize: 3.0,
+  showKernLines: true,
+  showBoundingBoxes: false,
+  autoRotate: true,
+  colorScheme: 0,
+};
+
+// 字符材质
+function makeMat(color, emissive) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    emissive: emissive || color,
+    emissiveIntensity: 0.15,
+    roughness: 0.4,
+    metalness: 0.6,
+  });
+}
+
+// 创建字符组
+function buildGlyphs() {
+  // 清除旧字符
+  while (group.children.length) {
+    const c = group.children[0];
+    if (c.geometry) c.geometry.dispose();
+    group.remove(c);
+  }
+  glyphMeshes = [];
+
+  let xCursor = -(PAIRS.length - 1) * params.spacing * 0.5;
+
+  PAIRS.forEach((pair, i) => {
+    const color = PAIR_COLORS[i % PAIR_COLORS.length];
+
+    // 字符 A
+    const geoA = new THREE.TextGeometry(pair.a, {
+      font,
+      size: params.fontSize,
+      height: 0.6,
+      curveSegments: 8,
+      bevelEnabled: true,
+      bevelThickness: 0.08,
+      bevelSize: 0.05,
+      bevelSegments: 3,
+    });
+    geoA.computeBoundingBox();
+    const matA = makeMat(color);
+    const meshA = new THREE.Mesh(geoA, matA);
+    meshA.position.x = xCursor;
+    meshA.castShadow = true;
+    meshA.receiveShadow = true;
+    group.add(meshA);
+    glyphMeshes.push(meshA);
+
+    // 字距调整
+    const kernOffset = pair.kern * params.kernScale;
+    xCursor += params.spacing + kernOffset;
+
+    // 字符 B
+    const geoB = new THREE.TextGeometry(pair.b, {
+      font,
+      size: params.fontSize,
+      height: 0.6,
+      curveSegments: 8,
+      bevelEnabled: true,
+      bevelThickness: 0.08,
+      bevelSize: 0.05,
+      bevelSegments: 3,
+    });
+    geoB.computeBoundingBox();
+    const matB = makeMat(color);
+    const meshB = new THREE.Mesh(geoB, matB);
+    meshB.position.x = xCursor;
+    meshB.castShadow = true;
+    meshB.receiveShadow = true;
+    group.add(meshB);
+    glyphMeshes.push(meshB);
+
+    xCursor += params.spacing;
+
+    // 字距可视化线
+    if (params.showKernLines) {
+      const kernDist = Math.abs(kernOffset);
+      if (kernDist > 0.1) {
+        const lineMat = new THREE.LineBasicMaterial({
+          color: 0xff4400,
+          transparent: true,
+          opacity: 0.6,
+        });
+        const linePoints = [
+          new THREE.Vector3(xCursor - params.spacing - kernDist, -1.5, 0),
+          new THREE.Vector3(xCursor - params.spacing, -1.5, 0),
+        ];
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
+        const line = new THREE.Line(lineGeo, lineMat);
+        group.add(line);
+
+        // 箭头标记
+        const arrowGeo = new THREE.ConeGeometry(0.12, 0.4, 6);
+        const arrowMat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.7 });
+        const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+        arrow.position.set(xCursor - params.spacing - kernDist / 2, -1.5, 0);
+        arrow.rotation.z = Math.PI / 2;
+        group.add(arrow);
+      }
+    }
+  });
+
+  // 包围框
+  if (params.showBoundingBoxes) {
+    const box = new THREE.Box3().setFromObject(group);
+    const helper = new THREE.Box3Helper(box, 0x444488);
+    group.add(helper);
+  }
+}
+
+// 包围盒计算（用于居中）
+function centerGroup() {
+  const box = new THREE.Box3().setFromObject(group);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  group.position.x -= center.x;
+}
+
+// ============================================================
+// 地面网格
+// ============================================================
+const grid = new THREE.GridHelper(40, 40, 0x222244, 0x111122);
+grid.position.y = -2;
+scene.add(grid);
+
+// ============================================================
+// GUI
+// ============================================================
+const gui = new GUI();
+gui.add(params, 'spacing', 1, 8, 0.1).name('字符间距').onChange(buildGlyphs);
+gui.add(params, 'kernScale', 0, 5, 0.1).name('字距倍数').onChange(buildGlyphs);
+gui.add(params, 'fontSize', 1, 6, 0.1).name('字体大小').onChange(buildGlyphs);
+gui.add(params, 'showKernLines').name('显示字距线').onChange(buildGlyphs);
+gui.add(params, 'showBoundingBoxes').name('显示包围盒').onChange(buildGlyphs);
+gui.add(params, 'autoRotate').name('自动旋转');
+gui.add(params, 'colorScheme', { 蓝色: 0, 彩虹: 1, 暖色: 2, 冷色: 3 }).name('配色方案');
+
+// ============================================================
+// 加载字体
+// ============================================================
+const loader = new FontLoader();
+loader.load(FONT_URL, (loadedFont) => {
+  font = loadedFont;
+  buildGlyphs();
+  centerGroup();
+}, undefined, (err) => {
+  // 字体加载失败，使用备用球体代替
+  console.warn('Font load failed, using fallback');
+  font = null;
+  buildFallback();
+});
+
+function buildFallback() {
+  // 备用：彩色球体代替字符
+  let xCursor = -(PAIRS.length - 1) * params.spacing * 0.5;
+  PAIRS.forEach((pair, i) => {
+    const color = PAIR_COLORS[i % PAIR_COLORS.length];
+    const geo = new THREE.SphereGeometry(params.fontSize * 0.5, 12, 12);
+    const mat = makeMat(color);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.x = xCursor;
+    mesh.userData.label = pair.a;
+    group.add(mesh);
+    glyphMeshes.push(mesh);
+
+    xCursor += params.spacing;
+
+    const geo2 = new THREE.SphereGeometry(params.fontSize * 0.5, 12, 12);
+    const mat2 = makeMat(color);
+    const mesh2 = new THREE.Mesh(geo2, mat2);
+    mesh2.position.x = xCursor;
+    mesh2.userData.label = pair.b;
+    group.add(mesh2);
+    glyphMeshes.push(mesh2);
+
+    xCursor += params.spacing;
+  });
+  centerGroup();
+}
+
+// ============================================================
+// 交互：点击字符显示信息
+// ============================================================
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const infoDiv = document.createElement('div');
+infoDiv.style.cssText = 'position:absolute;top:14px;right:16px;background:rgba(0,0,30,0.85);border:1px solid #334;padding:10px 14px;border-radius:8px;font-size:12px;color:#aaa;pointer-events:none;';
+document.body.appendChild(infoDiv);
+
+window.addEventListener('click', (e) => {
+  if (e.target.tagName !== 'CANVAS') return;
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(glyphMeshes);
+  if (hits.length > 0) {
+    const m = hits[0].object;
+    const pairIdx = Math.floor(glyphMeshes.indexOf(m) / 2);
+    if (pairIdx >= 0 && pairIdx < PAIRS.length) {
+      const pair = PAIRS[pairIdx];
+      infoDiv.innerHTML = `
+        <div style="color:#aaaaff;font-size:13px;margin-bottom:4px">字距调整数据</div>
+        <div>字符对: <span style="color:#fff">${pair.a} ${pair.b}</span></div>
+        <div>调整量: <span style="color:#ff8844">${pair.kern.toFixed(1)}</span></div>
+        <div style="color:#888;font-size:11px;margin-top:4px">${pair.kern < 0 ? '紧排（间距减少）' : '松排（间距增加）'}</div>
+      `;
+    }
+  }
+});
+
+// ============================================================
+// 响应式
+// ============================================================
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ============================================================
+// 动画循环
+// ============================================================
+const clock = new THREE.Clock();
+let angle = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  if (params.autoRotate) {
+    angle += dt * 0.3;
+    group.rotation.y = angle;
+  }
+
+  // 字符发光脉冲
+  glyphMeshes.forEach((m, i) => {
+    if (m.material && m.material.emissiveIntensity !== undefined) {
+      m.material.emissiveIntensity = 0.1 + 0.08 * Math.sin(Date.now() * 0.002 + i * 0.5);
+    }
+  });
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();

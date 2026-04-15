@@ -1,0 +1,633 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── Fallback QR-like pattern generator ─────────────────────────────────────
+function generateFallbackPattern(text, size = 25) {
+  // Simple hash-based deterministic pattern
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  const seed = Math.abs(hash);
+  const grid = [];
+  for (let y = 0; y < size; y++) {
+    const row = [];
+    for (let x = 0; x < size; x++) {
+      // Position masks for QR finder patterns (corners)
+      const inFinderTL = x < 7 && y < 7;
+      const inFinderTR = x >= size - 7 && y < 7;
+      const inFinderBL = x < 7 && y >= size - 7;
+      const inFinderSep = (x < 8 && y < 8) || (x >= size - 8 && y < 8) || (x < 8 && y >= size - 8);
+      const inTiming = (x === 6 || y === 6) && x > 0 && x < size - 1 && y > 0 && y < size - 1;
+      const inAlignment = x >= 16 && x <= 20 && y >= 16 && y <= 20;
+
+      let cell;
+      if (inFinderTL || inFinderTR || inFinderBL) {
+        // Finder pattern: solid border, hollow inside
+        const fx = inFinderTL ? x : (inFinderTR ? x - (size - 7) : x);
+        const fy = inFinderTL ? y : (inFinderTR ? y : y - (size - 7));
+        if (fx === 0 || fy === 0 || fx === 6 || fy === 6) {
+          cell = 1;
+        } else if (fx >= 2 && fx <= 4 && fy >= 2 && fy <= 4) {
+          cell = 1;
+        } else if (fx >= 1 && fx <= 5 && fy >= 1 && fy <= 5) {
+          cell = 0;
+        } else {
+          const lfsr = ((seed * (fx * 31 + fy * 17) + fx * 7 + fy * 13) >>> 0) % 257;
+          cell = (lfsr ^ (seed >>> (fy % 8))) & 1;
+        }
+      } else if (inTiming) {
+        cell = (x + y) % 2 === 0 ? 1 : 0;
+      } else if (inAlignment) {
+        const ax = x - 16, ay = y - 16;
+        if (ax === 0 || ay === 0 || ax === 4 || ay === 4) {
+          cell = 1;
+        } else if (ax === 2 && ay === 2) {
+          cell = 1;
+        } else {
+          const lfsr = ((seed * (x * 23 + y * 37)) >>> 0) % 257;
+          cell = lfsr & 1;
+        }
+      } else if (inFinderSep) {
+        cell = 0;
+      } else {
+        const lfsr = ((seed * (x * 43 + y * 19) + x + y) >>> 0) % 257;
+        cell = lfsr & 1;
+      }
+      row.push(cell);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+// ─── Fallback pattern if QRCode lib not available ───────────────────────────
+let useFallback = true;
+let QRCode = null;
+
+if (typeof window !== 'undefined') {
+  // Load QRCode library
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+  script.onload = () => {
+    if (window.QRCode) {
+      QRCode = window.QRCode;
+      useFallback = false;
+    }
+  };
+  script.onerror = () => { useFallback = true; };
+  document.head.appendChild(script);
+}
+
+// ─── Scene setup ────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.04);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 0, 18);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 8;
+controls.maxDistance = 40;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.8;
+controls.target.set(0, 0, 0);
+
+// ─── Lighting ───────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambientLight);
+
+const mainLight = new THREE.DirectionalLight(0xffffff, 1.8);
+mainLight.position.set(5, 10, 7);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 0.5;
+mainLight.shadow.camera.far = 50;
+mainLight.shadow.camera.left = -15;
+mainLight.shadow.camera.right = 15;
+mainLight.shadow.camera.top = 15;
+mainLight.shadow.camera.bottom = -15;
+mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
+
+const rimLight = new THREE.DirectionalLight(0x4488ff, 0.6);
+rimLight.position.set(-5, -3, -5);
+scene.add(rimLight);
+
+const fillLight = new THREE.PointLight(0xff8844, 0.3, 30);
+fillLight.position.set(-6, 4, 4);
+scene.add(fillLight);
+
+// ─── Ground plane with grid ───────────────────────────────────────────────────
+const groundGeo = new THREE.PlaneGeometry(60, 60);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x0d0d14,
+  roughness: 0.9,
+  metalness: 0.1,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -3.5;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(40, 40, 0x1a1a2e, 0x1a1a2e);
+gridHelper.position.y = -3.49;
+scene.add(gridHelper);
+
+// ─── QR Cell Management ──────────────────────────────────────────────────────
+const CELL_SIZE = 0.44;
+const CELL_GAP = 0.06;
+const CELL_STEP = CELL_SIZE + CELL_GAP;
+
+let darkMesh = null;
+let lightMesh = null;
+let frameGroup = null;
+let currentGrid = null;
+let currentMatrix = null; // { dark: [[x,y],...], light: [[x,y]...] }
+let animatingRegen = false;
+
+const darkMaterial = new THREE.MeshStandardMaterial({
+  color: 0x111111,
+  roughness: 0.3,
+  metalness: 0.7,
+  envMapIntensity: 1.0,
+});
+
+const lightMaterial = new THREE.MeshStandardMaterial({
+  color: 0xdddddd,
+  roughness: 0.5,
+  metalness: 0.1,
+});
+
+// Shared geometry for all cells
+const cellGeo = new THREE.BoxGeometry(CELL_SIZE, CELL_SIZE * 0.35, CELL_SIZE);
+
+function buildMatrix(grid) {
+  const size = grid.length;
+  const dark = [];
+  const light = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (grid[y][x] === 1) dark.push([x, y]);
+      else light.push([x, y]);
+    }
+  }
+  return { dark, light };
+}
+
+function getGridContent(text) {
+  if (!useFallback && QRCode) {
+    try {
+      // QRCode lib creates a canvas - we extract pixel data
+      const size = 25;
+      const canvas = document.createElement('canvas');
+      QRCode.toDataURL(text || 'https://threejs.org', {
+        width: size * 10,
+        margin: 0,
+        color: { dark: '#000000', light: '#ffffff' }
+      }, (err, url) => {
+        if (err) {
+          useFallback = true;
+          return;
+        }
+        const img = new Image();
+        img.onload = () => {
+          const ctx = canvas.getContext('2d');
+          canvas.width = size;
+          canvas.height = size;
+          ctx.drawImage(img, 0, 0, size, size);
+          const imgData = ctx.getImageData(0, 0, size, size);
+          const grid = [];
+          for (let y = 0; y < size; y++) {
+            const row = [];
+            for (let x = 0; x < size; x++) {
+              const i = (y * size + x) * 4;
+              const r = imgData.data[i];
+              // Dark cell: r < 128 means dark (black in QR)
+              row.push(r < 128 ? 1 : 0);
+            }
+            grid.push(row);
+          }
+          rebuildQRScene(grid, false);
+        };
+        img.src = url;
+      });
+      return; // async, will rebuild when image loads
+    } catch (e) {
+      useFallback = true;
+    }
+  }
+
+  // Fallback: procedural pattern
+  const grid = generateFallbackPattern(text || 'https://threejs.org');
+  rebuildQRScene(grid, false);
+}
+
+function rebuildQRScene(grid, animate = true) {
+  const matrix = buildMatrix(grid);
+  currentMatrix = matrix;
+  currentGrid = grid;
+  const size = grid.length;
+  const halfSize = (size * CELL_STEP) / 2;
+
+  if (animatingRegen && darkMesh && lightMesh) {
+    // Animate out
+    animateRegen(matrix, halfSize, animate);
+    return;
+  }
+
+  // Remove old
+  if (darkMesh) { scene.remove(darkMesh); darkMesh.geometry.dispose(); }
+  if (lightMesh) { scene.remove(lightMesh); lightMesh.geometry.dispose(); }
+  if (frameGroup) { scene.remove(frameGroup); }
+
+  // ── InstancedMesh for dark cells ──
+  darkMesh = new THREE.InstancedMesh(cellGeo, darkMaterial, matrix.dark.length);
+  darkMesh.castShadow = true;
+  darkMesh.receiveShadow = true;
+
+  // ── InstancedMesh for light cells (raised slightly) ──
+  lightMesh = new THREE.InstancedMesh(cellGeo, lightMaterial, matrix.light.length);
+  lightMesh.castShadow = true;
+  lightMesh.receiveShadow = true;
+
+  const dummy = new THREE.Object3D();
+
+  // Dark cells
+  matrix.dark.forEach(([x, y], i) => {
+    dummy.position.set(
+      x * CELL_STEP - halfSize + CELL_SIZE * 0.5,
+      CELL_SIZE * 0.175, // raised
+      y * CELL_STEP - halfSize + CELL_SIZE * 0.5
+    );
+    dummy.updateMatrix();
+    darkMesh.setMatrixAt(i, dummy.matrix);
+  });
+  darkMesh.instanceMatrix.needsUpdate = true;
+
+  // Light cells (flat/recessed)
+  matrix.light.forEach(([x, y], i) => {
+    dummy.position.set(
+      x * CELL_STEP - halfSize + CELL_SIZE * 0.5,
+      CELL_SIZE * 0.02, // barely raised
+      y * CELL_STEP - halfSize + CELL_SIZE * 0.5
+    );
+    dummy.updateMatrix();
+    lightMesh.setMatrixAt(i, dummy.matrix);
+  });
+  lightMesh.instanceMatrix.needsUpdate = true;
+
+  scene.add(darkMesh);
+  scene.add(lightMesh);
+
+  buildFrame(halfSize, size);
+}
+
+function animateRegen(newMatrix, halfSize, animate) {
+  if (!darkMesh || !lightMesh || !currentMatrix) return;
+  animatingRegen = true;
+
+  const oldDarkCount = darkMesh.count;
+  const newDarkCount = newMatrix.dark.length;
+  const oldLightCount = lightMesh.count;
+  const newLightCount = newMatrix.light.length;
+
+  // Rebuild meshes with new counts
+  if (darkMesh) { scene.remove(darkMesh); darkMesh.geometry.dispose(); }
+  if (lightMesh) { scene.remove(lightMesh); lightMesh.geometry.dispose(); }
+
+  darkMesh = new THREE.InstancedMesh(cellGeo, darkMaterial, newDarkCount);
+  darkMesh.castShadow = true;
+  darkMesh.receiveShadow = true;
+
+  lightMesh = new THREE.InstancedMesh(cellGeo, lightMaterial, newLightCount);
+  lightMesh.castShadow = true;
+  lightMesh.receiveShadow = true;
+
+  const dummy = new THREE.Object3D();
+  const tween = { t: 0 };
+  const duration = 40; // frames
+  let frame = 0;
+
+  function animateFrame() {
+    frame++;
+    const progress = Math.min(frame / duration, 1);
+    const ease = 1 - Math.pow(1 - progress, 3); // ease out cubic
+
+    newMatrix.dark.forEach(([x, y], i) => {
+      const oldX = i < oldDarkCount ? currentMatrix.dark[i]?.[0] ?? x : x;
+      const oldY = i < oldDarkCount ? currentMatrix.dark[i]?.[1] ?? y : y;
+      dummy.position.set(
+        THREE.MathUtils.lerp(oldX * CELL_STEP - halfSize + CELL_SIZE * 0.5, x * CELL_STEP - halfSize + CELL_SIZE * 0.5, ease),
+        THREE.MathUtils.lerp(CELL_SIZE * 0.175, CELL_SIZE * 0.175, ease),
+        THREE.MathUtils.lerp(oldY * CELL_STEP - halfSize + CELL_SIZE * 0.5, y * CELL_STEP - halfSize + CELL_SIZE * 0.5, ease)
+      );
+      dummy.scale.setScalar(THREE.MathUtils.lerp(0.01, 1, ease));
+      dummy.updateMatrix();
+      darkMesh.setMatrixAt(i, dummy.matrix);
+    });
+
+    newMatrix.light.forEach(([x, y], i) => {
+      const oldX = i < oldLightCount ? currentMatrix.light[i]?.[0] ?? x : x;
+      const oldY = i < oldLightCount ? currentMatrix.light[i]?.[1] ?? y : y;
+      dummy.position.set(
+        THREE.MathUtils.lerp(oldX * CELL_STEP - halfSize + CELL_SIZE * 0.5, x * CELL_STEP - halfSize + CELL_SIZE * 0.5, ease),
+        THREE.MathUtils.lerp(CELL_SIZE * 0.02, CELL_SIZE * 0.02, ease),
+        THREE.MathUtils.lerp(oldY * CELL_STEP - halfSize + CELL_SIZE * 0.5, y * CELL_STEP - halfSize + CELL_SIZE * 0.5, ease)
+      );
+      dummy.scale.setScalar(THREE.MathUtils.lerp(0.01, 1, ease));
+      dummy.updateMatrix();
+      lightMesh.setMatrixAt(i, dummy.matrix);
+    });
+
+    darkMesh.instanceMatrix.needsUpdate = true;
+    lightMesh.instanceMatrix.needsUpdate = true;
+
+    if (frame < duration) {
+      requestAnimationFrame(animateFrame);
+    } else {
+      currentMatrix = newMatrix;
+      animatingRegen = false;
+      // Rebuild frame
+      if (frameGroup) { scene.remove(frameGroup); }
+      const size = currentGrid.length;
+      const hs = (size * CELL_STEP) / 2;
+      buildFrame(hs, size);
+    }
+  }
+
+  scene.add(darkMesh);
+  scene.add(lightMesh);
+  currentMatrix = newMatrix;
+  requestAnimationFrame(animateFrame);
+}
+
+// ─── Decorative Frame ───────────────────────────────────────────────────────
+function buildFrame(halfSize, gridSize) {
+  if (frameGroup) { scene.remove(frameGroup); }
+  frameGroup = new THREE.Group();
+
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x223344,
+    roughness: 0.2,
+    metalness: 0.9,
+  });
+
+  const cornerMat = new THREE.MeshStandardMaterial({
+    color: 0x3a7bd5,
+    roughness: 0.1,
+    metalness: 1.0,
+    emissive: 0x1a3a6a,
+    emissiveIntensity: 0.3,
+  });
+
+  const outerPadding = CELL_STEP * 1.5;
+  const totalSize = halfSize * 2 + outerPadding * 2;
+  const frameThickness = CELL_STEP * 0.5;
+  const frameDepth = CELL_SIZE * 0.5;
+
+  // Top bar
+  const topBar = new THREE.Mesh(
+    new THREE.BoxGeometry(totalSize, frameDepth, frameThickness),
+    frameMat
+  );
+  topBar.position.set(0, frameDepth * 0.5, -(halfSize + outerPadding + frameThickness * 0.5));
+  topBar.castShadow = true;
+  frameGroup.add(topBar);
+
+  // Bottom bar
+  const bottomBar = topBar.clone();
+  bottomBar.position.z = halfSize + outerPadding + frameThickness * 0.5;
+  frameGroup.add(bottomBar);
+
+  // Left bar
+  const sideBar = new THREE.Mesh(
+    new THREE.BoxGeometry(frameThickness, frameDepth, totalSize),
+    frameMat
+  );
+  sideBar.position.set(-(halfSize + outerPadding + frameThickness * 0.5), frameDepth * 0.5, 0);
+  sideBar.castShadow = true;
+  frameGroup.add(sideBar);
+
+  // Right bar
+  const rightBar = sideBar.clone();
+  rightBar.position.x = halfSize + outerPadding + frameThickness * 0.5;
+  frameGroup.add(rightBar);
+
+  // Corner accents
+  const cornerSize = frameThickness * 1.2;
+  const corners = [
+    [-(halfSize + outerPadding), halfSize + outerPadding],  // TL
+    [halfSize + outerPadding, halfSize + outerPadding],      // TR
+    [-(halfSize + outerPadding), -(halfSize + outerPadding)], // BL
+    [halfSize + outerPadding, -(halfSize + outerPadding)],   // BR
+  ];
+
+  corners.forEach(([cx, cz]) => {
+    const corner = new THREE.Mesh(
+      new THREE.BoxGeometry(cornerSize, frameDepth * 1.5, cornerSize),
+      cornerMat
+    );
+    corner.position.set(cx, frameDepth * 0.75, cz);
+    corner.castShadow = true;
+    frameGroup.add(corner);
+  });
+
+  // Accent dots at midpoints
+  const dotGeo = new THREE.SphereGeometry(frameThickness * 0.25, 12, 12);
+  const dotMat = new THREE.MeshStandardMaterial({
+    color: 0x3a7bd5,
+    roughness: 0.1,
+    metalness: 1.0,
+    emissive: 0x2a5bc8,
+    emissiveIntensity: 0.5,
+  });
+
+  const midPoints = [
+    [0, halfSize + outerPadding + frameThickness * 0.5],  // top mid
+    [0, -(halfSize + outerPadding + frameThickness * 0.5)], // bottom mid
+    [-(halfSize + outerPadding + frameThickness * 0.5), 0], // left mid
+    [halfSize + outerPadding + frameThickness * 0.5, 0],   // right mid
+  ];
+
+  midPoints.forEach(([mx, mz]) => {
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.set(mx, frameDepth * 0.5, mz);
+    frameGroup.add(dot);
+  });
+
+  scene.add(frameGroup);
+}
+
+// ─── Scan Animation ─────────────────────────────────────────────────────────
+let scanAnimating = false;
+let scanLine = null;
+
+function startScan() {
+  if (scanAnimating) return;
+  scanAnimating = true;
+
+  // Create scan line
+  if (scanLine) { scene.remove(scanLine); }
+  const size = currentGrid ? currentGrid.length : 25;
+  const halfSize = (size * CELL_STEP) / 2;
+
+  const scanGeo = new THREE.PlaneGeometry(halfSize * 2 + CELL_STEP * 3, 0.08);
+  const scanMat = new THREE.MeshBasicMaterial({
+    color: 0x00ff88,
+    transparent: true,
+    opacity: 0.8,
+    side: THREE.DoubleSide,
+  });
+  scanLine = new THREE.Mesh(scanGeo, scanMat);
+  scanLine.rotation.x = -Math.PI / 2;
+  scanLine.position.y = CELL_SIZE * 0.5;
+  scene.add(scanLine);
+
+  const totalDist = halfSize * 2 + CELL_STEP * 3;
+  let progress = 0;
+  const speed = 0.025;
+
+  // Glow light that follows scan
+  const scanLight = new THREE.PointLight(0x00ff88, 2, 8);
+  scanLight.position.y = 2;
+  scene.add(scanLight);
+
+  function animateScan() {
+    progress += speed;
+    const z = -totalDist / 2 + progress * totalDist;
+    scanLine.position.z = z;
+    scanLight.position.z = z;
+
+    // Pulse opacity
+    scanMat.opacity = 0.6 + Math.sin(progress * Math.PI * 8) * 0.3;
+
+    if (progress < 1) {
+      requestAnimationFrame(animateScan);
+    } else {
+      // Scan complete - flash
+      scene.remove(scanLine);
+      scene.remove(scanLight);
+      scanLine = null;
+
+      triggerFlash();
+
+      setTimeout(() => {
+        scanAnimating = false;
+      }, 600);
+    }
+  }
+
+  requestAnimationFrame(animateScan);
+}
+
+function triggerFlash() {
+  const overlay = document.getElementById('flash-overlay');
+  const status = document.getElementById('scan-status');
+  overlay.style.opacity = '1';
+  status.style.opacity = '1';
+
+  setTimeout(() => {
+    overlay.style.opacity = '0';
+  }, 100);
+
+  setTimeout(() => {
+    status.style.opacity = '0';
+  }, 1200);
+}
+
+// ─── Input & Events ─────────────────────────────────────────────────────────
+let pendingContent = null;
+let inputDebounce = null;
+
+const input = document.getElementById('url-input');
+const btn = document.getElementById('generate-btn');
+
+function triggerGenerate() {
+  const text = input.value.trim() || 'https://threejs.org';
+  animatingRegen = true;
+  getGridContent(text);
+}
+
+btn.addEventListener('click', triggerGenerate);
+
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') triggerGenerate();
+});
+
+// Click on canvas to scan
+renderer.domElement.addEventListener('click', () => {
+  if (currentGrid) startScan();
+});
+
+// ─── Environment map ─────────────────────────────────────────────────────────
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+pmremGenerator.compileEquirectangularShader();
+const envScene = new THREE.Scene();
+envScene.background = new THREE.Color(0x1a1a2e);
+const envLight = new THREE.HemisphereLight(0x334466, 0x111122, 1);
+envScene.add(envLight);
+const envMap = pmremGenerator.fromScene(envScene).texture;
+scene.environment = envMap;
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Animation Loop ─────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // Subtle float
+  if (darkMesh && lightMesh) {
+    const baseY = 0;
+    darkMesh.position.y = baseY + Math.sin(t * 0.5) * 0.05;
+    lightMesh.position.y = baseY + Math.sin(t * 0.5) * 0.05;
+    if (frameGroup) {
+      frameGroup.position.y = baseY + Math.sin(t * 0.5) * 0.05;
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+getGridContent(input.value.trim() || 'https://threejs.org');
+animate();
+
+// ─── Expose to window ────────────────────────────────────────────────────────
+window.scene = scene;
+window.camera = camera;
+window.renderer = renderer;
+window.controls = controls;
+window.darkMesh = darkMesh;
+window.lightMesh = lightMesh;
+window.frameGroup = frameGroup;
+window.startScan = startScan;
+window.rebuildQRScene = rebuildQRScene;
+window.generateFallbackPattern = generateFallbackPattern;
+window.triggerFlash = triggerFlash;
+
+console.log('3D QR Code demo loaded. Click canvas to scan, drag to rotate, scroll to zoom.');

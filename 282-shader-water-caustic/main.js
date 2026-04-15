@@ -1,0 +1,462 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Renderer ───────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ─── Scene & Camera ─────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(18, 14, 22);
+camera.lookAt(0, 0, 0);
+
+// ─── Controls ───────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 5;
+controls.maxDistance = 80;
+controls.maxPolarAngle = Math.PI / 2.1;
+
+// ─── Lighting ───────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x334466, 0.6);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xfff5d0, 2.5);
+sunLight.position.set(30, 40, 20);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.near = 1;
+sunLight.shadow.camera.far = 150;
+sunLight.shadow.camera.left = -50;
+sunLight.shadow.camera.right = 50;
+sunLight.shadow.camera.top = 50;
+sunLight.shadow.camera.bottom = -50;
+sunLight.shadow.bias = -0.0005;
+scene.add(sunLight);
+
+// ─── Parameters ─────────────────────────────────────────────────────────────
+const params = {
+  waveAmplitude: 0.35,
+  waveFrequency: 0.18,
+  causticIntensity: 1.8,
+  waterColor: '#1a6e8a',
+  sunAngle: 0,
+  sunHeight: 40,
+};
+
+// ─── Water Shader ───────────────────────────────────────────────────────────
+const waterVertexShader = /* glsl */`
+  precision highp float;
+
+  uniform float uTime;
+  uniform float uAmplitude;
+  uniform float uFrequency;
+
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying float vElevation;
+
+  // Gerstner wave
+  vec3 gerstnerWave(vec2 pos, float amp, float freq, float steep, vec2 dir, float time) {
+    float k = 2.0 * 3.14159 * freq;
+    float c = sqrt(9.8 / k);
+    float d = dot(dir, pos);
+    float f = k * (d - c * time);
+    float s = steep * amp * k;
+    return vec3(
+      dir.x * s * cos(f),
+      amp * sin(f),
+      dir.y * s * cos(f)
+    );
+  }
+
+  void main() {
+    vUv = uv;
+    vec3 pos = position;
+
+    // Multiple Gerstner waves
+    vec3 w1 = gerstnerWave(pos.xz, uAmplitude,        uFrequency,       0.6, normalize(vec2(1.0,  0.8)), uTime * 0.9);
+    vec3 w2 = gerstnerWave(pos.xz, uAmplitude * 0.5,  uFrequency * 1.4, 0.5, normalize(vec2(-0.7, 1.0)), uTime * 1.2);
+    vec3 w3 = gerstnerWave(pos.xz, uAmplitude * 0.25, uFrequency * 2.1, 0.4, normalize(vec2(0.3, -0.6)), uTime * 1.5);
+    vec3 w4 = gerstnerWave(pos.xz, uAmplitude * 0.15, uFrequency * 3.0, 0.3, normalize(vec2(-0.4,-0.3)), uTime * 1.8);
+
+    vec3 displacement = w1 + w2 + w3 + w4;
+    pos += displacement;
+
+    vElevation = displacement.y;
+
+    // Approximate normal from displacement derivatives
+    float eps = 0.1;
+    vec3 dx = vec3(eps, 0.0, 0.0);
+    vec3 dz = vec3(0.0, 0.0, eps);
+
+    // Recompute displacement at offset positions for normal estimation
+    vec3 posDx = position + dx;
+    vec3 posDz = position + dz;
+
+    vec3 wd1 = gerstnerWave(posDx.xz, uAmplitude,        uFrequency,       0.6, normalize(vec2(1.0,  0.8)), uTime * 0.9);
+    vec3 wd2 = gerstnerWave(posDx.xz, uAmplitude * 0.5,  uFrequency * 1.4, 0.5, normalize(vec2(-0.7, 1.0)), uTime * 1.2);
+    vec3 wd3 = gerstnerWave(posDx.xz, uAmplitude * 0.25, uFrequency * 2.1, 0.4, normalize(vec2(0.3, -0.6)), uTime * 1.5);
+    vec3 wd4 = gerstnerWave(posDx.xz, uAmplitude * 0.15, uFrequency * 3.0, 0.3, normalize(vec2(-0.4,-0.3)), uTime * 1.8);
+    vec3 dispDx = (wd1 + wd2 + wd3 + wd4) - displacement;
+
+    vec3 wd1z = gerstnerWave(posDz.xz, uAmplitude,        uFrequency,       0.6, normalize(vec2(1.0,  0.8)), uTime * 0.9);
+    vec3 wd2z = gerstnerWave(posDz.xz, uAmplitude * 0.5,  uFrequency * 1.4, 0.5, normalize(vec2(-0.7, 1.0)), uTime * 1.2);
+    vec3 wd3z = gerstnerWave(posDz.xz, uAmplitude * 0.25, uFrequency * 2.1, 0.4, normalize(vec2(0.3, -0.6)), uTime * 1.5);
+    vec3 wd4z = gerstnerWave(posDz.xz, uAmplitude * 0.15, uFrequency * 3.0, 0.3, normalize(vec2(-0.4,-0.3)), uTime * 1.8);
+    vec3 dispDz = (wd1z + wd2z + wd3z + wd4z) - displacement;
+
+    vec3 tangent = normalize(vec3(1.0, dispDx.y / eps, 0.0));
+    vec3 bitang  = normalize(vec3(0.0, dispDz.y / eps, 1.0));
+    vNormal = normalize(cross(bitang, tangent));
+
+    vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
+    vViewDir = normalize(cameraPosition - vWorldPos);
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+  }
+`;
+
+const waterFragmentShader = /* glsl */`
+  precision highp float;
+
+  uniform float uTime;
+  uniform vec3 uWaterColor;
+  uniform vec3 uSunDir;
+
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying float vElevation;
+
+  // Schlick Fresnel
+  float fresnel(vec3 viewDir, vec3 normal, float f0, float f90) {
+    float cosTheta = clamp(1.0 - dot(viewDir, normal), 0.0, 1.0);
+    return f0 + (f90 - f0) * pow(cosTheta, 5.0);
+  }
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 V = normalize(vViewDir);
+    vec3 L = normalize(uSunDir);
+
+    // Fresnel
+    float f = fresnel(V, N, 0.02, 1.0);
+
+    // Specular highlight (sun reflection)
+    vec3 H = normalize(L + V);
+    float spec = pow(max(dot(N, H), 0.0), 256.0) * 2.0;
+
+    // Sky reflection approximation
+    vec3 skyColor = vec3(0.45, 0.72, 0.95);
+    vec3 deepColor = vec3(0.02, 0.10, 0.22);
+
+    // Mix water color based on elevation and fresnel
+    vec3 surfaceColor = mix(deepColor, uWaterColor * 0.8, 0.5 + vElevation * 2.0);
+    vec3 reflColor = mix(surfaceColor, skyColor, f * 0.6);
+
+    // Slight foam on wave peaks
+    float foam = smoothstep(0.25, 0.45, vElevation) * 0.4;
+    reflColor = mix(reflColor, vec3(1.0), foam);
+
+    reflColor += spec * vec3(1.0, 0.95, 0.85);
+    reflColor += fresnel(V, N, 0.02, 1.0) * skyColor * 0.15;
+
+    gl_FragColor = vec4(reflColor, 0.88);
+  }
+`;
+
+const waterUniforms = {
+  uTime:       { value: 0 },
+  uAmplitude:  { value: params.waveAmplitude },
+  uFrequency:  { value: params.waveFrequency },
+  uWaterColor: { value: new THREE.Color(params.waterColor) },
+  uSunDir:     { value: new THREE.Vector3(0.6, 0.8, 0.4).normalize() },
+};
+
+const waterMaterial = new THREE.ShaderMaterial({
+  vertexShader:   waterVertexShader,
+  fragmentShader: waterFragmentShader,
+  uniforms:       waterUniforms,
+  transparent:    true,
+  side:           THREE.DoubleSide,
+});
+
+// Water plane
+const waterGeo = new THREE.PlaneGeometry(80, 80, 256, 256);
+waterGeo.rotateX(-Math.PI / 2);
+const waterMesh = new THREE.Mesh(waterGeo, waterMaterial);
+waterMesh.position.y = 0;
+waterMesh.receiveShadow = true;
+scene.add(waterMesh);
+
+// ─── Seabed Shader ──────────────────────────────────────────────────────────
+const seabedVertexShader = /* glsl */`
+  precision highp float;
+
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+
+  void main() {
+    vUv = uv;
+    vNormal = normalMatrix * normal;
+    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const seabedFragmentShader = /* glsl */`
+  precision highp float;
+
+  uniform float uTime;
+  uniform float uCausticIntensity;
+  uniform vec3 uSunDir;
+  uniform vec3 uSunColor;
+
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+
+  // ── Noise helpers ─────────────────────────────────────────────────────────
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash(i),             hash(i + vec2(1,0)), u.x),
+      mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), u.x),
+      u.y
+    );
+  }
+
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    vec2 shift = vec2(100.0);
+    for (int i = 0; i < 5; i++) {
+      v += a * noise(p);
+      p = p * 2.0 + shift;
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  // ── Voronoi caustic ────────────────────────────────────────────────────────
+  vec2 voronoi(vec2 p) {
+    vec2 n = floor(p);
+    vec2 f = fract(p);
+    float minD = 10.0;
+    float secondD = 10.0;
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        vec2 g = vec2(float(i), float(j));
+        vec2 o = vec2(hash(n + g), hash(n + g + vec2(31.41, 27.18)));
+        // Animate cell centers
+        o = 0.5 + 0.45 * sin(uTime * 0.7 + 6.2831 * o);
+        vec2 r = g + o - f;
+        float d = dot(r, r);
+        if (d < minD) { secondD = minD; minD = d; }
+        else if (d < secondD) { secondD = d; }
+      }
+    }
+    return vec2(sqrt(minD), sqrt(secondD));
+  }
+
+  // ── Caustic pattern ───────────────────────────────────────────────────────
+  float causticPattern(vec2 uv) {
+    vec2 v1 = voronoi(uv * 3.5 + uTime * 0.12);
+    vec2 v2 = voronoi(uv * 5.2 - uTime * 0.09 + vec2(4.3, 2.1));
+    // Thin bright edges = difference between nearest and second-nearest
+    float c1 = pow(v1.y - v1.x, 2.2);
+    float c2 = pow(v2.y - v2.x, 2.2);
+    return c1 * 0.6 + c2 * 0.4;
+  }
+
+  void main() {
+    // Sandy base color with noise variation
+    vec3 sandLight = vec3(0.82, 0.73, 0.55);
+    vec3 sandDark  = vec3(0.55, 0.46, 0.32);
+    float sandNoise = fbm(vWorldPos.xz * 0.4);
+    vec3 sandColor = mix(sandDark, sandLight, sandNoise);
+
+    // Add some stone/sand ripple texture
+    float ripple = noise(vWorldPos.xz * 2.5) * 0.15;
+    sandColor += ripple;
+
+    // Caustic light projection from water surface above
+    float caustic = causticPattern(vUv + vec2(uTime * 0.03, uTime * 0.02));
+
+    // Attenuate caustics by distance from center and angle
+    float distFactor = 1.0 - smoothstep(0.0, 40.0, length(vWorldPos.xz));
+    float angleFactor = max(dot(normalize(vNormal), normalize(uSunDir)), 0.0);
+    caustic *= distFactor * angleFactor;
+
+    vec3 causticColor = vec3(1.0, 0.97, 0.82) * caustic * uCausticIntensity * 2.5;
+
+    // Simple diffuse shading
+    float diff = max(dot(normalize(vNormal), normalize(uSunDir)), 0.0);
+    vec3 lit = sandColor * (0.4 + diff * 0.6) * uSunColor;
+
+    // Add caustic overlay
+    lit += sandColor * causticColor;
+
+    // Depth-based darkening (seabed gets darker further out)
+    lit *= mix(0.5, 1.0, distFactor);
+
+    gl_FragColor = vec4(lit, 1.0);
+  }
+`;
+
+const seabedUniforms = {
+  uTime:           { value: 0 },
+  uCausticIntensity: { value: params.causticIntensity },
+  uSunDir:         { value: new THREE.Vector3(0.6, 0.8, 0.4).normalize() },
+  uSunColor:       { value: new THREE.Color(1.0, 0.95, 0.8) },
+};
+
+const seabedMaterial = new THREE.ShaderMaterial({
+  vertexShader:   seabedVertexShader,
+  fragmentShader: seabedFragmentShader,
+  uniforms:       seabedUniforms,
+});
+
+// Seabed plane
+const seabedGeo = new THREE.PlaneGeometry(100, 100, 1, 1);
+seabedGeo.rotateX(-Math.PI / 2);
+const seabedMesh = new THREE.Mesh(seabedGeo, seabedMaterial);
+seabedMesh.position.y = -6;
+seabedMesh.receiveShadow = true;
+scene.add(seabedMesh);
+
+// ─── Rocks ───────────────────────────────────────────────────────────────────
+function createRock(size, pos) {
+  const geo = new THREE.IcosahedronGeometry(size, 1);
+  // Distort vertices for organic look
+  const posAttr = geo.attributes.position;
+  for (let i = 0; i < posAttr.count; i++) {
+    const x = posAttr.getX(i);
+    const y = posAttr.getY(i);
+    const z = posAttr.getZ(i);
+    const noise = (Math.random() - 0.5) * size * 0.35;
+    posAttr.setXYZ(i, x + noise * 0.5, y - noise * 0.3, z + noise * 0.5);
+  }
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL(0.07, 0.15, 0.28 + Math.random() * 0.15),
+    roughness: 0.9,
+    metalness: 0.05,
+    flatShading: true,
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(pos);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+const rockConfigs = [
+  { size: 2.2, pos: new THREE.Vector3(-6,  -5.0,  4) },
+  { size: 3.5, pos: new THREE.Vector3( 8,  -5.2, -5) },
+  { size: 1.5, pos: new THREE.Vector3(-3,  -5.0, -8) },
+  { size: 2.8, pos: new THREE.Vector3( 5,  -5.1,  7) },
+  { size: 1.2, pos: new THREE.Vector3(-9,  -5.0, -2) },
+  { size: 1.8, pos: new THREE.Vector3( 12, -5.0,  3) },
+  { size: 4.0, pos: new THREE.Vector3(-12, -5.3, -9) },
+  { size: 2.0, pos: new THREE.Vector3( 3,  -5.0,  11) },
+  { size: 1.0, pos: new THREE.Vector3(-5,  -5.0,  10) },
+  { size: 2.5, pos: new THREE.Vector3( 9,  -5.1, -11) },
+  { size: 3.2, pos: new THREE.Vector3(-14, -5.2,  6) },
+  { size: 1.6, pos: new THREE.Vector3( 6,  -5.0, -14) },
+];
+
+rockConfigs.forEach(cfg => scene.add(createRock(cfg.size, cfg.pos)));
+
+// ─── Sun sphere (visual) ─────────────────────────────────────────────────────
+const sunSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1.5, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0xfff5c0 })
+);
+sunSphere.position.copy(sunLight.position);
+scene.add(sunSphere);
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: 'Water Caustics Controls' });
+
+gui.add(params, 'waveAmplitude', 0.0, 1.2, 0.01).name('Wave Amplitude').onChange(v => {
+  waterUniforms.uAmplitude.value = v;
+});
+
+gui.add(params, 'waveFrequency', 0.05, 0.6, 0.01).name('Wave Frequency').onChange(v => {
+  waterUniforms.uFrequency.value = v;
+});
+
+gui.add(params, 'causticIntensity', 0.0, 4.0, 0.1).name('Caustic Intensity').onChange(v => {
+  seabedUniforms.uCausticIntensity.value = v;
+});
+
+gui.addColor(params, 'waterColor').name('Water Color').onChange(v => {
+  waterUniforms.uWaterColor.value.set(v);
+});
+
+gui.add(params, 'sunAngle', -180, 180, 1).name('Sun Angle °').onChange(v => {
+  const rad = THREE.MathUtils.degToRad(v);
+  const h = params.sunHeight;
+  sunLight.position.set(Math.cos(rad) * 40, h, Math.sin(rad) * 40);
+  sunSphere.position.copy(sunLight.position);
+  const dir = sunLight.position.clone().normalize();
+  waterUniforms.uSunDir.value.copy(dir);
+  seabedUniforms.uSunDir.value.copy(dir);
+});
+
+gui.add(params, 'sunHeight', 5, 80, 1).name('Sun Height').onChange(v => {
+  const rad = THREE.MathUtils.degToRad(params.sunAngle);
+  sunLight.position.set(Math.cos(rad) * 40, v, Math.sin(rad) * 40);
+  sunSphere.position.copy(sunLight.position);
+  const dir = sunLight.position.clone().normalize();
+  waterUniforms.uSunDir.value.copy(dir);
+  seabedUniforms.uSunDir.value.copy(dir);
+});
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Animation loop ─────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const t = clock.getElapsedTime();
+
+  waterUniforms.uTime.value = t;
+  seabedUniforms.uTime.value = t;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();

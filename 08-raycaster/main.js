@@ -1,0 +1,95 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x1c1c2e)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(6, 6, 8)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5))
+const light = new THREE.DirectionalLight(0xffffff, 1)
+light.position.set(5, 8, 5)
+scene.add(light)
+
+// ============ 一堆可交互的立方体 ============
+const cubes = []
+const ROWS = 5
+const COLS = 5
+for (let i = 0; i < ROWS; i++) {
+  for (let j = 0; j < COLS; j++) {
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.8, 0.8),
+      new THREE.MeshStandardMaterial({ color: 0x888888 })
+    )
+    cube.position.set((i - 2) * 1.2, 0, (j - 2) * 1.2)
+    // 把原始颜色记下来，悬停结束后恢复
+    cube.userData.baseColor = new THREE.Color(0x888888)
+    scene.add(cube)
+    cubes.push(cube)
+  }
+}
+
+// ============ Raycaster 核心 ============
+// Raycaster：从相机出发、穿过鼠标位置发一条射线，看打到哪些物体
+const raycaster = new THREE.Raycaster()
+// 鼠标位置需归一化到 [-1, 1]，注意 Y 轴是反的
+const mouse = new THREE.Vector2()
+
+let hovered = null // 当前悬停的物体
+
+function onPointerMove(e) {
+  // 屏幕坐标 → 标准化设备坐标 (NDC)
+  mouse.x = (e.clientX / innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+}
+addEventListener('pointermove', onPointerMove)
+
+function onClick() {
+  if (hovered) {
+    // 给悬停物体随机换色，并更新 baseColor 防止移开后被重置
+    const c = new THREE.Color().setHSL(Math.random(), 0.7, 0.55)
+    hovered.material.color.copy(c)
+    hovered.userData.baseColor.copy(c)
+  }
+}
+addEventListener('click', onClick)
+
+// ============ 渲染循环里做相交检测 ============
+function animate() {
+  requestAnimationFrame(animate)
+
+  // 用最新的鼠标位置和相机更新射线
+  raycaster.setFromCamera(mouse, camera)
+  // 检测射线和 cubes 中物体的相交结果（按距离从近到远排好序）
+  const hits = raycaster.intersectObjects(cubes)
+
+  const newHover = hits[0]?.object || null
+
+  if (newHover !== hovered) {
+    // 旧的恢复颜色
+    if (hovered) hovered.material.color.copy(hovered.userData.baseColor)
+    // 新的高亮
+    if (newHover) newHover.material.color.set(0xffffff)
+    hovered = newHover
+    document.body.style.cursor = newHover ? 'pointer' : 'default'
+  }
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})

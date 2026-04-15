@@ -1,0 +1,706 @@
+import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+    // ─── Renderer ────────────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0a0a18, 0.012);
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 2000);
+    camera.position.set(0, 60, 120);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 10, 0);
+    controls.maxPolarAngle = Math.PI * 0.85;
+
+    // ─── Lights ─────────────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0x112244, 1.2));
+
+    const sun = new THREE.DirectionalLight(0xfff4e0, 2.5);
+    sun.position.set(80, 120, 60);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 500;
+    sun.shadow.camera.left = -150;
+    sun.shadow.camera.right = 150;
+    sun.shadow.camera.top = 150;
+    sun.shadow.camera.bottom = -150;
+    scene.add(sun);
+
+    const fillLight = new THREE.DirectionalLight(0x3366cc, 0.8);
+    fillLight.position.set(-60, 40, -80);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.PointLight(0xff4400, 1.5, 200);
+    rimLight.position.set(-40, 30, 50);
+    scene.add(rimLight);
+
+    // ─── Skybox / Stars ─────────────────────────────────────────────────────────
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 3000;
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i++) {
+      starPos[i] = (Math.random() - 0.5) * 2000;
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({
+      color: 0xaaddff,
+      size: 0.5,
+      transparent: true,
+      opacity: 0.7,
+      sizeAttenuation: true,
+    });
+    scene.add(new THREE.Points(starGeo, starMat));
+
+    // ─── Ground ─────────────────────────────────────────────────────────────────
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1a2e,
+      roughness: 0.9,
+      metalness: 0.1,
+    });
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Grid
+    const grid = new THREE.GridHelper(600, 60, 0x112244, 0x0d1122);
+    grid.position.y = 0.05;
+    scene.add(grid);
+
+    // ─── Spline Paths ───────────────────────────────────────────────────────────
+    // 1) Train track - large oval-ish loop
+    const trackPoints = [];
+    const trackSegments = 24;
+    for (let i = 0; i <= trackSegments; i++) {
+      const t = i / trackSegments;
+      const a = t * Math.PI * 2;
+      const x = Math.cos(a) * 40;
+      const z = Math.sin(a) * 28;
+      const y = Math.sin(a * 2) * 2 + 2; // gentle hills
+      trackPoints.push(new THREE.Vector3(x, y, z));
+    }
+    const trainCurve = new THREE.CatmullRomCurve3(trackPoints, true, 'catmullrom', 0.5);
+
+    // 2) Aircraft paths - different heights
+    function makeAircraftCurve(phase, scale) {
+      const pts = [];
+      const count = 10;
+      for (let i = 0; i <= count; i++) {
+        const t = i / count;
+        const a = t * Math.PI * 2;
+        const x = Math.cos(a + phase) * (30 + scale * 20);
+        const y = 40 + Math.sin(a * 3 + phase) * 15;
+        const z = Math.sin(a + phase) * (22 + scale * 14);
+        pts.push(new THREE.Vector3(x, y, z));
+      }
+      return new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
+    }
+
+    const aircraftCurves = [
+      makeAircraftCurve(0, 1),
+      makeAircraftCurve(1.2, 0.7),
+      makeAircraftCurve(2.5, 1.3),
+      makeAircraftCurve(3.8, 0.9),
+      makeAircraftCurve(5.1, 1.1),
+    ];
+
+    // 3) Photon curve - twisted complex 3D
+    const photonPoints = [];
+    const photonSegments = 40;
+    for (let i = 0; i <= photonSegments; i++) {
+      const t = i / photonSegments;
+      const a = t * Math.PI * 8; // 4 loops
+      const r = 15 + Math.sin(t * Math.PI * 6) * 8;
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a * 1.5) * 12 + 20;
+      const z = Math.sin(a) * r * 0.8;
+      photonPoints.push(new THREE.Vector3(x, y, z));
+    }
+    const photonCurve = new THREE.CatmullRomCurve3(photonPoints, false, 'catmullrom', 0.5);
+
+    // 4) Orb paths - orbital rings
+    function makeOrbCurve(radius, tilt, phase) {
+      const pts = [];
+      const count = 16;
+      for (let i = 0; i <= count; i++) {
+        const t = i / count;
+        const a = t * Math.PI * 2 + phase;
+        const cx = Math.cos(t * Math.PI * 2) * radius;
+        const cy = Math.sin(tilt) * Math.sin(a) * radius * 0.4;
+        const cz = Math.cos(a) * radius;
+        pts.push(new THREE.Vector3(cx, cy, cz));
+      }
+      return new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
+    }
+
+    const orbCurves = [
+      makeOrbCurve(18, 0.3, 0),
+      makeOrbCurve(22, -0.5, 1.5),
+      makeOrbCurve(14, 0.8, 3.0),
+      makeOrbCurve(26, -0.2, 4.5),
+    ];
+
+    // ─── Path Visualization ──────────────────────────────────────────────────────
+    const pathMaterial = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.12,
+      depthWrite: false,
+    });
+
+    function createPathLine(curve, color, opacity = 0.15) {
+      const pts = curve.getPoints(120);
+      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      const mat = new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+      });
+      return new THREE.Line(geo, mat);
+    }
+
+    const pathLines = [];
+    const trackLine = createPathLine(trainCurve, 0x4488ff, 0.3);
+    trackLine.userData.type = 'path';
+    scene.add(trackLine);
+    pathLines.push(trackLine);
+
+    aircraftCurves.forEach((c, i) => {
+      const hue = (i / aircraftCurves.length) * 0.3 + 0.55;
+      const color = new THREE.Color().setHSL(hue, 0.8, 0.6);
+      const line = createPathLine(c, color, 0.25);
+      line.userData.type = 'path';
+      scene.add(line);
+      pathLines.push(line);
+    });
+
+    const photonLine = createPathLine(photonCurve, 0xff88ff, 0.4);
+    photonLine.userData.type = 'path';
+    scene.add(photonLine);
+    pathLines.push(photonLine);
+
+    orbCurves.forEach((c, i) => {
+      const colors = [0x44ffaa, 0xffaa44, 0xaa44ff, 0x44aaff];
+      const line = createPathLine(c, colors[i], 0.25);
+      line.userData.type = 'path';
+      scene.add(line);
+      pathLines.push(line);
+    });
+
+    // ─── Train System ────────────────────────────────────────────────────────────
+    function createCarMesh(idx) {
+      const group = new THREE.Group();
+
+      // Body
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(0.58 + idx * 0.04, 0.7, 0.5),
+        roughness: 0.3,
+        metalness: 0.6,
+        emissive: new THREE.Color().setHSL(0.58 + idx * 0.04, 0.7, 0.1),
+        emissiveIntensity: 0.3,
+      });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.4, 4), bodyMat);
+      body.position.y = 1.0;
+      body.castShadow = true;
+      group.add(body);
+
+      // Cabin
+      const cabin = new THREE.Mesh(
+        new THREE.BoxGeometry(2.2, 1.0, 2.2),
+        bodyMat
+      );
+      cabin.position.set(0, 2.0, -0.5);
+      cabin.castShadow = true;
+      group.add(cabin);
+
+      // Windows
+      const winMat = new THREE.MeshStandardMaterial({
+        color: 0xaaddff,
+        emissive: 0x3366aa,
+        emissiveIntensity: 0.8,
+        roughness: 0.1,
+        metalness: 0.9,
+      });
+      const winF = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.5), winMat);
+      winF.position.set(0, 2.1, 0.62);
+      group.add(winF);
+      const winB = winF.clone();
+      winB.position.z = -0.62;
+      winB.rotation.y = Math.PI;
+      group.add(winB);
+
+      // Wheels
+      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 });
+      const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 12);
+      const wheelPositions = [
+        [-1.0, 0.4, 1.2], [1.0, 0.4, 1.2],
+        [-1.0, 0.4, -1.2], [1.0, 0.4, -1.2],
+      ];
+      wheelPositions.forEach(p => {
+        const w = new THREE.Mesh(wheelGeo, wheelMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(...p);
+        w.castShadow = true;
+        group.add(w);
+      });
+
+      // Headlights
+      const lightMat = new THREE.MeshStandardMaterial({
+        color: 0xffff88,
+        emissive: 0xffff44,
+        emissiveIntensity: 2,
+      });
+      [-0.7, 0.7].forEach(xOff => {
+        const l = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), lightMat);
+        l.position.set(xOff, 0.9, 2.05);
+        group.add(l);
+      });
+
+      return group;
+    }
+
+    const CAR_COUNT = 5;
+    const cars = [];
+    for (let i = 0; i < CAR_COUNT; i++) {
+      const car = createCarMesh(i);
+      car.userData = {
+        curve: trainCurve,
+        phaseOffset: i * (1 / CAR_COUNT),
+      };
+      scene.add(car);
+      cars.push(car);
+    }
+
+    // Station platform
+    const platformMat = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.8 });
+    const platform = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 6), platformMat);
+    platform.position.set(0, 0.25, 2);
+    platform.receiveShadow = true;
+    scene.add(platform);
+
+    const platformEdge = new THREE.Mesh(
+      new THREE.BoxGeometry(12.5, 0.1, 0.3),
+      new THREE.MeshStandardMaterial({ color: 0x6699cc, emissive: 0x334466, emissiveIntensity: 0.5 })
+    );
+    platformEdge.position.set(0, 0.55, 4.8);
+    scene.add(platformEdge);
+
+    // ─── Aircraft System ─────────────────────────────────────────────────────────
+    function createAircraftMesh(index) {
+      const group = new THREE.Group();
+
+      const hue = (index / aircraftCurves.length) * 0.3 + 0.55;
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(hue, 0.7, 0.55),
+        roughness: 0.2,
+        metalness: 0.7,
+        emissive: new THREE.Color().setHSL(hue, 0.7, 0.15),
+        emissiveIntensity: 0.4,
+      });
+
+      // Fuselage (elongated cone)
+      const fuselage = new THREE.Mesh(new THREE.ConeGeometry(0.5, 4, 8), bodyMat);
+      fuselage.rotation.x = Math.PI / 2;
+      fuselage.position.z = 0.5;
+      fuselage.castShadow = true;
+      group.add(fuselage);
+
+      // Wings
+      const wingGeo = new THREE.BufferGeometry();
+      const wingVerts = new Float32Array([
+        0, 0, 0.5,   -4, 0, -1,   -3.5, 0, 1,
+        0, 0, 0.5,   4, 0, -1,    3.5, 0, 1,
+      ]);
+      wingGeo.setAttribute('position', new THREE.BufferAttribute(wingVerts, 3));
+      wingGeo.computeVertexNormals();
+      const wing = new THREE.Mesh(wingGeo, bodyMat);
+      wing.castShadow = true;
+      group.add(wing);
+
+      // Tail fins
+      const tailGeo = new THREE.BufferGeometry();
+      const tailVerts = new Float32Array([
+        0, 0, 2.5,   0, 1.8, 1.5,   0, 0, 2.0,
+      ]);
+      tailGeo.setAttribute('position', new THREE.BufferAttribute(tailVerts, 3));
+      tailGeo.computeVertexNormals();
+      const tail = new THREE.Mesh(tailGeo, bodyMat);
+      group.add(tail);
+
+      // Engine glow
+      const glowMat = new THREE.MeshStandardMaterial({
+        color: 0xff6600,
+        emissive: 0xff4400,
+        emissiveIntensity: 3,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 8), glowMat);
+      glow.position.z = 2.5;
+      group.add(glow);
+
+      // Nav lights
+      const navLightMat = new THREE.MeshStandardMaterial({
+        color: 0xff0000,
+        emissive: 0xff0000,
+        emissiveIntensity: 3,
+      });
+      const navLight = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), navLightMat);
+      navLight.position.set(-2, 0, -0.5);
+      group.add(navLight);
+
+      return group;
+    }
+
+    const aircraftMeshes = aircraftCurves.map((_, i) => {
+      const ac = createAircraftMesh(i);
+      ac.userData = {
+        curve: aircraftCurves[i],
+        speed: 0.06 + Math.random() * 0.05,
+        trailPoints: [],
+      };
+      scene.add(ac);
+      return ac;
+    });
+
+    // ─── Photon System ───────────────────────────────────────────────────────────
+    const photonMesh = new THREE.Group();
+    photonMesh.userData = { curve: photonCurve, speed: 0.03, phase: 0 };
+
+    // Core
+    const coreMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0xff88ff,
+      emissiveIntensity: 5,
+      roughness: 0,
+    });
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), coreMat);
+    photonMesh.add(core);
+
+    // Inner glow
+    const innerGlowMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0xffffff,
+      emissiveIntensity: 10,
+      transparent: true,
+      opacity: 0.6,
+    });
+    const innerGlow = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), innerGlowMat);
+    photonMesh.add(innerGlow);
+
+    // Outer glow
+    const outerGlowMat = new THREE.MeshStandardMaterial({
+      color: 0xff88ff,
+      emissive: 0xff44ff,
+      emissiveIntensity: 3,
+      transparent: true,
+      opacity: 0.2,
+    });
+    const outerGlow = new THREE.Mesh(new THREE.SphereGeometry(2.0, 16, 16), outerGlowMat);
+    photonMesh.add(outerGlow);
+
+    photonMesh.userData.trailPoints = [];
+    scene.add(photonMesh);
+
+    // Photon light
+    const photonLight = new THREE.PointLight(0xff44ff, 5, 30);
+    photonMesh.add(photonLight);
+
+    // ─── Orb System ──────────────────────────────────────────────────────────────
+    function createOrbMesh(index) {
+      const colors = [0x44ffaa, 0xffaa44, 0xaa44ff, 0x44aaff];
+      const group = new THREE.Group();
+
+      const orbMat = new THREE.MeshStandardMaterial({
+        color: colors[index],
+        emissive: colors[index],
+        emissiveIntensity: 2,
+        roughness: 0,
+        metalness: 0.5,
+      });
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 12), orbMat);
+      group.add(orb);
+
+      // Ring
+      const ringMat = new THREE.MeshStandardMaterial({
+        color: colors[index],
+        emissive: colors[index],
+        emissiveIntensity: 1,
+        transparent: true,
+        opacity: 0.4,
+        side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.05, 8, 32), ringMat);
+      ring.rotation.x = Math.PI / 2;
+      group.add(ring);
+
+      const light = new THREE.PointLight(colors[index], 2, 12);
+      group.add(light);
+
+      return group;
+    }
+
+    const orbMeshes = orbCurves.map((c, i) => {
+      const orb = createOrbMesh(i);
+      orb.userData = {
+        curve: c,
+        speed: 0.12 + i * 0.03,
+        phase: i * 0.5,
+      };
+      scene.add(orb);
+      return orb;
+    });
+
+    // ─── Trail System ────────────────────────────────────────────────────────────
+    const trails = [];
+
+    function createTrail(color, maxPoints) {
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(maxPoints * 3);
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setDrawRange(0, 0);
+      const mat = new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.frustumCulled = false;
+      scene.add(line);
+      return { line, points: [], maxPoints };
+    }
+
+    function updateTrail(trail, positions) {
+      trail.points = positions.slice(-trail.maxPoints);
+      const arr = trail.line.geometry.attributes.position.array;
+      for (let i = 0; i < trail.maxPoints; i++) {
+        if (i < trail.points.length) {
+          arr[i * 3] = trail.points[i].x;
+          arr[i * 3 + 1] = trail.points[i].y;
+          arr[i * 3 + 2] = trail.points[i].z;
+        }
+      }
+      trail.line.geometry.attributes.position.needsUpdate = true;
+      trail.line.geometry.setDrawRange(0, trail.points.length);
+    }
+
+    aircraftMeshes.forEach((ac, i) => {
+      const hue = (i / aircraftCurves.length) * 0.3 + 0.55;
+      const color = new THREE.Color().setHSL(hue, 0.8, 0.6);
+      trails.push(createTrail(color, 80));
+    });
+
+    trails.push(createTrail(0xff88ff, 150)); // photon trail
+
+    // ─── Decorative Pillars ───────────────────────────────────────────────────────
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.6, metalness: 0.4 });
+    const pillarPositions = [
+      [50, 0, 30], [-50, 0, 30], [50, 0, -30], [-50, 0, -30],
+      [30, 0, 50], [-30, 0, 50], [30, 0, -50], [-30, 0, -50],
+    ];
+    pillarPositions.forEach(p => {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.2, 20, 8), pillarMat);
+      pillar.position.set(p[0], 10, p[2]);
+      pillar.castShadow = true;
+      pillar.receiveShadow = true;
+      scene.add(pillar);
+
+      // Top light
+      const topLight = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, 8, 8),
+        new THREE.MeshStandardMaterial({
+          color: 0x4488ff,
+          emissive: 0x2244aa,
+          emissiveIntensity: 2,
+        })
+      );
+      topLight.position.set(p[0], 21, p[2]);
+      scene.add(topLight);
+    });
+
+    // ─── GUI ─────────────────────────────────────────────────────────────────────
+    const params = {
+      animationSpeed: 1.0,
+      showPaths: true,
+      showTrails: true,
+      trailLength: 80,
+      trackObject: 'none',
+      cameraMode: 'free',
+      trainCarCount: 5,
+      aircraftCount: 5,
+    };
+
+    const gui = new GUI({ title: 'Spline Animation' });
+    gui.domElement.style.right = '10px';
+    gui.domElement.style.top = '10px';
+
+    const animFolder = gui.addFolder('Animation');
+    animFolder.add(params, 'animationSpeed', 0.1, 3.0).name('Speed');
+    animFolder.open();
+
+    const visFolder = gui.addFolder('Visualization');
+    visFolder.add(params, 'showPaths').name('Show Paths').onChange(v => {
+      pathLines.forEach(l => { l.visible = v; });
+    });
+    visFolder.add(params, 'showTrails').name('Show Trails').onChange(v => {
+      trails.forEach(t => { t.line.visible = v; });
+    });
+    visFolder.add(params, 'trailLength', 10, 150).step(5).name('Trail Length');
+    visFolder.open();
+
+    const camFolder = gui.addFolder('Camera');
+    camFolder.add(params, 'trackObject', ['none', 'train', 'aircraft', 'photon', 'orbs'])
+      .name('Track Object');
+    camFolder.add(params, 'cameraMode', ['free', 'follow']).name('Camera Mode');
+    camFolder.open();
+
+    // ─── Animation ───────────────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function getTrackedPosition() {
+      const t = clock.getElapsedTime();
+      if (params.trackObject === 'train') {
+        const phase = (t * 0.08 * params.animationSpeed) % 1;
+        return trainCurve.getPoint(phase);
+      }
+      if (params.trackObject === 'aircraft') {
+        const phase = (t * 0.06 * params.animationSpeed) % 1;
+        return aircraftCurves[0].getPoint(phase);
+      }
+      if (params.trackObject === 'photon') {
+        const phase = (t * 0.03 * params.animationSpeed) % 1;
+        return photonCurve.getPoint(phase);
+      }
+      if (params.trackObject === 'orbs') {
+        const phase = (t * 0.12 * params.animationSpeed) % 1;
+        return orbCurves[0].getPoint(phase);
+      }
+      return null;
+    }
+
+    function getObjectForward(tangent) {
+      return new THREE.Vector3().copy(tangent).normalize();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const t = clock.getElapsedTime() * params.animationSpeed;
+      const dt = clock.getDelta ? clock.getDelta() : 0.016;
+
+      // Update train cars
+      const carCount = Math.min(Math.max(params.trainCarCount, 3), 8);
+      cars.forEach((car, i) => {
+        if (i >= carCount) { car.visible = false; return; }
+        car.visible = true;
+        const offset = i * (1 / carCount);
+        const phase = (t * 0.08 + offset) % 1;
+        const pos = car.userData.curve.getPoint(phase);
+        const tangent = car.userData.curve.getTangent(phase);
+        car.position.copy(pos);
+        car.lookAt(pos.clone().add(tangent));
+
+        // Bobbing on hills
+        car.position.y += Math.sin(phase * Math.PI * 4) * 0.15;
+      });
+
+      // Update aircraft
+      const acCount = Math.min(Math.max(params.aircraftCount, 3), 5);
+      aircraftMeshes.forEach((ac, i) => {
+        if (i >= acCount) { ac.visible = false; return; }
+        ac.visible = true;
+        const speed = ac.userData.speed * params.animationSpeed;
+        const phase = (t * speed) % 1;
+        const pos = ac.userData.curve.getPoint(phase);
+        const tangent = ac.userData.curve.getTangent(phase);
+        ac.position.copy(pos);
+        ac.lookAt(pos.clone().add(tangent));
+
+        // Bank on turns
+        const sideTangent = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+        const bankAngle = Math.sin(phase * Math.PI * 2) * 0.3;
+        ac.rotation.z = bankAngle;
+
+        // Trail
+        if (params.showTrails && trails[i]) {
+          ac.userData.trailPoints.push(pos.clone());
+          if (ac.userData.trailPoints.length > params.trailLength) {
+            ac.userData.trailPoints.shift();
+          }
+          updateTrail(trails[i], ac.userData.trailPoints);
+        }
+      });
+
+      // Update photon
+      {
+        const speed = photonMesh.userData.speed * params.animationSpeed;
+        const phase = (t * speed) % 1;
+        const pos = photonMesh.userData.curve.getPoint(phase);
+        const tangent = photonMesh.userData.curve.getTangent(phase);
+        photonMesh.position.copy(pos);
+        photonMesh.lookAt(pos.clone().add(tangent));
+
+        // Pulse
+        const pulse = Math.sin(t * 8) * 0.3 + 1;
+        photonMesh.scale.setScalar(pulse);
+
+        // Trail
+        if (params.showTrails && trails[acCount]) {
+          photonMesh.userData.trailPoints.push(pos.clone());
+          if (photonMesh.userData.trailPoints.length > params.trailLength) {
+            photonMesh.userData.trailPoints.shift();
+          }
+          updateTrail(trails[acCount], photonMesh.userData.trailPoints);
+        }
+      }
+
+      // Update orbs
+      orbMeshes.forEach((orb, i) => {
+        const speed = orb.userData.speed * params.animationSpeed;
+        const phase = (t * speed + orb.userData.phase) % 1;
+        const pos = orb.userData.curve.getPoint(phase);
+        const tangent = orb.userData.curve.getTangent(phase);
+        orb.position.copy(pos);
+
+        // Gentle rotation
+        orb.rotation.y = t * 2 + i;
+        orb.rotation.x = Math.sin(t + i) * 0.5;
+      });
+
+      // Camera follow
+      const target = getTrackedPosition();
+      if (target && params.cameraMode === 'follow') {
+        const camTarget = target.clone();
+        camTarget.y += 8;
+        controls.target.lerp(camTarget, 0.05);
+      } else if (params.cameraMode === 'follow') {
+        controls.target.lerp(new THREE.Vector3(0, 10, 0), 0.02);
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    // ─── Resize ──────────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    animate();

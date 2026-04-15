@@ -1,0 +1,233 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+
+// ─── Scene ─────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x87ceeb)
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200)
+camera.position.set(0, 4, 18)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// ─── Lights ────────────────────────────────────────────────────
+const sunLight = new THREE.DirectionalLight(0xfff5e0, 2.5)
+sunLight.position.set(10, 20, 5)
+scene.add(sunLight)
+
+const ambientLight = new THREE.AmbientLight(0xaaccff, 0.6)
+scene.add(ambientLight)
+
+// Sun sphere
+const sunGeo = new THREE.SphereGeometry(2, 16, 16)
+const sunMat = new THREE.MeshBasicMaterial({ color: 0xfff5e0 })
+const sunMesh = new THREE.Mesh(sunGeo, sunMat)
+sunMesh.position.copy(sunLight.position)
+scene.add(sunMesh)
+
+// Ground
+const groundGeo = new THREE.PlaneGeometry(200, 200)
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x3a5f2a, roughness: 1 })
+const ground = new THREE.Mesh(groundGeo, groundMat)
+ground.rotation.x = -Math.PI / 2
+ground.position.y = -2
+scene.add(ground)
+
+// ─── Volumetric Cloud Shader ──────────────────────────────────
+const vertexShader = `
+varying vec3 vWorldPos;
+varying vec2 vUv;
+
+void main() {
+  vUv = uv;
+  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vWorldPos = worldPos.xyz;
+  gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+`
+
+const fragmentShader = `
+precision highp float;
+
+uniform float uTime;
+uniform vec3 uSunDir;
+uniform vec3 uCamPos;
+
+varying vec3 vWorldPos;
+varying vec2 vUv;
+
+#define STEPS 48
+#define MAX_DIST 60.0
+
+// Hash
+float hash(vec3 p) {
+  p = fract(p * 0.3183099 + 0.1);
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float noise(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(mix(hash(i+vec3(0,0,0)), hash(i+vec3(1,0,0)), f.x),
+        mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)), f.x), f.y),
+    mix(mix(hash(i+vec3(0,0,1)), hash(i+vec3(1,0,1)), f.x),
+        mix(hash(i+vec3(0,1,1)), hash(i+vec3(1,1,1)), f.x), f.y),
+    f.z
+  );
+}
+
+float fbm(vec3 p) {
+  float v = 0.0;
+  float a = 0.5;
+  vec3 shift = vec3(100.0);
+  for (int i = 0; i < 5; i++) {
+    v += a * noise(p);
+    p = p * 2.1 + shift;
+    a *= 0.5;
+  }
+  return v;
+}
+
+float cloudDensity(vec3 p) {
+  vec3 q = p;
+  q.x += uTime * 0.6;
+  q.z += uTime * 0.3;
+
+  float base = fbm(q * 0.25);
+  float detail = fbm(q * 0.6 + vec3(uTime * 0.1, 0.0, uTime * 0.05));
+
+  float h = (p.y - 3.0) / 4.0; // height falloff
+  float heightMask = 1.0 - smoothstep(-1.0, 1.0, h);
+
+  float density = base * 0.7 + detail * 0.3;
+  density = smoothstep(0.42, 0.68, density) * heightMask;
+  return max(density, 0.0);
+}
+
+vec4 raymarchClouds(vec3 ro, vec3 rd) {
+  float t = 0.0;
+  vec3 sun = normalize(uSunDir);
+
+  vec4 result = vec4(0.0);
+
+  for (int i = 0; i < STEPS; i++) {
+    if (result.a > 0.97) break;
+    vec3 p = ro + rd * t;
+    if (p.y < 0.5 || p.y > 12.0) { t += 0.8; continue; }
+
+    float density = cloudDensity(p);
+
+    if (density > 0.01) {
+      // Simple lighting
+      float lightDensity = cloudDensity(p + sun * 1.5);
+      float shadow = exp(-lightDensity * 3.0);
+
+      // Bright (sunlit) vs dark side
+      vec3 brightColor = vec3(1.0, 0.98, 0.95);
+      vec3 darkColor = vec3(0.5, 0.55, 0.65);
+      vec3 ambientColor = vec3(0.7, 0.78, 0.9);
+
+      float sunDot = max(dot(normalize(vec3(0,1,0)), sun), 0.0);
+      vec3 col = mix(darkColor, brightColor, shadow * 0.8 + 0.2);
+      col = mix(col, ambientColor, 0.3 * (1.0 - sunDot));
+
+      float alpha = density * 0.12;
+      col *= alpha;
+      result.rgb += (1.0 - result.a) * col;
+      result.a += (1.0 - result.a) * alpha;
+    }
+
+    t += 0.8;
+    if (t > MAX_DIST) break;
+  }
+
+  return result;
+}
+
+void main() {
+  vec3 ro = uCamPos;
+  vec3 rd = normalize(vWorldPos - uCamPos);
+
+  vec4 cloud = raymarchClouds(ro, rd);
+
+  // Sky gradient
+  vec3 skyTop = vec3(0.3, 0.55, 0.9);
+  vec3 skyBot = vec3(0.75, 0.88, 1.0);
+  float skyT = max(rd.y, 0.0);
+  vec3 sky = mix(skyBot, skyTop, skyT);
+
+  vec3 finalColor = mix(sky, cloud.rgb, cloud.a);
+  gl_FragColor = vec4(finalColor, 1.0);
+}
+`
+
+// ─── Cloud Mesh ────────────────────────────────────────────────
+const cloudGeo = new THREE.BoxGeometry(80, 20, 80)
+const cloudMat = new THREE.ShaderMaterial({
+  vertexShader,
+  fragmentShader,
+  uniforms: {
+    uTime: { value: 0 },
+    uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
+    uCamPos: { value: camera.position.clone() }
+  },
+  transparent: true,
+  side: THREE.DoubleSide,
+  depthWrite: false
+})
+
+const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat)
+cloudMesh.position.y = 6
+scene.add(cloudMesh)
+
+// ─── GUI ──────────────────────────────────────────────────────
+const gui = new GUI()
+const params = {
+  sunX: 0.5,
+  sunY: 0.8,
+  sunZ: 0.3,
+  speed: 1.0,
+  opacity: 1.0
+}
+gui.add(params, 'sunX', -1, 1).name('太阳 X').onChange(v => {
+  cloudMat.uniforms.uSunDir.value.set(params.sunX, params.sunY, params.sunZ).normalize()
+  sunLight.position.set(params.sunX * 20, params.sunY * 20, params.sunZ * 20)
+  sunMesh.position.copy(sunLight.position)
+})
+gui.add(params, 'sunY', -1, 1).name('太阳 Y').onChange(v => {
+  cloudMat.uniforms.uSunDir.value.set(params.sunX, params.sunY, params.sunZ).normalize()
+  sunLight.position.set(params.sunX * 20, params.sunY * 20, params.sunZ * 20)
+  sunMesh.position.copy(sunLight.position)
+})
+gui.add(params, 'speed', 0.1, 3).name('流速')
+gui.add(params, 'opacity', 0.1, 2).name('透明度')
+
+// ─── Resize ────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+// ─── Animate ───────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+  cloudMat.uniforms.uTime.value = t * params.speed
+  cloudMat.uniforms.uCamPos.value.copy(camera.position)
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()

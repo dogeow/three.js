@@ -1,0 +1,110 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { FontLoader } from 'three/addons/loaders/FontLoader.js'
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0a0f1e)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 2, 12)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// 环境光：PBR 金字才有质感
+const pmrem = new THREE.PMREMGenerator(renderer)
+scene.environment = pmrem.fromScene(new RoomEnvironment()).texture
+
+// 一盏点光加戏
+const light = new THREE.DirectionalLight(0xffffff, 1.5)
+light.position.set(5, 8, 5)
+scene.add(light)
+
+// 地面
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({ color: 0x1a1f3a, metalness: 0.4, roughness: 0.5 })
+)
+ground.rotation.x = -Math.PI / 2
+ground.position.y = -2
+scene.add(ground)
+
+// ============ 加载字体 ============
+// Three 自带的开源字体（helvetiker 等），放在 examples/fonts 里
+const fontURL = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json'
+
+const loader = new FontLoader()
+loader.load(fontURL, (font) => {
+  // TextGeometry 会把字符串扩展为 3D 几何体
+  const geometry = new TextGeometry('Three.js', {
+    font,
+    size: 1.5,           // 字高
+    height: 0.4,         // 挤出深度（Z 方向厚度）
+    curveSegments: 12,   // 曲线分段（数字越大越圆滑）
+    bevelEnabled: true,  // 启用倒角
+    bevelThickness: 0.05,// 倒角深度
+    bevelSize: 0.03,     // 倒角尺寸
+    bevelSegments: 5     // 倒角分段
+  })
+
+  // ⚠️ TextGeometry 默认原点在左下角，居中一下
+  geometry.center()
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xffd700,
+    metalness: 0.9,
+    roughness: 0.15
+  })
+  const textMesh = new THREE.Mesh(geometry, material)
+  scene.add(textMesh)
+
+  // 让字浮在空中轻微上下漂
+  const clock = new THREE.Clock()
+  function floatText() {
+    requestAnimationFrame(floatText)
+    const t = clock.getElapsedTime()
+    textMesh.position.y = Math.sin(t * 2) * 0.2
+    textMesh.rotation.y = Math.sin(t * 0.5) * 0.3
+  }
+  floatText()
+
+  // 副标题：MeshStandardMaterial 磨砂红
+  const subGeo = new TextGeometry('Learn & Build', {
+    font,
+    size: 0.5,
+    height: 0.08,
+    curveSegments: 8,
+    bevelEnabled: true,
+    bevelThickness: 0.01,
+    bevelSize: 0.01,
+    bevelSegments: 3
+  })
+  subGeo.center()
+  const subMesh = new THREE.Mesh(
+    subGeo,
+    new THREE.MeshStandardMaterial({ color: 0xff4466, roughness: 0.6 })
+  )
+  subMesh.position.y = -1.3
+  scene.add(subMesh)
+})
+
+function animate() {
+  requestAnimationFrame(animate)
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})

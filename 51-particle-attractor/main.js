@@ -1,0 +1,246 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x03040a)
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000)
+camera.position.set(0, 0, 8)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// ============ 用 Canvas 画一个圆形软粒子贴图 ============
+function makeCircleSprite() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const ctx = c.getContext('2d')
+  const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32)
+  grad.addColorStop(0.0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.6)')
+  grad.addColorStop(1.0, 'rgba(255,255,255,0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, 64, 64)
+  return new THREE.CanvasTexture(c)
+}
+
+// ============ 1 万个粒子 + 独立速度 ============
+const COUNT = 10000
+
+const geo = new THREE.BufferGeometry()
+const positions = new Float32Array(COUNT * 3)
+const colors = new Float32Array(COUNT * 3)
+
+// 每个粒子的速度向量
+const velocities = new Float32Array(COUNT * 3)
+
+const color = new THREE.Color()
+for (let i = 0; i < COUNT; i++) {
+  // 粒子初始位置：在球壳内随机分布
+  const r = 2 + Math.random() * 3
+  const theta = Math.random() * Math.PI * 2
+  const phi = Math.acos(Math.random() * 2 - 1)
+  const x = r * Math.sin(phi) * Math.cos(theta)
+  const y = r * Math.sin(phi) * Math.sin(theta)
+  const z = r * Math.cos(phi)
+
+  positions[i * 3]     = x
+  positions[i * 3 + 1] = y
+  positions[i * 3 + 2] = z
+
+  // 初始速度为零
+  velocities[i * 3]     = 0
+  velocities[i * 3 + 1] = 0
+  velocities[i * 3 + 2] = 0
+
+  // 初始颜色（蓝色，粒子慢速状态）
+  color.setHSL(0.62, 1.0, 0.5)
+  colors[i * 3]     = color.r
+  colors[i * 3 + 1] = color.g
+  colors[i * 3 + 2] = color.b
+}
+
+geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+
+const mat = new THREE.PointsMaterial({
+  size: 0.06,
+  map: makeCircleSprite(),
+  vertexColors: true,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending
+})
+
+const points = new THREE.Points(geo, mat)
+scene.add(points)
+
+// ============ 引力 / 斥力系统 ============
+const mouse = new THREE.Vector2()
+const raycaster = new THREE.Raycaster()
+const attractorPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
+const attractorPoint = new THREE.Vector3()
+let isRepulsor = false
+
+// 更新 tip 文字
+function updateTip() {
+  const mode = isRepulsor ? '排斥（斥力）' : '吸引（引力）'
+  document.querySelector('.tip').innerHTML =
+    '<b>技术点：粒子引力 / 斥力</b><br>' +
+    '· 1 万粒子，每个粒子拥有独立速度向量<br>' +
+    '· 鼠标移动产生引力场，粒子平滑流向鼠标位置<br>' +
+    '· <b>右键切换</b>：吸引模式 / 排斥模式<br>' +
+    '· 粒子距离过近时重置，防止聚集堆积<br>' +
+    '· 速度决定颜色：慢 = 蓝色，快 = 橙红色<br>' +
+    '· 当前模式：<b>' + mode + '</b>'
+}
+
+// 鼠标移动：计算屏幕上鼠标在 3D 空间中的对应点
+addEventListener('mousemove', (e) => {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+})
+
+// 右键切换引力 / 斥力
+addEventListener('contextmenu', (e) => {
+  e.preventDefault()
+  isRepulsor = !isRepulsor
+  updateTip()
+})
+
+// 根据速度更新粒子颜色：慢 = 蓝(h=0.62)，快 = 红橙(h=0.0)
+function updateColorBySpeed(i, speed) {
+  // speed 范围大约 0 ~ 0.1
+  const t = Math.min(speed / 0.08, 1.0)
+  // h 从 0.62（蓝）线性插值到 0.0（红）
+  const h = 0.62 - t * 0.62
+  color.setHSL(h, 1.0, 0.55)
+  colors[i * 3]     = color.r
+  colors[i * 3 + 1] = color.g
+  colors[i * 3 + 2] = color.b
+}
+
+// 重置单个粒子到随机位置
+function resetParticle(i) {
+  const r = 2 + Math.random() * 3
+  const theta = Math.random() * Math.PI * 2
+  const phi = Math.acos(Math.random() * 2 - 1)
+  positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta)
+  positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
+  positions[i * 3 + 2] = r * Math.cos(phi)
+  velocities[i * 3]     = 0
+  velocities[i * 3 + 1] = 0
+  velocities[i * 3 + 2] = 0
+  color.setHSL(0.62, 1.0, 0.5)
+  colors[i * 3]     = color.r
+  colors[i * 3 + 1] = color.g
+  colors[i * 3 + 2] = color.b
+}
+
+// ============ 渲染循环 ============
+const clock = new THREE.Clock()
+const positionAttr = geo.attributes.position
+const colorAttr = geo.attributes.color
+
+// 鼠标在 3D 空间中的坐标（随 OrbitControls 同步变换）
+const ndc = new THREE.Vector2()
+
+function animate() {
+  requestAnimationFrame(animate)
+
+  // 计算鼠标在 3D 空间中的吸引点
+  raycaster.setFromCamera(mouse, camera)
+  raycaster.ray.intersectPlane(attractorPlane, attractorPoint)
+
+  // 如果使用了 OrbitControls，吸引点需要跟随相机变换
+  const worldPos = attractorPoint.clone()
+  // 将吸引点从相机局部坐标系变换到世界坐标系
+  // 吸引平面默认在 z=0，使用相机变换来跟随视角
+  // 这里用更简单的方式：将 plane 的法线和距离跟随相机
+  const planeNormal = new THREE.Vector3()
+  camera.getWorldDirection(planeNormal)
+  attractorPlane.normal.copy(planeNormal)
+  attractorPlane.constant = -planeNormal.dot(camera.position) - 0.5
+  raycaster.ray.intersectPlane(attractorPlane, worldPos)
+
+  const dt = Math.min(clock.getDelta(), 0.05)
+
+  for (let i = 0; i < COUNT; i++) {
+    const px = positions[i * 3]
+    const py = positions[i * 3 + 1]
+    const pz = positions[i * 3 + 2]
+
+    // 到吸引点的方向
+    const dx = worldPos.x - px
+    const dy = worldPos.y - py
+    const dz = worldPos.z - pz
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    // 引力强度（与距离成反比）
+    const force = isRepulsor ? -0.002 / (dist * 0.5 + 0.1) : 0.002 / (dist * 0.5 + 0.1)
+
+    // 速度平滑插值向吸引点
+    velocities[i * 3]     += dx * force
+    velocities[i * 3 + 1] += dy * force
+    velocities[i * 3 + 2] += dz * force
+
+    // 轻微随机扰动（模拟布朗运动）
+    velocities[i * 3]     += (Math.random() - 0.5) * 0.0003
+    velocities[i * 3 + 1] += (Math.random() - 0.5) * 0.0003
+    velocities[i * 3 + 2] += (Math.random() - 0.5) * 0.0003
+
+    // 阻尼：速度逐渐衰减
+    velocities[i * 3]     *= 0.95
+    velocities[i * 3 + 1] *= 0.95
+    velocities[i * 3 + 2] *= 0.95
+
+    // 速度上限，防止过快
+    const maxSpeed = 0.15
+    let vx = velocities[i * 3]
+    let vy = velocities[i * 3 + 1]
+    let vz = velocities[i * 3 + 2]
+    const speed = Math.sqrt(vx * vx + vy * vy + vz * vz)
+    if (speed > maxSpeed) {
+      const inv = maxSpeed / speed
+      velocities[i * 3]     = vx * inv
+      velocities[i * 3 + 1] = vy * inv
+      velocities[i * 3 + 2] = vz * inv
+    }
+
+    // 更新位置
+    positions[i * 3]     += velocities[i * 3]
+    positions[i * 3 + 1] += velocities[i * 3 + 1]
+    positions[i * 3 + 2] += velocities[i * 3 + 2]
+
+    // 距离过近则重置（防止所有粒子堆积到一个点）
+    if (dist < 0.15) {
+      resetParticle(i)
+    }
+
+    // 根据速度更新颜色
+    const newSpeed = Math.sqrt(
+      velocities[i * 3] * velocities[i * 3] +
+      velocities[i * 3 + 1] * velocities[i * 3 + 1] +
+      velocities[i * 3 + 2] * velocities[i * 3 + 2]
+    )
+    updateColorBySpeed(i, newSpeed)
+  }
+
+  positionAttr.needsUpdate = true
+  colorAttr.needsUpdate = true
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})

@@ -1,0 +1,428 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x000005)
+
+// 淡淡的雾，营造深空感
+scene.fog = new THREE.FogExp2(0x000005, 0.035)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200)
+camera.position.set(5, 7, 10)
+camera.lookAt(0, 0, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.target.set(0, 0, 0)
+
+// ============ GUI 参数 ============
+const params = {
+  spinSpeed: 1.0,
+  portalSize: 3.0,
+  particleCount: 2000,
+  scheme: 'purple',   // purple | cyan | orange
+}
+
+// 颜色方案
+const schemes = {
+  purple: { core: new THREE.Color(0x6b00ff), mid: new THREE.Color(0xcc00ff), edge: new THREE.Color(0x00ffff), energy: new THREE.Color(0xffffff) },
+  cyan:   { core: new THREE.Color(0x00ccff), mid: new THREE.Color(0x00ffee), edge: new THREE.Color(0xff00ff), energy: new THREE.Color(0xffffff) },
+  orange: { core: new THREE.Color(0xff6600), mid: new THREE.Color(0xff0066), edge: new THREE.Color(0x00ffcc), energy: new THREE.Color(0xffffff) },
+}
+
+const gui = new GUI({ title: '虫洞参数' })
+gui.add(params, 'spinSpeed', 0, 4, 0.01).name('旋转速度')
+gui.add(params, 'portalSize', 1, 6, 0.1).name('虫洞大小').onChange(v => {
+  portalMesh.scale.setScalar(v)
+})
+gui.add(params, 'particleCount', 500, 5000, 100).name('粒子数量').onChange(v => {
+  rebuildParticles()
+})
+gui.add(params, 'scheme', ['purple', 'cyan', 'orange']).name('配色方案').onChange(() => {
+  updatePortalColors()
+})
+
+// ============ 传送门 Shader ============
+const portalVertexShader = /* glsl */`
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+
+  void main() {
+    vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
+
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vViewDir = normalize(cameraPosition - worldPos.xyz);
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const portalFragmentShader = /* glsl */`
+  uniform float uTime;
+  uniform vec3 uCore;
+  uniform vec3 uMid;
+  uniform vec3 uEdge;
+  uniform vec3 uEnergy;
+  uniform float uSpin;
+
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+
+  // ---- 噪声工具 ----
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash(i),           hash(i + vec2(1.0, 0.0)), u.x),
+      mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+      u.y
+    );
+  }
+
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
+    for (int i = 0; i < 5; i++) {
+      v += a * noise(p);
+      p = rot * p * 2.0 + vec2(100.0);
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  void main() {
+    // ---- 极坐标 ----
+    vec2 centered = vUv - 0.5;
+    float radius = length(centered);
+    float angle = atan(centered.y, centered.x);
+
+    // ---- 螺旋扭曲 ----
+    float spiral = angle + radius * 12.0 - uTime * uSpin;
+    float arms = sin(spiral * 3.0) * 0.5 + 0.5;
+
+    // ---- 湍流扰动 ----
+    vec2 turb = vec2(
+      fbm(centered * 6.0 + uTime * 0.3),
+      fbm(centered * 6.0 + vec2(5.3, 2.1) - uTime * 0.3)
+    );
+    float turbVal = fbm(centered * 4.0 + turb * 2.0 + uTime * 0.4);
+
+    // ---- 能量条纹 ----
+    float stripe = sin(angle * 8.0 - radius * 20.0 + uTime * uSpin * 2.0) * 0.5 + 0.5;
+    stripe = pow(stripe, 3.0) * (1.0 - radius) * 2.0;
+
+    // ---- 颜色混合 ----
+    vec3 col = mix(uCore, uMid, arms);
+    col = mix(col, uEdge, turbVal * 0.6);
+    col += uEnergy * stripe;
+
+    // ---- Fresnel 边缘辉光 ----
+    float fresnel = 1.0 - max(dot(normalize(vNormal), normalize(vViewDir)), 0.0);
+    fresnel = pow(fresnel, 2.5);
+    col += uEdge * fresnel * 2.0;
+
+    // ---- 透明度 ----
+    // 中心实，边缘淡；螺旋臂更亮；边缘辉光补 alpha
+    float alpha = smoothstep(0.5, 0.1, radius) * 0.85
+                + arms * 0.3
+                + fresnel * 0.5;
+    alpha = clamp(alpha, 0.0, 0.95);
+
+    gl_FragColor = vec4(col, alpha);
+  }
+`
+
+// 用平面圆盘模拟虫洞入口（从侧面看有厚度感）
+const portalGeo = new THREE.CircleGeometry(1, 128)
+const portalMat = new THREE.ShaderMaterial({
+  vertexShader: portalVertexShader,
+  fragmentShader: portalFragmentShader,
+  uniforms: {
+    uTime:  { value: 0 },
+    uCore:  { value: schemes.purple.core.clone() },
+    uMid:   { value: schemes.purple.mid.clone() },
+    uEdge:  { value: schemes.purple.edge.clone() },
+    uEnergy:{ value: schemes.purple.energy.clone() },
+    uSpin:  { value: params.spinSpeed }
+  },
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide
+})
+
+const portalMesh = new THREE.Mesh(portalGeo, portalMat)
+portalMesh.scale.setScalar(params.portalSize)
+portalMesh.rotation.x = -Math.PI / 2  // 水平放置
+scene.add(portalMesh)
+
+// 外圈光环（简单 MeshStandardMaterial 手动辉光环）
+const ringGeo = new THREE.RingGeometry(1.0, 1.25, 128)
+const ringMat = new THREE.MeshBasicMaterial({
+  color: 0x6600ff,
+  transparent: true,
+  opacity: 0.35,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide
+})
+const ringMesh = new THREE.Mesh(ringGeo, ringMat)
+ringMesh.scale.setScalar(params.portalSize)
+ringMesh.rotation.x = -Math.PI / 2
+ringMesh.position.y = 0.001
+scene.add(ringMesh)
+
+const ringGeo2 = new THREE.RingGeometry(1.3, 1.55, 128)
+const ringMat2 = new THREE.MeshBasicMaterial({
+  color: 0x00ccff,
+  transparent: true,
+  opacity: 0.15,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide
+})
+const ringMesh2 = new THREE.Mesh(ringGeo2, ringMat2)
+ringMesh2.scale.setScalar(params.portalSize)
+ringMesh2.rotation.x = -Math.PI / 2
+ringMesh2.position.y = 0.002
+scene.add(ringMesh2)
+
+// 更新门户颜色
+function updatePortalColors() {
+  const s = schemes[params.scheme]
+  portalMat.uniforms.uCore.value.copy(s.core)
+  portalMat.uniforms.uMid.value.copy(s.mid)
+  portalMat.uniforms.uEdge.value.copy(s.edge)
+  portalMat.uniforms.uEnergy.value.copy(s.energy)
+  ringMat.color.copy(s.edge)
+  ringMat2.color.setHex(params.scheme === 'cyan' ? 0xff00ff : params.scheme === 'orange' ? 0xffcc00 : 0x6600ff)
+}
+
+// ============ 粒子系统（被虫洞吸积）============
+// 粒子 vertex shader
+const particleVertexShader = /* glsl */`
+  attribute float aAge;
+  attribute float aSize;
+  varying float vAlpha;
+
+  void main() {
+    // alpha 随半径和年龄衰减
+    float r = length(position);
+    vAlpha = smoothstep(0.0, 0.3, r) * (1.0 - aAge) * 0.8;
+
+    vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+    // 粒子大小随年龄和距离衰减
+    float sz = aSize * (1.0 - aAge * 0.7) * (1.0 - smoothstep(0.0, 0.8, r));
+    gl_PointSize = sz * (300.0 / -mvPos.z);
+    gl_Position = projectionMatrix * mvPos;
+  }
+`
+
+const particleFragmentShader = /* glsl */`
+  uniform vec3 uColor;
+  varying float vAlpha;
+
+  void main() {
+    // 圆点软边
+    vec2 uv = gl_PointCoord - 0.5;
+    float d = length(uv);
+    if (d > 0.5) discard;
+    float soft = 1.0 - smoothstep(0.2, 0.5, d);
+
+    gl_FragColor = vec4(uColor, soft * vAlpha);
+  }
+`
+
+// 粒子状态：每颗粒子存储「出生时的随机位置+速度方向」
+// CPU 驱动位置，GPU 渲染
+let particlePoints = null
+let particleGeo = null
+
+function spawnParticle(i, positions, ages, sizes, maxAge) {
+  // 在虫洞外围随机位置spawn（距离 4~10）
+  const r = 4 + Math.random() * 6
+  const theta = Math.random() * Math.PI * 2
+  const phi = (Math.random() - 0.5) * 0.8  // 上下小角度散开
+
+  positions[i * 3]     = Math.cos(theta) * r
+  positions[i * 3 + 1] = Math.sin(phi) * r * 0.3
+  positions[i * 3 + 2] = Math.sin(theta) * r
+
+  ages[i]  = 0
+  sizes[i] = 4 + Math.random() * 8
+}
+
+function rebuildParticles() {
+  if (particlePoints) {
+    particlePoints.geometry.dispose()
+    particlePoints.material.dispose()
+    scene.remove(particlePoints)
+  }
+
+  const count = params.particleCount
+  particleGeo = new THREE.BufferGeometry()
+  const positions = new Float32Array(count * 3)
+  const ages      = new Float32Array(count)
+  const sizes     = new Float32Array(count)
+  const velocities = []  // CPU端存储速度方向
+
+  const maxAge = 3.0 + Math.random() * 2
+
+  for (let i = 0; i < count; i++) {
+    spawnParticle(i, positions, ages, sizes, maxAge)
+    // 初始速度方向：大致指向虫洞中心
+    velocities.push(new THREE.Vector3())
+  }
+
+  particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  particleGeo.setAttribute('aAge',      new THREE.BufferAttribute(ages, 1))
+  particleGeo.setAttribute('aSize',     new THREE.BufferAttribute(sizes, 1))
+
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: particleVertexShader,
+    fragmentShader: particleFragmentShader,
+    uniforms: {
+      uColor: { value: new THREE.Color(0xaa88ff) }
+    },
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  })
+
+  particlePoints = new THREE.Points(particleGeo, mat)
+  scene.add(particlePoints)
+
+  // 把 velocities 挂到 geo 上方便动画时访问
+  particleGeo.userData.velocities = velocities
+  particleGeo.userData.maxAge = maxAge
+}
+
+rebuildParticles()
+
+// ============ 背景场景：暗色几何体 ============
+// 地面网格
+const grid = new THREE.GridHelper(30, 30, 0x111133, 0x080820)
+grid.position.y = -0.5
+scene.add(grid)
+
+// 几个漂浮的暗色几何体
+const bgMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0a18,
+  emissive: 0x050510,
+  roughness: 0.9,
+  metalness: 0.1
+})
+const bgObjects = [
+  { geo: new THREE.BoxGeometry(1.2, 1.2, 1.2), pos: [-7, 2, -4] },
+  { geo: new THREE.BoxGeometry(0.8, 0.8, 0.8), pos: [6, 1.5, -5] },
+  { geo: new THREE.IcosahedronGeometry(0.9, 0), pos: [-5, 3, -7] },
+  { geo: new THREE.TetrahedronGeometry(1.1, 0), pos: [8, 2.5, -3] },
+  { geo: new THREE.OctahedronGeometry(0.7, 0), pos: [3, 4, -8] },
+]
+const bgMeshes = []
+bgObjects.forEach(({ geo, pos }) => {
+  const m = new THREE.Mesh(geo, bgMat)
+  m.position.set(...pos)
+  scene.add(m)
+  bgMeshes.push(m)
+})
+
+// 环境光
+scene.add(new THREE.AmbientLight(0x222244, 0.6))
+
+// ============ 渲染循环 ============
+const clock = new THREE.Clock()
+let prevTime = 0
+
+// 更新粒子位置（CPU 驱动）
+const posAttr  = () => particleGeo.attributes.position
+const ageAttr  = () => particleGeo.attributes.aAge
+const sizeAttr = () => particleGeo.attributes.aSize
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t  = clock.getElapsedTime()
+  const dt = Math.min(0.05, t - prevTime)
+  prevTime = t
+
+  // 更新门户 Shader
+  portalMat.uniforms.uTime.value = t
+  portalMat.uniforms.uSpin.value = params.spinSpeed
+
+  // 旋转光环
+  ringMesh.rotation.z  =  t * params.spinSpeed * 0.5
+  ringMesh2.rotation.z = -t * params.spinSpeed * 0.3
+
+  // ---- 粒子吸积动画 ----
+  const maxAge  = particleGeo.userData.maxAge
+  const pa      = posAttr().array
+  const aa      = ageAttr().array
+  const sa      = sizeAttr().array
+  const count   = params.particleCount
+
+  for (let i = 0; i < count; i++) {
+    aa[i] += dt / maxAge
+
+    const px = pa[i * 3]
+    const py = pa[i * 3 + 1]
+    const pz = pa[i * 3 + 2]
+
+    const dx = -px
+    const dy = -py
+    const dz = -pz
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    // 速度：向心 + 切向螺旋
+    const spiralFactor = params.spinSpeed * 0.3
+    // 切向方向（垂直于径向）
+    const tx = -dz / (dist + 0.01)
+    const tz =  dx / (dist + 0.01)
+
+    const speed = (0.5 + params.spinSpeed * 0.5) * dt * 2.0
+    pa[i * 3]     += (dx / (dist + 0.01)) * speed + tx * spiralFactor * dt
+    pa[i * 3 + 1] += dy / (dist + 0.01) * speed * 0.5
+    pa[i * 3 + 2] += (dz / (dist + 0.01)) * speed + tz * spiralFactor * dt
+
+    // 到达中心附近重生
+    if (dist < 0.15 || aa[i] >= 1.0) {
+      spawnParticle(i, pa, aa, sa, maxAge)
+    }
+  }
+
+  posAttr().needsUpdate  = true
+  ageAttr().needsUpdate  = true
+  sizeAttr().needsUpdate = true
+
+  // 背景物体缓慢自转
+  bgMeshes.forEach((m, i) => {
+    m.rotation.x += 0.002 * (i % 2 === 0 ? 1 : -1)
+    m.rotation.y += 0.003
+  })
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+})

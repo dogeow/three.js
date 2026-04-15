@@ -1,0 +1,692 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { Reflector } from 'three/addons/objects/Reflector.js'
+import GUI from 'three/addons/libs/lil-gui.module.min.js'
+
+// ─── Scene Setup ────────────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x050508)
+scene.fog = new THREE.FogExp2(0x050508, 0.008)
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1000)
+camera.position.set(0, 15, 60)
+camera.lookAt(0, 0, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 0.7
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.05
+controls.maxPolarAngle = Math.PI / 2 - 0.05
+controls.minDistance = 5
+controls.maxDistance = 200
+
+// ─── Lighting ──────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x112244, 0.4)
+scene.add(ambientLight)
+
+const moonLight = new THREE.DirectionalLight(0x4466aa, 0.6)
+moonLight.position.set(-50, 80, -30)
+scene.add(moonLight)
+
+const flashLight = new THREE.PointLight(0xbbccff, 0, 300)
+flashLight.position.set(0, 120, 0)
+scene.add(flashLight)
+
+// ─── Sky Dome ──────────────────────────────────────────────────────────────
+const skyGeo = new THREE.SphereGeometry(400, 32, 16)
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    uTopColor: { value: new THREE.Color(0x010104) },
+    uMidColor: { value: new THREE.Color(0x050510) },
+    uHorizonColor: { value: new THREE.Color(0x0a0a18) },
+    uLightning: { value: 0 }
+  },
+  vertexShader: `
+    varying vec3 vWorldPos;
+    void main() {
+      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 uTopColor;
+    uniform vec3 uMidColor;
+    uniform vec3 uHorizonColor;
+    uniform float uLightning;
+    varying vec3 vWorldPos;
+
+    void main() {
+      float h = normalize(vWorldPos).y;
+      vec3 col;
+      if (h > 0.0) {
+        col = mix(uMidColor, uTopColor, pow(h, 0.5));
+      } else {
+        col = mix(uMidColor, uHorizonColor, pow(-h, 0.3));
+      }
+      // Lightning flash
+      col = mix(col, vec3(0.8, 0.85, 1.0), uLightning * 0.6);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+})
+const sky = new THREE.Mesh(skyGeo, skyMat)
+scene.add(sky)
+
+// ─── Clouds ────────────────────────────────────────────────────────────────
+const cloudGroup = new THREE.Group()
+const cloudMat = new THREE.MeshBasicMaterial({
+  color: 0x111122,
+  transparent: true,
+  opacity: 0.6,
+  side: THREE.DoubleSide
+})
+
+for (let i = 0; i < 30; i++) {
+  const w = 40 + Math.random() * 80
+  const h = 8 + Math.random() * 15
+  const d = 30 + Math.random() * 50
+  const cloudGeo = new THREE.BoxGeometry(w, h, d)
+  const cloud = new THREE.Mesh(cloudGeo, cloudMat.clone())
+  cloud.position.set(
+    (Math.random() - 0.5) * 500,
+    60 + Math.random() * 40,
+    (Math.random() - 0.5) * 500
+  )
+  cloud.rotation.y = Math.random() * Math.PI
+  cloud.material.opacity = 0.3 + Math.random() * 0.4
+  cloudGroup.add(cloud)
+}
+scene.add(cloudGroup)
+
+// ─── Ground ────────────────────────────────────────────────────────────────
+const GROUND_SIZE = 500
+const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, 1, 1)
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x111118,
+  roughness: 0.3,
+  metalness: 0.7,
+  envMapIntensity: 0.5
+})
+
+const ground = new THREE.Mesh(groundGeo, groundMat)
+ground.rotation.x = -Math.PI / 2
+ground.position.y = 0
+scene.add(ground)
+
+// Reflector
+const reflector = new Reflector(groundGeo, {
+  clipBias: 0.003,
+  textureWidth: innerWidth * Math.min(devicePixelRatio, 2),
+  textureHeight: innerHeight * Math.min(devicePixelRatio, 2),
+  color: 0x334455
+})
+reflector.rotation.x = -Math.PI / 2
+reflector.position.y = 0.01
+scene.add(reflector)
+
+// Wet overlay on top of reflector
+const wetGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE)
+const wetMat = new THREE.MeshStandardMaterial({
+  color: 0x223344,
+  roughness: 0.05,
+  metalness: 0.9,
+  transparent: true,
+  opacity: 0.3
+})
+const wetOverlay = new THREE.Mesh(wetGeo, wetMat)
+wetOverlay.rotation.x = -Math.PI / 2
+wetOverlay.position.y = 0.02
+scene.add(wetOverlay)
+
+// ─── Puddles ───────────────────────────────────────────────────────────────
+const puddleGroup = new THREE.Group()
+const puddlePositions = []
+for (let i = 0; i < 40; i++) {
+  const px = (Math.random() - 0.5) * 300
+  const pz = (Math.random() - 0.5) * 300
+  const size = 3 + Math.random() * 12
+  const shape = Math.random() > 0.5 ? 'ellipse' : 'circle'
+  const puddleGeo = shape === 'ellipse'
+    ? new THREE.CircleGeometry(size, 16)
+    : new THREE.CircleGeometry(size * (0.6 + Math.random() * 0.4), 16)
+  const puddleMat = new THREE.MeshStandardMaterial({
+    color: 0x223355,
+    roughness: 0.02,
+    metalness: 0.95,
+    transparent: true,
+    opacity: 0.5
+  })
+  const puddle = new THREE.Mesh(puddleGeo, puddleMat)
+  puddle.rotation.x = -Math.PI / 2
+  puddle.position.set(px, 0.03, pz)
+  puddle.userData.baseOpacity = 0.3 + Math.random() * 0.4
+  puddle.userData.ripples = []
+  puddleGroup.add(puddle)
+  puddlePositions.push({ mesh: puddle, x: px, z: pz, size })
+}
+scene.add(puddleGroup)
+
+// ─── Buildings / Silhouettes ───────────────────────────────────────────────
+const buildingMat = new THREE.MeshStandardMaterial({ color: 0x080810, roughness: 1 })
+for (let i = 0; i < 80; i++) {
+  const w = 3 + Math.random() * 10
+  const h = 8 + Math.random() * 40
+  const d = 3 + Math.random() * 10
+  const bGeo = new THREE.BoxGeometry(w, h, d)
+  const b = new THREE.Mesh(bGeo, buildingMat)
+  const angle = Math.random() * Math.PI * 2
+  const dist = 60 + Math.random() * 200
+  b.position.set(Math.cos(angle) * dist, h / 2, Math.sin(angle) * dist)
+  b.rotation.y = Math.random() * Math.PI
+  scene.add(b)
+
+  // Window lights on some buildings
+  if (Math.random() > 0.5) {
+    const windowGeo = new THREE.PlaneGeometry(w * 0.8, h * 0.8)
+    const windowMat = new THREE.MeshBasicMaterial({
+      color: 0xffeeaa,
+      transparent: true,
+      opacity: 0.05 + Math.random() * 0.08
+    })
+    const win = new THREE.Mesh(windowGeo, windowMat)
+    win.position.copy(b.position)
+    win.position.z += d / 2 + 0.1
+    win.lookAt(camera.position)
+    scene.add(win)
+  }
+}
+
+// ─── Rain Particle System ──────────────────────────────────────────────────
+const RAIN_COUNT = 30000
+const SCENE_SIZE = 300
+const SCENE_HEIGHT = 120
+const WIND_MAX = 5
+
+const rainGeo = new THREE.BufferGeometry()
+const rainPositions = new Float32Array(RAIN_COUNT * 6)
+const rainVelocities = new Float32Array(RAIN_COUNT)
+const rainLengths = new Float32Array(RAIN_COUNT)
+
+for (let i = 0; i < RAIN_COUNT; i++) {
+  const x = (Math.random() - 0.5) * SCENE_SIZE
+  const y = Math.random() * SCENE_HEIGHT
+  const z = (Math.random() - 0.5) * SCENE_SIZE
+  const speed = 25 + Math.random() * 20
+  const len = 0.4 + Math.random() * 0.8
+
+  rainPositions[i * 6 + 0] = x
+  rainPositions[i * 6 + 1] = y
+  rainPositions[i * 6 + 2] = z
+  rainPositions[i * 6 + 3] = x
+  rainPositions[i * 6 + 4] = y - len
+  rainPositions[i * 6 + 5] = z
+
+  rainVelocities[i] = speed
+  rainLengths[i] = len
+}
+
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3))
+
+const rainMat = new THREE.LineBasicMaterial({
+  color: 0x6688aa,
+  transparent: true,
+  opacity: 0.35,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+})
+
+const rain = new THREE.LineSegments(rainGeo, rainMat)
+scene.add(rain)
+
+// ─── Splash Particle System ────────────────────────────────────────────────
+const SPLASH_COUNT = 600
+const splashGeo = new THREE.BufferGeometry()
+const splashPositions = new Float32Array(SPLASH_COUNT * 3)
+const splashSizes = new Float32Array(SPLASH_COUNT)
+
+for (let i = 0; i < SPLASH_COUNT; i++) {
+  splashPositions[i * 3 + 1] = -9999
+  splashSizes[i] = 0
+}
+
+const splashData = []
+for (let i = 0; i < SPLASH_COUNT; i++) {
+  splashData.push({ vx: 0, vy: 0, vz: 0, life: 0, maxLife: 0 })
+}
+
+splashGeo.setAttribute('position', new THREE.BufferAttribute(splashPositions, 3))
+
+const splashMat = new THREE.PointsMaterial({
+  color: 0x88aacc,
+  size: 0.3,
+  transparent: true,
+  opacity: 0.6,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  sizeAttenuation: true
+})
+
+const splashes = new THREE.Points(splashGeo, splashMat)
+scene.add(splashes)
+
+function spawnSplash(x, z) {
+  const count = 6 + Math.floor(Math.random() * 6)
+  let spawned = 0
+  for (let i = 0; i < SPLASH_COUNT; i++) {
+    if (splashData[i].life <= 0 && spawned < count) {
+      splashData[i].vx = (Math.random() - 0.5) * 6
+      splashData[i].vy = Math.random() * 4 + 1
+      splashData[i].vz = (Math.random() - 0.5) * 6
+      splashData[i].life = 0.25 + Math.random() * 0.35
+      splashData[i].maxLife = splashData[i].life
+
+      splashPositions[i * 3] = x
+      splashPositions[i * 3 + 1] = 0.05
+      splashPositions[i * 3 + 2] = z
+      spawned++
+    }
+  }
+}
+
+function updateSplashes(dt) {
+  let activeCount = 0
+  for (let i = 0; i < SPLASH_COUNT; i++) {
+    if (splashData[i].life > 0) {
+      splashData[i].life -= dt
+      splashData[i].vy -= 15 * dt // gravity
+      splashPositions[i * 3] += splashData[i].vx * dt
+      splashPositions[i * 3 + 1] += splashData[i].vy * dt
+      splashPositions[i * 3 + 2] += splashData[i].vz * dt
+
+      if (splashPositions[i * 3 + 1] < 0.02) {
+        splashPositions[i * 3 + 1] = 0.02
+        splashData[i].vy *= -0.2
+        splashData[i].vx *= 0.5
+        splashData[i].vz *= 0.5
+      }
+
+      if (splashData[i].life <= 0) {
+        splashPositions[i * 3 + 1] = -9999
+      }
+      activeCount++
+    }
+  }
+  splashGeo.attributes.position.needsUpdate = true
+  return activeCount
+}
+
+// ─── Ripple System ─────────────────────────────────────────────────────────
+const RIPPLE_COUNT = 100
+const rippleData = []
+for (let i = 0; i < RIPPLE_COUNT; i++) {
+  rippleData.push({ x: 0, z: 0, radius: 0, maxRadius: 0, life: 0, maxLife: 0 })
+}
+
+function spawnRipple(x, z) {
+  for (let i = 0; i < RIPPLE_COUNT; i++) {
+    if (rippleData[i].life <= 0) {
+      rippleData[i].x = x
+      rippleData[i].z = z
+      rippleData[i].radius = 0
+      rippleData[i].maxRadius = 0.5 + Math.random() * 1.5
+      rippleData[i].life = 0.6 + Math.random() * 0.4
+      rippleData[i].maxLife = rippleData[i].life
+      break
+    }
+  }
+}
+
+function updateRipples(dt) {
+  for (const r of rippleData) {
+    if (r.life > 0) {
+      r.life -= dt
+      r.radius += dt * 3
+    }
+  }
+}
+
+// Ripple ring geometry
+const rippleGeo = new THREE.RingGeometry(0.1, 0.3, 24)
+const rippleMat = new THREE.MeshBasicMaterial({
+  color: 0x446688,
+  transparent: true,
+  opacity: 0.5,
+  side: THREE.DoubleSide,
+  depthWrite: false
+})
+const ripplePool = []
+for (let i = 0; i < RIPPLE_COUNT; i++) {
+  const m = new THREE.Mesh(rippleGeo, rippleMat.clone())
+  m.rotation.x = -Math.PI / 2
+  m.visible = false
+  scene.add(m)
+  ripplePool.push(m)
+}
+
+function updateRippleMeshes() {
+  for (let i = 0; i < RIPPLE_COUNT; i++) {
+    const r = rippleData[i]
+    const m = ripplePool[i]
+    if (r.life > 0) {
+      m.visible = true
+      m.position.set(r.x, 0.04, r.z)
+      const t = 1 - r.life / r.maxLife
+      m.scale.setScalar(r.radius)
+      m.material.opacity = (1 - t) * 0.4
+    } else {
+      m.visible = false
+    }
+  }
+}
+
+// ─── Lightning System ───────────────────────────────────────────────────────
+let lightningTimer = 0
+let lightningIntensity = 0
+let lightningChain = 0
+
+// Lightning bolt geometry
+function createLightningBolt() {
+  const points = []
+  const startX = (Math.random() - 0.5) * 200
+  const startZ = (Math.random() - 0.5) * 200
+  let x = startX
+  let y = 120
+  let z = startZ
+
+  points.push(new THREE.Vector3(x, y, z))
+
+  while (y > 5) {
+    x += (Math.random() - 0.5) * 20
+    y -= 5 + Math.random() * 15
+    z += (Math.random() - 0.5) * 20
+    points.push(new THREE.Vector3(x, y, z))
+  }
+
+  const geo = new THREE.BufferGeometry().setFromPoints(points)
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xccddff,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending
+  })
+  return new THREE.Line(geo, mat)
+}
+
+let lightningBolt = null
+
+function triggerLightning() {
+  lightningIntensity = 1.2
+  lightningChain = 3 + Math.floor(Math.random() * 4)
+
+  if (lightningBolt) {
+    scene.remove(lightningBolt)
+    lightningBolt.geometry.dispose()
+    lightningBolt.material.dispose()
+    lightningBolt = null
+  }
+  lightningBolt = createLightningBolt()
+  scene.add(lightningBolt)
+
+  // Thunder sound
+  playThunder(Math.random() * 2 + 0.5)
+}
+
+function updateLightning(dt) {
+  if (lightningIntensity > 0) {
+    lightningIntensity -= dt * 3
+    if (lightningIntensity < 0) lightningIntensity = 0
+
+    // Flicker
+    const flicker = 0.5 + Math.random() * 0.5
+    ambientLight.intensity = 0.4 + lightningIntensity * 2 * flicker
+    moonLight.intensity = 0.6 + lightningIntensity * 3 * flicker
+    flashLight.intensity = lightningIntensity * 8 * flicker
+    skyMat.uniforms.uLightning.value = lightningIntensity
+
+    if (lightningBolt && lightningIntensity < 0.3) {
+      scene.remove(lightningBolt)
+      lightningBolt.geometry.dispose()
+      lightningBolt.material.dispose()
+      lightningBolt = null
+    }
+  } else {
+    ambientLight.intensity = 0.4
+    moonLight.intensity = 0.6
+    flashLight.intensity = 0
+    skyMat.uniforms.uLightning.value = 0
+  }
+
+  // Chain lightning
+  if (lightningChain > 0) {
+    lightningChain -= dt
+    if (lightningChain <= 0 && Math.random() > 0.5) {
+      lightningIntensity = 0.6 + Math.random() * 0.4
+      lightningChain = 2 + Math.random() * 2
+    }
+  }
+}
+
+// ─── Thunder Sound (Web Audio) ─────────────────────────────────────────────
+let audioCtx = null
+
+function initAudio() {
+  if (audioCtx) return
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+}
+
+function playThunder(delay) {
+  if (!audioCtx) return
+  const t = audioCtx.currentTime + delay
+
+  // Noise burst for thunder
+  const bufferSize = audioCtx.sampleRate * 3
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3))
+  }
+
+  const source = audioCtx.createBufferSource()
+  source.buffer = buffer
+
+  const lowpass = audioCtx.createBiquadFilter()
+  lowpass.type = 'lowpass'
+  lowpass.frequency.setValueAtTime(400, t)
+  lowpass.frequency.exponentialRampToValueAtTime(60, t + 2.5)
+
+  const gain = audioCtx.createGain()
+  gain.gain.setValueAtTime(0.15, t)
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 3)
+
+  source.connect(lowpass)
+  lowpass.connect(gain)
+  gain.connect(audioCtx.destination)
+  source.start(t)
+}
+
+// ─── GUI ────────────────────────────────────────────────────────────────────
+const params = {
+  rainIntensity: 1.0,
+  windStrength: 2.0,
+  dropSize: 0.6,
+  splashEnabled: true,
+  lightningEnabled: true,
+  lightningFrequency: 5,
+  wetness: 0.7,
+  fogDensity: 0.008,
+  dropCount: 30000
+}
+
+const gui = new GUI({ title: '雨天气控制 Weather Controls' })
+gui.domElement.style.setProperty('--bg-color', 'rgba(5,5,15,0.92)')
+gui.domElement.style.setProperty('--text-color', 'rgba(160,190,240,0.9)')
+gui.domElement.style.setProperty('--title-background-color', 'rgba(20,30,60,0.9)')
+gui.domElement.style.setProperty('--widget-color', 'rgba(30,45,90,0.9)')
+gui.domElement.style.setProperty('--hover-color', 'rgba(40,60,120,0.9)')
+gui.domElement.style.setProperty('--focus-color', 'rgba(60,90,180,0.5)')
+
+gui.add(params, 'rainIntensity', 0, 1, 0.01).name('雨强度 Rain').onChange(v => {
+  const targetCount = Math.floor(v * 30000)
+  rain.visible = v > 0.01
+  splashes.visible = v > 0.01 && params.splashEnabled
+})
+gui.add(params, 'windStrength', -5, 5, 0.1).name('风向 Wind')
+gui.add(params, 'dropSize', 0.1, 1.5, 0.05).name('雨滴大小 Drop Size').onChange(v => {
+  rainMat.opacity = 0.35 * v
+})
+gui.add(params, 'splashEnabled').name('溅射效果 Splash').onChange(v => {
+  splashes.visible = v && params.rainIntensity > 0.01
+})
+gui.add(params, 'lightningEnabled').name('闪电 Lightning')
+gui.add(params, 'lightningFrequency', 1, 15, 0.5).name('闪电频率 Freq (s)')
+gui.add(params, 'wetness', 0, 1, 0.01).name('地面湿度 Wetness').onChange(v => {
+  wetMat.opacity = v * 0.4
+  wetMat.roughness = 0.15 - v * 0.13
+  groundMat.roughness = 0.3 - v * 0.2
+  groundMat.metalness = 0.5 + v * 0.4
+  puddleGroup.visible = v > 0.1
+})
+gui.add(params, 'fogDensity', 0, 0.025, 0.001).name('雾气密度 Fog').onChange(v => {
+  scene.fog.density = v
+})
+gui.add(params, 'dropCount', 5000, 50000, 1000).name('雨滴数量 Drops').onChange(v => {
+  // We keep same buffer but visually adjust
+})
+
+// Click to enable audio
+document.addEventListener('click', () => initAudio(), { once: true })
+
+// ─── Update Functions ───────────────────────────────────────────────────────
+function updateRain(dt) {
+  const pos = rainGeo.attributes.position
+  const windX = params.windStrength
+  const intensity = params.rainIntensity
+
+  for (let i = 0; i < RAIN_COUNT; i++) {
+    const vel = rainVelocities[i]
+
+    // Top vertex
+    let tx = pos.getX(i * 6 + 0)
+    let ty = pos.getY(i * 6 + 0)
+    let tz = pos.getZ(i * 6 + 0)
+
+    // Bottom vertex
+    let bx = pos.getX(i * 6 + 3)
+    let by = pos.getY(i * 6 + 3)
+    let bz = pos.getZ(i * 6 + 3)
+
+    // Fall
+    ty -= vel * dt * intensity
+    by -= vel * dt * intensity
+
+    // Wind drift
+    tx += windX * dt * 1.5
+    tz += windX * 0.3 * dt * 1.5
+    bx += windX * dt * 1.5
+    bz += windX * 0.3 * dt * 1.5
+
+    // Splash check (only some drops)
+    if (ty < 0 && params.splashEnabled && Math.random() < 0.003 * intensity) {
+      spawnSplash(tx, tz)
+      spawnRipple(tx, tz)
+    }
+
+    // Reset
+    if (ty < -2 || by < -2) {
+      tx = (Math.random() - 0.5) * SCENE_SIZE
+      tz = (Math.random() - 0.5) * SCENE_SIZE
+      ty = SCENE_HEIGHT + Math.random() * 20
+      const len = rainLengths[i]
+      bx = tx + windX * 0.05
+      by = ty - len
+      bz = tz + windX * 0.02
+    }
+
+    pos.setXYZ(i * 6 + 0, tx, ty, tz)
+    pos.setXYZ(i * 6 + 3, bx, by, bz)
+  }
+  pos.needsUpdate = true
+}
+
+// ─── Animation Loop ──────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+let frameCount = 0
+let lastFpsTime = 0
+
+function animate() {
+  requestAnimationFrame(animate)
+
+  const dt = Math.min(clock.getDelta(), 0.05)
+  const time = clock.getElapsedTime()
+
+  // Rain
+  if (params.rainIntensity > 0.01) {
+    updateRain(dt)
+  }
+
+  // Splashes
+  const activeSplashes = updateSplashes(dt)
+  document.getElementById('splashCount').textContent = `Splashes: ${activeSplashes}`
+
+  // Ripples
+  updateRipples(dt)
+  updateRippleMeshes()
+
+  // Puddle ripples
+  for (const p of puddlePositions) {
+    if (Math.random() < 0.02 * params.rainIntensity * params.wetness) {
+      spawnRipple(p.x + (Math.random() - 0.5) * p.size, p.z + (Math.random() - 0.5) * p.size)
+    }
+  }
+
+  // Lightning
+  if (params.lightningEnabled) {
+    lightningTimer += dt
+    if (lightningTimer >= params.lightningFrequency) {
+      lightningTimer = 0
+      triggerLightning()
+    }
+    updateLightning(dt)
+  } else {
+    lightningIntensity = 0
+    ambientLight.intensity = 0.4
+    moonLight.intensity = 0.6
+    flashLight.intensity = 0
+    skyMat.uniforms.uLightning.value = 0
+  }
+
+  // Cloud drift
+  cloudGroup.position.x = Math.sin(time * 0.01) * 5
+  cloudGroup.position.z = Math.cos(time * 0.008) * 3
+
+  // Ground ripple shimmer
+  wetMat.opacity = params.wetness * 0.35 + Math.sin(time * 3) * 0.02
+
+  // FPS counter
+  frameCount++
+  if (time - lastFpsTime >= 1) {
+    document.getElementById('fps').textContent = `FPS: ${frameCount}`
+    document.getElementById('dropCount').textContent = `Drops: ${Math.floor(params.rainIntensity * params.dropCount).toLocaleString()}`
+    frameCount = 0
+    lastFpsTime = time
+  }
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+animate()
+
+// ─── Resize ─────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})

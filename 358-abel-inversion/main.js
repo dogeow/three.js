@@ -1,0 +1,150 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020810);
+const camera = new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,500);
+camera.position.set(0,25,60);
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+scene.add(new THREE.AmbientLight(0x112233,1.0));
+scene.add(new THREE.DirectionalLight(0x4499ff,1.5));
+
+// Projection plane (side view)
+const projGeo = new THREE.PlaneGeometry(40,20,200,100);
+const projMat = new THREE.ShaderMaterial({
+  uniforms:{uData:{value:null},uTime:{value:0}},
+  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+  fragmentShader:`
+    precision highp float;
+    uniform sampler2D uData;
+    varying vec2 vUv;
+    void main(){
+      float v=texture2D(uData,vUv).r;
+      vec3 col=mix(vec3(0.0,0.0,0.15),vec3(0.2,0.6,1.0),v*4.0);
+      col+=vec3(0.3,0.1,0.0)*step(v,0.0);
+      gl_FragColor=vec4(col,1.0);
+    }`
+});
+const projMesh = new THREE.Mesh(projGeo,projMat);
+projMesh.position.set(-25,0,0);
+projMesh.rotation.y=Math.PI/2;
+scene.add(projMesh);
+
+// 3D reconstruction volume
+const volSize=64;
+const volGeo=new THREE.BoxGeometry(20,10,20);
+const volMat=new THREE.ShaderMaterial({
+  uniforms:{uTime:{value:0},uInv:{value:null}},
+  vertexShader:`varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+  fragmentShader:`
+    precision highp float;
+    uniform float uTime;
+    varying vec3 vPos;
+    void main(){
+      float d=length(vPos)/10.0;
+      vec3 col=mix(vec3(0.0,0.3,0.8),vec3(0.0,0.8,0.4),1.0-d);
+      gl_FragColor=vec4(col,0.6);
+    }`
+});
+const volMesh=new THREE.Mesh(volGeo,volMat);
+volMesh.position.set(15,0,0);
+scene.add(volMesh);
+volMesh.add(new THREE.Mesh(new THREE.BoxGeometry(20.1,10.1,20.1),new THREE.MeshBasicMaterial({color:0x2266aa,wireframe:true})));
+
+// Simulate sources
+const sources=[];
+function addSource(x,y,z){
+  sources.push({x,y,z,r:Math.random()*2+0.5,phase:Math.random()*Math.PI*2});
+}
+for(let i=0;i<5;i++) addSource((Math.random()-0.5)*16,(Math.random()-0.5)*8,(Math.random()-0.5)*16);
+window.addEventListener("click",e=>{
+  const raycaster=new THREE.Raycaster();
+  const mouse=new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
+  raycaster.setFromCamera(mouse,camera);
+  const mesh=new THREE.Mesh(new THREE.SphereGeometry(0.5),new THREE.MeshBasicMaterial({color:0xff4400}));
+  mesh.position.copy(raycaster.ray.origin);
+  scene.add(mesh);
+});
+
+// Build 2D projection from sources (side view)
+const projW=200,projH=100;
+const projData=new Float32Array(projW*projH);
+function buildProjection(){
+  projData.fill(0);
+  const PW=40,PH=20;
+  for(let py=0;py<projH;py++){
+    for(let px=0;px<projW;px++){
+      let total=0;
+      const rx=(px/projW-0.5)*PW;
+      const ry=(py/projH-0.5)*PH;
+      for(const s of sources){
+        const d=Math.sqrt((rx-s.x)**2+(ry-s.y)**2);
+        total+=s.r/(1+d*d)*0.5;
+      }
+      projData[py*projW+px]=Math.min(total,1.0);
+    }
+  }
+  const tex=new THREE.DataTexture(projData,projW,projH,THREE.RedFormat,THREE.FloatType);
+  tex.needsUpdate=true;
+  projMat.uniforms.uData.value=tex;
+}
+buildProjection();
+
+// Abel inversion (simplified)
+const invData=new Float32Array(projW*projH*4);
+function abelInvert(){
+  invData.fill(0);
+  for(let px=0;px<projW;px++){
+    const x=(px/projW-0.5)*PW;
+    for(let py=0;py<projH;py++){
+      const y=(py/projH-0.5)*PH;
+      const r=Math.sqrt(x*x+y*y);
+      if(r<0.01)continue;
+      let integral=0;
+      for(let k=px;k<projW;k++){
+        const kx=(k/projW-0.5)*PW;
+        const dr=Math.abs(kx-x);
+        const ky=Math.sqrt(PW*PW/4-kx*kx)*2;
+        if(ky<0.1)continue;
+        const ki=Math.round((ky/(PH)+0.5)*projH);
+        if(ki<0||ki>=projH)continue;
+        const v=projData[ki*projW+k]||0;
+        integral+=v*(kx/Math.abs(kx||1))*0.5;
+      }
+      const idx=(py*projW+px)*4;
+      invData[idx]=Math.max(-integral,0)*2.0;
+      invData[idx+1]=Math.max(integral,0)*2.0;
+      invData[idx+2]=0;invData[idx+3]=1;
+    }
+  }
+  const tex=new THREE.DataTexture(invData,projW,projH,THREE.RGBAFormat,THREE.FloatType);
+  tex.needsUpdate=true;
+  volMat.uniforms.uInv.value=tex;
+}
+abelInvert();
+
+const clock=new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const t=clock.getElapsedTime();
+  projMat.uniforms.uTime.value=t;
+  volMat.uniforms.uTime.value=t;
+  for(const s of sources){
+    s.phase+=0.02;
+    const scale=0.8+0.2*Math.sin(s.phase);
+    const dot=new THREE.Mesh(new THREE.SphereGeometry(s.r*scale,8,8),new THREE.MeshBasicMaterial({color:0xff4400}));
+    dot.position.set(s.x,s.y,s.z);
+    scene.add(dot);
+  }
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+window.addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});

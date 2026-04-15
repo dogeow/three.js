@@ -1,0 +1,459 @@
+import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+    // ─── State ───────────────────────────────────────────────────────────────
+    const state = {
+      pointCount:  600,
+      noiseLevel:  0.18,
+      filtration:  0.0,       // current ε
+      maxFiltration: 3.0,
+      filtrationSpeed: 0.008,
+      pointSet: 'torus',     // 'spiral' | 'torus' | 'sphere' | 'random'
+      showPoints: true,
+      pointSize: 1.4,
+      edgeOpacity: 0.55,
+      autoFiltration: true,
+      pauseAtMax: false,
+    };
+
+    let points = [];
+    let edges = [];          // { a, b, dist }
+    let edgeObjects = [];
+    let scene, camera, renderer, controls, gui;
+    let pointsMesh, pointsGeo, pointsColors;
+    let animationId;
+    let currentFiltration = 0;
+    let paused = false;
+    let maxFiltrationReached = false;
+
+    // ─── Init ───────────────────────────────────────────────────────────────
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0a0a0f);
+      scene.fog = new THREE.FogExp2(0x0a0a0f, 0.045);
+
+      camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 200);
+      camera.position.set(0, 0, 6);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.06;
+      controls.minDistance = 1;
+      controls.maxDistance = 30;
+
+      buildLights();
+      buildGeometry();
+      buildGUI();
+      window.addEventListener('resize', onResize);
+      animate();
+    }
+
+    function buildLights() {
+      const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+      scene.add(ambient);
+      const dir = new THREE.DirectionalLight(0x7fdbff, 0.8);
+      dir.position.set(5, 8, 5);
+      scene.add(dir);
+      const rim = new THREE.DirectionalLight(0xff7fdb, 0.4);
+      rim.position.set(-5, -3, -5);
+      scene.add(rim);
+    }
+
+    // ─── Point Set Generators ────────────────────────────────────────────────
+    function generatePointSet(type, count, noise) {
+      const pts = [];
+      const n = count;
+
+      if (type === 'spiral') {
+        for (let i = 0; i < n; i++) {
+          const t = (i / n) * Math.PI * 8;
+          const r = 0.15 + (i / n) * 2.2;
+          const angle = t;
+          pts.push(
+            r * Math.cos(angle) + (Math.random() - 0.5) * noise,
+            r * Math.sin(angle) + (Math.random() - 0.5) * noise,
+            (Math.random() - 0.5) * noise * 0.4
+          );
+        }
+
+      } else if (type === 'torus') {
+        const R = 1.6, r = 0.65;
+        for (let i = 0; i < n; i++) {
+          const u = Math.random() * Math.PI * 2;
+          const v = Math.random() * Math.PI * 2;
+          pts.push(
+            (R + r * Math.cos(v)) * Math.cos(u) + (Math.random() - 0.5) * noise,
+            (R + r * Math.cos(v)) * Math.sin(u) + (Math.random() - 0.5) * noise,
+            r * Math.sin(v) + (Math.random() - 0.5) * noise
+          );
+        }
+
+      } else if (type === 'sphere') {
+        for (let i = 0; i < n; i++) {
+          const u = Math.random() * Math.PI * 2;
+          const v = Math.acos(2 * Math.random() - 1);
+          const R = 1.8;
+          pts.push(
+            R * Math.sin(v) * Math.cos(u) + (Math.random() - 0.5) * noise,
+            R * Math.sin(v) * Math.sin(u) + (Math.random() - 0.5) * noise,
+            R * Math.cos(v) + (Math.random() - 0.5) * noise
+          );
+        }
+
+      } else {
+        // random blob
+        for (let i = 0; i < n; i++) {
+          pts.push(
+            (Math.random() - 0.5) * 4 + (Math.random() - 0.5) * noise,
+            (Math.random() - 0.5) * 4 + (Math.random() - 0.5) * noise,
+            (Math.random() - 0.5) * 4 + (Math.random() - 0.5) * noise
+          );
+        }
+      }
+      return pts;
+    }
+
+    // ─── Compute Edges (Rips complex at ε = maxFiltration) ──────────────────
+    function computeEdges(posArray, maxDist) {
+      const n = posArray.length / 3;
+      const edgeList = [];
+      const maxEdgeDist = maxDist * 1.05;
+
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const dx = posArray[i*3]   - posArray[j*3];
+          const dy = posArray[i*3+1] - posArray[j*3+1];
+          const dz = posArray[i*3+2] - posArray[j*3+2];
+          const d  = Math.sqrt(dx*dx + dy*dy + dz*dz);
+          if (d <= maxEdgeDist) {
+            edgeList.push({ a: i, b: j, dist: d });
+          }
+          // early bail-out for performance
+          if (d > maxEdgeDist && j - i > 200) break;
+        }
+      }
+      return edgeList;
+    }
+
+    // ─── Union-Find for connected components ──────────────────────────────────
+    function computeComponents(n, activeEdges) {
+      const parent = Int32Array.from({ length: n }, (_, i) => i);
+      const rank   = new Uint8Array(n);
+
+      function find(x) {
+        while (parent[x] !== x) {
+          parent[x] = parent[parent[x]];
+          x = parent[x];
+        }
+        return x;
+      }
+
+      for (const e of activeEdges) {
+        const ra = find(e.a), rb = find(e.b);
+        if (ra !== rb) {
+          if (rank[ra] < rank[rb]) { parent[ra] = rb; }
+          else if (rank[ra] > rank[rb]) { parent[rb] = ra; }
+          else { parent[rb] = ra; rank[ra]++; }
+        }
+      }
+
+      const compMap = new Map();
+      let compCount = 0;
+      for (let i = 0; i < n; i++) {
+        const r = find(i);
+        if (!compMap.has(r)) compMap.set(r, compCount++);
+      }
+      return { labels: Array.from({ length: n }, (_, i) => compMap.get(find(i))), count: compCount };
+    }
+
+    // ─── Build / Rebuild Geometry ────────────────────────────────────────────
+    function buildGeometry() {
+      // dispose old
+      if (pointsMesh) { scene.remove(pointsMesh); pointsMesh.geometry.dispose(); }
+      edgeObjects.forEach(o => { scene.remove(o); o.geometry.dispose(); });
+      edgeObjects = [];
+
+      // generate point cloud
+      const raw = generatePointSet(state.pointSet, state.pointCount, state.noiseLevel);
+      points = raw;
+      const n = points.length / 3;
+
+      // compute all edges up to maxFiltration
+      edges = computeEdges(points, state.maxFiltration);
+
+      // compute components at max filtration (all edges active)
+      const { labels, count: compCount } = computeComponents(n, edges);
+
+      // build point geometry
+      pointsGeo = new THREE.BufferGeometry();
+      pointsGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(points), 3));
+
+      // per-point colors by component
+      pointsColors = new Float32Array(n * 3);
+      const compColors = [];
+      for (let c = 0; c < compCount; c++) {
+        const hue = (c / Math.max(compCount, 1)) * 0.7 + 0.0;
+        const col = new THREE.Color().setHSL(hue, 0.85, 0.6);
+        compColors.push(col);
+      }
+      for (let i = 0; i < n; i++) {
+        const col = compColors[labels[i] % compColors.length];
+        pointsColors[i*3]   = col.r;
+        pointsColors[i*3+1] = col.g;
+        pointsColors[i*3+2] = col.b;
+      }
+      pointsGeo.setAttribute('color', new THREE.BufferAttribute(pointsColors, 3));
+
+      const mat = new THREE.PointsMaterial({
+        size: state.pointSize * 0.05,
+        vertexColors: true,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.92,
+      });
+      pointsMesh = new THREE.Points(pointsGeo, mat);
+      scene.add(pointsMesh);
+
+      // pre-build all edge line segments (hidden by default)
+      const edgePositions = new Float32Array(edges.length * 6);
+      const edgeDistAttrib = new Float32Array(edges.length * 2);
+
+      edges.forEach((e, idx) => {
+        edgePositions[idx*6]   = points[e.a*3];
+        edgePositions[idx*6+1] = points[e.a*3+1];
+        edgePositions[idx*6+2] = points[e.a*3+2];
+        edgePositions[idx*6+3] = points[e.b*3];
+        edgePositions[idx*6+4] = points[e.b*3+1];
+        edgePositions[idx*6+5] = points[e.b*3+2];
+        edgeDistAttrib[idx*2]   = e.dist;
+        edgeDistAttrib[idx*2+1] = e.dist;
+      });
+
+      const edgeGeo = new THREE.BufferGeometry();
+      edgeGeo.setAttribute('position', new THREE.BufferAttribute(edgePositions, 3));
+      edgeGeo.setAttribute('dist',     new THREE.BufferAttribute(edgeDistAttrib, 1));
+
+      // We'll use a single Edges group with instanced-like approach
+      // For simplicity: create one LineSegments per edge (grouped later)
+      // Actually: one LineSegments with all edges, opacity driven by material
+      // Update material opacity via uniforms won't work easily with vertex colors + Opacity.
+      // Instead: build a custom shader or simply toggle visibility per edge.
+      // We'll group edges by distance bucket for smooth fade-in.
+
+      // Rebuild edge visibility groups
+      rebuildEdgeObjects();
+
+      updateStats(n, 0, compCount);
+    }
+
+    function rebuildEdgeObjects() {
+      edgeObjects.forEach(o => { scene.remove(o); o.geometry.dispose(); o.material.dispose(); });
+      edgeObjects = [];
+
+      if (edges.length === 0) return;
+
+      const n = points.length / 3;
+      const comps = computeComponents(n, edges);
+      const compCount = comps.count;
+
+      // Build distance-sorted buckets so we can fade edges in smoothly
+      // We'll create N_EDGE_BUCKETS buckets across [0, maxFiltration]
+      const N_BUCKETS = 60;
+      const buckets = Array.from({ length: N_BUCKETS }, () => []);
+
+      const maxDist = state.maxFiltration;
+      edges.forEach((e, idx) => {
+        const bucket = Math.min(Math.floor((e.dist / maxDist) * N_BUCKETS), N_BUCKETS - 1);
+        buckets[bucket].push(idx);
+      });
+
+      // For each bucket create a LineSegments
+      buckets.forEach((bucketEdgeIndices, bIdx) => {
+        if (bucketEdgeIndices.length === 0) return;
+        const positions = new Float32Array(bucketEdgeIndices.length * 6);
+        const colors    = new Float32Array(bucketEdgeIndices.length * 6);
+
+        bucketEdgeIndices.forEach((eIdx, bi) => {
+          const e = edges[eIdx];
+          positions[bi*6]   = points[e.a*3];
+          positions[bi*6+1] = points[e.a*3+1];
+          positions[bi*6+2] = points[e.a*3+2];
+          positions[bi*6+3] = points[e.b*3];
+          positions[bi*6+4] = points[e.b*3+1];
+          positions[bi*6+5] = points[e.b*3+2];
+
+          // Color by min(component label) of its two endpoints
+          const la = comps.labels[e.a];
+          const lb = comps.labels[e.b];
+          const minC = Math.min(la, lb);
+          const maxC = Math.max(la, lb);
+          const hueA = (minC / Math.max(compCount, 1)) * 0.7;
+          const hueB = (maxC / Math.max(compCount, 1)) * 0.7;
+          const colA = new THREE.Color().setHSL(hueA, 0.7, 0.5);
+          const colB = new THREE.Color().setHSL(hueB, 0.7, 0.5);
+
+          colors[bi*6]   = colA.r; colors[bi*6+1] = colA.g; colors[bi*6+2] = colA.b;
+          colors[bi*6+3] = colB.r; colors[bi*6+4] = colB.g; colors[bi*6+5] = colB.b;
+        });
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+
+        const mat = new THREE.LineBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+        });
+
+        const seg = new THREE.LineSegments(geo, mat);
+        seg.userData.bucketStart = (bIdx / N_BUCKETS) * maxDist;
+        seg.userData.bucketEnd   = ((bIdx + 1) / N_BUCKETS) * maxDist;
+        seg.userData.bucketIdx   = bIdx;
+        scene.add(seg);
+        edgeObjects.push(seg);
+      });
+    }
+
+    // ─── Update edge visibility from filtration ───────────────────────────────
+    function updateEdges(filtration) {
+      const N_BUCKETS = 60;
+      const maxDist = state.maxFiltration;
+      let visibleEdges = 0;
+
+      edgeObjects.forEach(seg => {
+        const start = seg.userData.bucketStart;
+        const end   = seg.userData.bucketEnd;
+
+        if (filtration <= start) {
+          seg.material.opacity = 0;
+          seg.visible = false;
+        } else if (filtration >= end) {
+          seg.material.opacity = state.edgeOpacity;
+          seg.visible = true;
+          visibleEdges += seg.geometry.attributes.position.count / 2;
+        } else {
+          // Partial fade-in within this bucket
+          const t = (filtration - start) / (end - start);
+          seg.material.opacity = state.edgeOpacity * Math.pow(t, 0.5);
+          seg.visible = true;
+          visibleEdges += (seg.geometry.attributes.position.count / 2) * t;
+        }
+      });
+
+      const n = points.length / 3;
+      const activeEdges = edges.filter(e => e.dist <= filtration);
+      const { count: compCount } = computeComponents(n, activeEdges);
+
+      updateStats(n, Math.round(visibleEdges), compCount);
+    }
+
+    // ─── Stats ────────────────────────────────────────────────────────────────
+    function updateStats(n, edgeCount, compCount) {
+      document.getElementById('stat-points').textContent     = n;
+      document.getElementById('stat-edges').textContent      = edgeCount;
+      document.getElementById('stat-components').textContent = compCount;
+      document.getElementById('stat-eps').textContent        = currentFiltration.toFixed(3);
+    }
+
+    // ─── GUI ─────────────────────────────────────────────────────────────────
+    function buildGUI() {
+      gui = new GUI({ title: 'TDA Controls', width: 240 });
+      gui.domElement.style.position = 'absolute';
+      gui.domElement.style.top = '18px';
+      gui.domElement.style.right = '18px';
+
+      const fPoints = gui.addFolder('Point Cloud');
+      fPoints.add(state, 'pointSet', {
+        'Helix Spiral': 'spiral',
+        'Torus': 'torus',
+        'Sphere': 'sphere',
+        'Random Blob': 'random'
+      }).name('Point Set').onChange(rebuild);
+      fPoints.add(state, 'pointCount', 100, 2000, 1).name('Point Count').onChange(rebuild);
+      fPoints.add(state, 'noiseLevel', 0, 1.0, 0.01).name('Noise Level').onChange(rebuild);
+      fPoints.add(state, 'pointSize', 0.3, 5, 0.1).name('Point Size').onChange(() => {
+        if (pointsMesh) pointsMesh.material.size = state.pointSize * 0.05;
+      });
+      fPoints.open();
+
+      const fRips = gui.addFolder('Rips Filtration');
+      fRips.add(state, 'autoFiltration').name('Auto Play').onChange(v => { if (v) { maxFiltrationReached = false; } });
+      fRips.add(state, 'filtrationSpeed', 0.001, 0.05, 0.001).name('Speed');
+      fRips.add(state, 'maxFiltration', 0.2, 5.0, 0.1).name('Max ε').onChange(() => {
+        rebuild();
+      });
+      fRips.add(state, 'pauseAtMax').name('Pause at Max ε');
+      fRips.add(state, 'edgeOpacity', 0, 1, 0.05).name('Edge Opacity').onChange(() => {
+        // will be picked up in next frame
+      });
+      fRips.open();
+
+      const fView = gui.addFolder('View');
+      fView.add(state, 'showPoints').name('Show Points').onChange(v => {
+        if (pointsMesh) pointsMesh.visible = v;
+      });
+
+      const resetBtn = { reset: () => {
+        currentFiltration = 0;
+        maxFiltrationReached = false;
+        state.autoFiltration = true;
+        gui.controllers.forEach(c => c.updateDisplay());
+      }};
+      fView.add(resetBtn, 'reset').name('Reset Filtration');
+      fView.open();
+    }
+
+    function rebuild() {
+      currentFiltration = 0;
+      maxFiltrationReached = false;
+      buildGeometry();
+    }
+
+    // ─── Resize ─────────────────────────────────────────────────────────────
+    function onResize() {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    }
+
+    // ─── Animation Loop ──────────────────────────────────────────────────────
+    function animate() {
+      animationId = requestAnimationFrame(animate);
+      controls.update();
+
+      // Advance filtration
+      if (state.autoFiltration && !paused) {
+        if (currentFiltration < state.maxFiltration) {
+          currentFiltration += state.filtrationSpeed;
+          if (currentFiltration >= state.maxFiltration) {
+            currentFiltration = state.maxFiltration;
+            maxFiltrationReached = true;
+            if (state.pauseAtMax) paused = true;
+          }
+        } else if (state.pauseAtMax && !paused) {
+          paused = true;
+        }
+      }
+
+      updateEdges(currentFiltration);
+      renderer.render(scene, camera);
+    }
+
+    // ─── Expose to window ────────────────────────────────────────────────────
+    window.scene     = scene;
+    window.camera    = camera;
+    window.renderer  = renderer;
+    window.controls  = controls;
+    window.state     = state;
+    window.edgeObjects = edgeObjects;
+    window.pointsMesh  = pointsMesh;
+
+    init();

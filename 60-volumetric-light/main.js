@@ -1,0 +1,339 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+
+// ============ God Rays 散射着色器 ============
+// 从主场景的亮部沿光源方向做径向模糊散射，叠加回主场景
+// ShaderPass 会把 RenderPass 的输出（sceneColor）作为 tDiffuse 传入
+const GodRaysShader = {
+  uniforms: {
+    lightScreenPos: { value: new THREE.Vector2(0.5, 0.5) },
+    density: { value: 0.5 },
+    weight: { value: 0.35 },
+    decay: { value: 0.96 },
+    exposure: { value: 0.25 }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform vec2 lightScreenPos;
+    uniform float density;
+    uniform float weight;
+    uniform float decay;
+    uniform float exposure;
+    varying vec2 vUv;
+
+    const int NUM_SAMPLES = 64;
+
+    void main() {
+      // inputBuffer 由 ShaderPass 自动注入：主场景渲染结果
+      vec4 base = texture2D(inputBuffer, vUv);
+      vec2 texCoord = vUv;
+      // 采样步长：沿「远离光源」方向步进
+      vec2 delta = (texCoord - lightScreenPos) / float(NUM_SAMPLES) * density;
+      float illuminationDecay = 1.0;
+      vec3 godRays = vec3(0.0);
+
+      for (int i = 0; i < NUM_SAMPLES; i++) {
+        texCoord -= delta;
+        vec4 samp = texture2D(inputBuffer, clamp(texCoord, 0.0, 1.0));
+        // 只对亮度超过阈值的像素做光轴采样（光源区域）
+        float brightness = dot(samp.rgb, vec3(0.299, 0.587, 0.114));
+        if (brightness > 0.12) {
+          godRays += samp.rgb * illuminationDecay * weight;
+        }
+        illuminationDecay *= decay;
+      }
+
+      godRays *= exposure;
+      // 叠加光轴效果到主场景（Additive）
+      gl_FragColor = vec4(base.rgb + godRays, base.a);
+    }
+  `
+}
+
+// ============ 参数 ============
+const params = {
+  volumetricEnabled: true,
+  rayIntensity: 0.25,
+  fogDensity: 0.022,
+  lightColor: '#ffd27f',
+  rayDecay: 0.96,
+  rayDensity: 0.5,
+  rayWeight: 0.35
+}
+
+// ============ 渲染器 ============
+const renderer = new THREE.WebGLRenderer({ antialias: false })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.0
+document.body.appendChild(renderer.domElement)
+
+// ============ 主场景 ============
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x020204)
+scene.fog = new THREE.FogExp2(0x020204, params.fogDensity)
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 120)
+camera.position.set(0, 2.5, 8)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.target.set(0, 2, -8)
+
+// ============ 灯光 ============
+scene.add(new THREE.AmbientLight(0xffffff, 0.05))
+
+const mainLight = new THREE.PointLight(0xffd27f, 120, 40, 1.5)
+mainLight.position.set(0, 6, -16)
+mainLight.castShadow = true
+mainLight.shadow.mapSize.set(1024, 1024)
+mainLight.shadow.camera.near = 0.5
+mainLight.shadow.camera.far = 45
+scene.add(mainLight)
+
+const backLight = new THREE.SpotLight(0xffa040, 40)
+backLight.position.set(0, 7.5, -13)
+backLight.target.position.set(0, 0, -16)
+backLight.angle = Math.PI / 7
+backLight.penumbra = 0.6
+backLight.decay = 1.5
+scene.add(backLight)
+scene.add(backLight.target)
+
+const coolLight = new THREE.PointLight(0x1030aa, 1.2, 18)
+coolLight.position.set(-8, 3, 4)
+scene.add(coolLight)
+
+// ============ 材质 ============
+const wallMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0a14, roughness: 0.95, metalness: 0.05, side: THREE.DoubleSide
+})
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x080810, roughness: 0.9, metalness: 0.08
+})
+const ceilingMat = new THREE.MeshStandardMaterial({
+  color: 0x060610, roughness: 0.98, metalness: 0.02, side: THREE.DoubleSide
+})
+const obstacleMat = new THREE.MeshStandardMaterial({
+  color: 0x101020, roughness: 0.88, metalness: 0.12
+})
+// ============ 走廊几何体 ============
+const CW = 10, CH = 8, CL = 30
+
+// 地板
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(CW, CL), floorMat)
+floor.rotation.x = -Math.PI / 2
+floor.position.set(0, 0, -CL / 2 + 5)
+floor.receiveShadow = true
+scene.add(floor)
+
+// 天花板
+const ceil = new THREE.Mesh(new THREE.PlaneGeometry(CW, CL), ceilingMat)
+ceil.rotation.x = Math.PI / 2
+ceil.position.set(0, CH, -CL / 2 + 5)
+scene.add(ceil)
+
+// 左墙
+const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(CL, CH), wallMat)
+leftWall.rotation.y = Math.PI / 2
+leftWall.position.set(-CW / 2, CH / 2, -CL / 2 + 5)
+leftWall.receiveShadow = true
+scene.add(leftWall)
+
+// 右墙
+const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(CL, CH), wallMat)
+rightWall.rotation.y = -Math.PI / 2
+rightWall.position.set(CW / 2, CH / 2, -CL / 2 + 5)
+rightWall.receiveShadow = true
+scene.add(rightWall)
+
+// 障碍物
+function addObs(x, y, z, w, h, d) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), obstacleMat)
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true
+  scene.add(m)
+}
+for (let i = 0; i < 5; i++) { addObs(-CW / 2 + 1.2, 2, -2 - i * 5, 1.5, 4, 0.8); addObs(CW / 2 - 1.2, 2, -2 - i * 5, 1.5, 4, 0.8) }
+addObs(-2, 0.75, -5, 1.5, 1.5, 1.5); addObs(2.5, 0.5, -7, 1, 1, 1)
+addObs(-1, 0.6, -10, 1.2, 1.2, 1.2); addObs(1.5, 0.8, -13, 1.6, 1.6, 1.6)
+addObs(-2.5, 0.5, -16, 1, 1, 1); addObs(0.5, 0.7, -19, 1.4, 1.4, 1.4)
+addObs(-1.5, 0.55, -22, 1.1, 1.1, 1.1); addObs(2, 0.65, -25, 1.3, 1.3, 1.3)
+
+// ============ 光源球（主场景） ============
+const lightSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(0.7, 32, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffffff })
+)
+lightSphere.position.copy(mainLight.position)
+scene.add(lightSphere)
+
+const haloRing = new THREE.Mesh(
+  new THREE.TorusGeometry(1.2, 0.06, 16, 64),
+  new THREE.MeshBasicMaterial({ color: new THREE.Color(params.lightColor), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+)
+haloRing.position.copy(mainLight.position)
+haloRing.rotation.x = Math.PI / 2
+scene.add(haloRing)
+
+const haloSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(2.5, 32, 32),
+  new THREE.MeshBasicMaterial({ color: new THREE.Color(params.lightColor), transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide })
+)
+haloSphere.position.copy(mainLight.position)
+scene.add(haloSphere)
+
+// ============ Additive Cone 体积光锥体（主场景叠加层） ============
+// 沿光源向下延伸的多层透明锥体，叠加产生柔和光轴
+const coneGroup = new THREE.Group()
+scene.add(coneGroup)
+const cones = []
+
+const coneColors = [
+  [1.0, 0.82, 0.5], [1.0, 0.9, 0.7], [1.0, 0.75, 0.4],
+  [1.0, 0.85, 0.55], [0.95, 0.8, 0.45]
+]
+
+for (let i = 0; i < 7; i++) {
+  const spread = 0.18 + (i / 7) * 0.35
+  const h = CL - 4 + Math.random() * 1.5
+  const mat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(...coneColors[i % coneColors.length]),
+    transparent: true,
+    opacity: 0.035,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.BackSide
+  })
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(spread * CW, h, 20, 1, true), mat)
+  cone.position.set(
+    mainLight.position.x,
+    mainLight.position.y - h / 2,
+    mainLight.position.z
+  )
+  cone.rotation.x = Math.PI
+  cone.rotation.y = (i / 7) * Math.PI * 0.5 - Math.PI * 0.15
+  coneGroup.add(cone)
+  cones.push(cone)
+}
+
+// ============ EffectComposer 渲染链 ============
+// 标准渲染通道
+const composer = new EffectComposer(renderer)
+composer.setPixelRatio(Math.min(devicePixelRatio, 2))
+composer.setSize(innerWidth, innerHeight)
+composer.addPass(new RenderPass(scene, camera))
+
+// God Rays 散射叠加通道
+const godRaysPass = new ShaderPass(GodRaysShader)
+godRaysPass.uniforms.exposure.value = params.rayIntensity
+godRaysPass.uniforms.density.value = params.rayDensity
+godRaysPass.uniforms.weight.value = params.rayWeight
+godRaysPass.uniforms.decay.value = params.rayDecay
+godRaysPass.enabled = params.volumetricEnabled
+composer.addPass(godRaysPass)
+
+// 输出通道（处理 tone mapping / gamma）
+composer.addPass(new OutputPass())
+
+// ============ 辅助：计算光源屏幕坐标 ============
+const _ndc = new THREE.Vector3()
+
+function updateLightScreenPos() {
+  _ndc.copy(mainLight.position).project(camera)
+  godRaysPass.uniforms.lightScreenPos.value.set(
+    (_ndc.x + 1) * 0.5,
+    (_ndc.y + 1) * 0.5
+  )
+}
+
+// ============ lil-gui ============
+const gui = new lil.GUI({ container: document.getElementById('gui-container'), title: '体积光控制' })
+
+gui.add(params, 'volumetricEnabled').name('体积光开关').onChange(v => {
+  godRaysPass.enabled = v
+  coneGroup.visible = v
+})
+gui.addColor(params, 'lightColor').name('光线颜色').onChange(v => {
+  const col = new THREE.Color(v)
+  mainLight.color.set(col)
+  backLight.color.set(col)
+  haloRing.material.color.set(col)
+  haloSphere.material.color.set(col)
+  cones.forEach(c => c.material.color.set(col))
+})
+gui.add(params, 'rayIntensity', 0, 0.6, 0.01).name('光轴强度').onChange(v => {
+  godRaysPass.uniforms.exposure.value = v
+  cones.forEach(c => c.material.opacity = v * 0.14)
+})
+gui.add(params, 'fogDensity', 0, 0.08, 0.001).name('雾密度').onChange(v => {
+  scene.fog.density = v
+})
+gui.add(params, 'rayDensity', 0.1, 2.0, 0.05).name('光轴密度').onChange(v => {
+  godRaysPass.uniforms.density.value = v
+})
+gui.add(params, 'rayDecay', 0.85, 0.999, 0.001).name('光轴衰减').onChange(v => {
+  godRaysPass.uniforms.decay.value = v
+})
+gui.add(params, 'rayWeight', 0.05, 1.0, 0.05).name('光轴权重').onChange(v => {
+  godRaysPass.uniforms.weight.value = v
+})
+
+// ============ 渲染循环 ============
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  // 光源呼吸
+  const pulse = 1 + Math.sin(t * 1.8) * 0.07
+  mainLight.intensity = 120 * pulse
+  haloRing.scale.setScalar(pulse)
+  haloSphere.scale.setScalar(pulse)
+
+  // 光晕环旋转
+  haloRing.rotation.z = t * 0.25
+
+  // 锥体轻微摆动
+  cones.forEach((cone, i) => {
+    cone.rotation.y += Math.sin(t * 0.3 + i * 0.6) * 0.0006
+  })
+
+  // 光源球脉冲
+  lightSphere.scale.setScalar(1 + Math.sin(t * 2.2) * 0.06)
+
+  controls.update()
+
+  // === 体积光路径 ===
+  if (params.volumetricEnabled) {
+    // 更新光源的屏幕坐标（用于 God Rays 散射方向）
+    updateLightScreenPos()
+  }
+
+  // 通过 composer 渲染（RenderPass → GodRaysPass → OutputPass）
+  composer.render()
+}
+
+animate()
+
+// ============ resize ============
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+  composer.setSize(innerWidth, innerHeight)
+})

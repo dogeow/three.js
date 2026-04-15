@@ -1,0 +1,261 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+
+// ============ 场景 ============
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x001828)
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200)
+camera.position.set(0, 10, 14)
+camera.lookAt(0, 0, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.target.set(0, 0, 0)
+controls.maxPolarAngle = Math.PI / 2 - 0.02
+
+scene.add(new THREE.AmbientLight(0x88aadd, 0.8))
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5)
+dirLight.position.set(8, 12, 6)
+scene.add(dirLight)
+
+// ============ 水波模拟参数 ============
+const SIM_SIZE = 256
+
+const heightCurr = new Float32Array(SIM_SIZE * SIM_SIZE)   // 当前帧
+const heightPrev = new Float32Array(SIM_SIZE * SIM_SIZE)   // 上一帧
+const heightPrev2 = new Float32Array(SIM_SIZE * SIM_SIZE) // 上上帧
+
+const params = {
+  damping: 0.984,
+  rippleStrength: 1.0,
+  waveScale: 0.15,
+  waterColor: '#0055aa',
+  troughColor: '#001a33',
+  crestColor: '#aaddff',
+  foamColor: '#ffffff',
+  ambientRipples: true,
+}
+
+// ============ DataTexture（Float32）============
+
+const dataType = THREE.FloatType
+const simTexture = new THREE.DataTexture(
+  heightCurr, SIM_SIZE, SIM_SIZE, THREE.RedFormat, dataType
+)
+simTexture.needsUpdate = true
+
+// ============ Vertex Shader ============
+const vertexShader = /* glsl */`
+  uniform sampler2D uHeightMap;
+  uniform float uWaveScale;
+  varying float vHeight;
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    float h = texture2D(uHeightMap, uv).r;
+    vHeight = h;
+    vec3 p = position;
+    p.y += h * uWaveScale;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`
+
+// ============ Fragment Shader ============
+const fragmentShader = /* glsl */`
+  uniform vec3 uWaterColor;
+  uniform vec3 uTroughColor;
+  uniform vec3 uCrestColor;
+  uniform vec3 uFoamColor;
+  varying float vHeight;
+  varying vec2 vUv;
+
+  void main() {
+    float h = vHeight;
+    vec3 color;
+    if (h < 0.0) {
+      float t = smoothstep(-1.0, 0.0, h);
+      color = mix(uTroughColor, uWaterColor, t);
+    } else if (h < 0.4) {
+      float t = smoothstep(0.0, 0.4, h);
+      color = mix(uWaterColor, uCrestColor, t);
+    } else {
+      float t = smoothstep(0.4, 1.5, h);
+      color = mix(uCrestColor, uFoamColor, t);
+    }
+    // 水面高光
+    float spec = pow(max(0.0, h * 0.5 + 0.1), 3.0) * 0.4;
+    color += spec;
+    gl_FragColor = vec4(color, 1.0);
+  }
+`
+
+// ============ 水面网格 ============
+const GRID_SEGS = 128
+const WATER_SIZE = 18
+const waterGeo = new THREE.PlaneGeometry(WATER_SIZE, WATER_SIZE, GRID_SEGS, GRID_SEGS)
+waterGeo.rotateX(-Math.PI / 2)
+
+const waterMat = new THREE.ShaderMaterial({
+  vertexShader,
+  fragmentShader,
+  uniforms: {
+    uHeightMap:  { value: simTexture },
+    uWaveScale:  { value: params.waveScale },
+    uWaterColor:  { value: new THREE.Color(params.waterColor) },
+    uTroughColor: { value: new THREE.Color(params.troughColor) },
+    uCrestColor:  { value: new THREE.Color(params.crestColor) },
+    uFoamColor:   { value: new THREE.Color(params.foamColor) },
+  },
+  side: THREE.DoubleSide,
+})
+
+const waterMesh = new THREE.Mesh(waterGeo, waterMat)
+scene.add(waterMesh)
+
+// ============ 浮球 ============
+const balls = []
+for (let i = 0; i < 10; i++) {
+  const r = 0.2 + Math.random() * 0.3
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(r, 20, 14),
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color().setHSL(Math.random(), 0.65, 0.55),
+      metalness: 0.2, roughness: 0.4,
+    })
+  )
+  mesh.position.set(
+    (Math.random() - 0.5) * WATER_SIZE * 0.7,
+    0.5,
+    (Math.random() - 0.5) * WATER_SIZE * 0.7
+  )
+  mesh.userData.radius = r
+  scene.add(mesh)
+  balls.push(mesh)
+}
+
+// ============ GUI ============
+const gui = new GUI({ title: '水波参数' })
+gui.add(params, 'damping', 0.9, 0.999, 0.001).name('衰减系数')
+gui.add(params, 'rippleStrength', 0.5, 3.0, 0.05).name('涟漪强度')
+gui.add(params, 'waveScale', 0.05, 0.5, 0.01).name('波幅').onChange(v => {
+  waterMat.uniforms.uWaveScale.value = v
+})
+gui.add(params, 'ambientRipples').name('自动涟漪').onChange(v => {
+  if (v) scheduleRipple()
+})
+gui.addColor(params, 'waterColor').name('水域色').onChange(v => waterMat.uniforms.uWaterColor.value.set(v))
+gui.addColor(params, 'troughColor').name('波谷色').onChange(v => waterMat.uniforms.uTroughColor.value.set(v))
+gui.addColor(params, 'crestColor').name('波峰色').onChange(v => waterMat.uniforms.uCrestColor.value.set(v))
+gui.addColor(params, 'foamColor').name('白沫色').onChange(v => waterMat.uniforms.uFoamColor.value.set(v))
+
+// ============ 涟漪函数 ============
+function addRipple(px, py, strength) {
+  const radius = 8
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist > radius) continue
+      const nx = px + dx, ny = py + dy
+      if (nx < 1 || nx >= SIM_SIZE - 1 || ny < 1 || ny >= SIM_SIZE - 1) continue
+      const idx = ny * SIM_SIZE + nx
+      heightCurr[idx] += strength * (1 - dist / radius) * (1 - dist / radius)
+    }
+  }
+}
+
+function addRippleWorld(wx, wz, strength) {
+  const u = (wx + WATER_SIZE / 2) / WATER_SIZE
+  const v = (wz + WATER_SIZE / 2) / WATER_SIZE
+  const px = Math.round(u * (SIM_SIZE - 1))
+  const py = Math.round(v * (SIM_SIZE - 1))
+  addRipple(px, py, strength)
+}
+
+// 初始涟漪
+function scheduleRipple() {
+  if (!params.ambientRipples) return
+  addRippleWorld((Math.random() - 0.5) * WATER_SIZE * 0.8, (Math.random() - 0.5) * WATER_SIZE * 0.8, 0.8)
+  setTimeout(scheduleRipple, 800 + Math.random() * 1200)
+}
+
+// ============ 点击交互 ============
+const raycaster = new THREE.Raycaster()
+const mouse = new THREE.Vector2()
+
+window.addEventListener('click', e => {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  raycaster.setFromCamera(mouse, camera)
+  const hits = raycaster.intersectObject(waterMesh)
+  if (hits.length > 0 && hits[0].uv) {
+    const px = Math.round(hits[0].uv.x * (SIM_SIZE - 1))
+    const py = Math.round(hits[0].uv.y * (SIM_SIZE - 1))
+    addRipple(px, py, params.rippleStrength)
+  }
+})
+
+// ============ 水波模拟 ============
+function simulateWater() {
+  const S = SIM_SIZE
+  const d = params.damping
+
+  // 交换缓冲区：prevPrev <- prev, prev <- curr, curr <- new
+  for (let i = 0; i < S * S; i++) {
+    heightPrev2[i] = heightPrev[i]
+    heightPrev[i] = heightCurr[i]
+  }
+
+  for (let y = 1; y < S - 1; y++) {
+    for (let x = 1; x < S - 1; x++) {
+      const i = y * S + x
+      const avg = (heightPrev[i - 1] + heightPrev[i + 1] + heightPrev[i - S] + heightPrev[i + S]) * 0.25
+      heightCurr[i] = (avg - heightPrev2[i]) * d
+    }
+  }
+
+  simTexture.needsUpdate = true
+}
+
+// ============ 浮球跟随 ============
+function updateBalls() {
+  const inv = 1.0 / (SIM_SIZE - 1)
+  for (const b of balls) {
+    const u = (b.position.x + WATER_SIZE / 2) / WATER_SIZE
+    const v = (b.position.z + WATER_SIZE / 2) / WATER_SIZE
+    const px = Math.floor(u * (SIM_SIZE - 1))
+    const py = Math.floor(v * (SIM_SIZE - 1))
+    if (px >= 0 && px < SIM_SIZE && py >= 0 && py < SIM_SIZE) {
+      const h = heightCurr[py * SIM_SIZE + px]
+      const targetY = h * params.waveScale + b.userData.radius
+      b.position.y += (targetY - b.position.y) * 0.12
+    }
+  }
+}
+
+// ============ 渲染循环 ============
+const clock = new THREE.Clock()
+scheduleRipple()
+
+function animate() {
+  requestAnimationFrame(animate)
+  simulateWater()
+  updateBalls()
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+})

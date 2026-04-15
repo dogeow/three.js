@@ -1,0 +1,411 @@
+import * as THREE from 'three';
+import { GUI } from 'lil-gui';
+
+const CONFIG = {
+  cubeCount: 10000,
+  animation: true,
+  showIndividual: true,
+  showMerged: true,
+  showInstanced: true,
+  activeMode: 'all'
+};
+
+const container = document.getElementById('canvas-container');
+
+// ─── Scene Setup ───────────────────────────────────────────────────────────
+function createScene() {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a0f);
+  return scene;
+}
+
+function createCamera(aspect) {
+  const camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
+  camera.position.set(0, 18, 40);
+  camera.lookAt(0, 0, 0);
+  return camera;
+}
+
+function createRenderer() {
+  const renderer = new THREE.WebGLRenderer({ antialias: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  return renderer;
+}
+
+function createLights(scene) {
+  const ambient = new THREE.AmbientLight(0x404060, 0.5);
+  scene.add(ambient);
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(10, 20, 10);
+  scene.add(dir);
+  const point = new THREE.PointLight(0x0088ff, 0.8, 100);
+  point.position.set(-20, 15, 10);
+  scene.add(point);
+}
+
+// ─── Data Generation ────────────────────────────────────────────────────────
+function generateCubeData(count) {
+  const positions = new Float32Array(count * 3);
+  const rotations = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    positions[i * 3]     = (Math.random() - 0.5) * 60;
+    positions[i * 3 + 1] = (Math.random() - 0.5) * 30;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 60;
+    rotations[i * 3]     = Math.random() * Math.PI * 2;
+    rotations[i * 3 + 1] = Math.random() * Math.PI * 2;
+    rotations[i * 3 + 2] = Math.random() * Math.PI * 2;
+    colors[i * 3]     = 0.3 + Math.random() * 0.7;
+    colors[i * 3 + 1] = 0.3 + Math.random() * 0.7;
+    colors[i * 3 + 2] = 0.3 + Math.random() * 0.7;
+  }
+  return { positions, rotations, colors };
+}
+
+// ─── Strategy 1: Individual Meshes ─────────────────────────────────────────
+function createIndividualSystem(count) {
+  const group = new THREE.Group();
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const material = new THREE.MeshStandardMaterial({ flatShading: false });
+  const meshes = [];
+  const data = generateCubeData(count);
+
+  for (let i = 0; i < count; i++) {
+    const mesh = new THREE.Mesh(geometry, material.clone());
+    mesh.position.set(data.positions[i*3], data.positions[i*3+1], data.positions[i*3+2]);
+    mesh.rotation.set(data.rotations[i*3], data.rotations[i*3+1], data.rotations[i*3+2]);
+    mesh.material.color.setRGB(data.colors[i*3], data.colors[i*3+1], data.colors[i*3+2]);
+    mesh.userData.baseRotation = { x: data.rotations[i*3], y: data.rotations[i*3+1], z: data.rotations[i*3+2] };
+    mesh.userData.index = i;
+    group.add(mesh);
+    meshes.push(mesh);
+  }
+
+  return { group, meshes, data };
+}
+
+// ─── Strategy 2: Merged Geometry ──────────────────────────────────────────
+function createMergedSystem(count) {
+  const data = generateCubeData(count);
+  const baseGeo = new THREE.BoxGeometry(1, 1, 1);
+
+  const merged = new THREE.BufferGeometry();
+  const positions = [];
+  const normals = [];
+  const colors = [];
+
+  const matrix = new THREE.Matrix4();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3(1, 1, 1);
+  const euler = new THREE.Euler();
+
+  for (let i = 0; i < count; i++) {
+    euler.set(data.rotations[i*3], data.rotations[i*3+1], data.rotations[i*3+2]);
+    quaternion.setFromEuler(euler);
+    matrix.compose(
+      new THREE.Vector3(data.positions[i*3], data.positions[i*3+1], data.positions[i*3+2]),
+      quaternion,
+      scale
+    );
+
+    const posAttr = baseGeo.attributes.position;
+    const normAttr = baseGeo.attributes.normal;
+
+    for (let j = 0; j < posAttr.count; j++) {
+      const v = new THREE.Vector3().fromBufferAttribute(posAttr, j);
+      v.applyMatrix4(matrix);
+      positions.push(v.x, v.y, v.z);
+      normals.push(0, 1, 0); // will be recomputed
+
+      const ni = i % 3;
+      colors.push(data.colors[i*3 + ni], data.colors[i*3 + ((ni+1)%3)], data.colors[i*3 + ((ni+2)%3)]);
+    }
+  }
+
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  merged.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  merged.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({ flatShading: false, vertexColors: true });
+  const mesh = new THREE.Mesh(merged, material);
+  const group = new THREE.Group();
+  group.add(mesh);
+
+  return { group, mesh, data };
+}
+
+// ─── Strategy 3: InstancedMesh ─────────────────────────────────────────────
+function createInstancedSystem(count) {
+  const data = generateCubeData(count);
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const material = new THREE.MeshStandardMaterial({ flatShading: false });
+  const instancedMesh = new THREE.InstancedMesh(geometry, material, count);
+
+  const dummy = new THREE.Object3D();
+  const color = new THREE.Color();
+
+  for (let i = 0; i < count; i++) {
+    dummy.position.set(data.positions[i*3], data.positions[i*3+1], data.positions[i*3+2]);
+    dummy.rotation.set(data.rotations[i*3], data.rotations[i*3+1], data.rotations[i*3+2]);
+    dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, dummy.matrix);
+    color.setRGB(data.colors[i*3], data.colors[i*3+1], data.colors[i*3+2]);
+    instancedMesh.setColorAt(i, color);
+    instancedMesh.userData.baseRotations = instancedMesh.userData.baseRotations || [];
+    instancedMesh.userData.baseRotations[i] = { x: data.rotations[i*3], y: data.rotations[i*3+1], z: data.rotations[i*3+2] };
+  }
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+
+  const group = new THREE.Group();
+  group.add(instancedMesh);
+
+  return { group, instancedMesh, data };
+}
+
+// ─── Rebuild Systems ────────────────────────────────────────────────────────
+let systems = {
+  individual: null,
+  merged: null,
+  instanced: null
+};
+
+function buildAllSystems(count) {
+  if (systems.individual) sceneIndividual.remove(systems.individual.group);
+  if (systems.merged) sceneMerged.remove(systems.merged.group);
+  if (systems.instanced) sceneInstanced.remove(systems.instanced.group);
+
+  systems.individual = createIndividualSystem(count);
+  systems.merged = createMergedSystem(count);
+  systems.instanced = createInstancedSystem(count);
+
+  sceneIndividual.add(systems.individual.group);
+  sceneMerged.add(systems.merged.group);
+  sceneInstanced.add(systems.instanced.group);
+
+  updateVisibility();
+}
+
+// ─── Scenes & Renderers ────────────────────────────────────────────────────
+const sceneIndividual = createScene();
+const sceneMerged = createScene();
+const sceneInstanced = createScene();
+
+createLights(sceneIndividual);
+createLights(sceneMerged);
+createLights(sceneInstanced);
+
+// Grid helpers
+function addGrid(scene) {
+  const grid = new THREE.GridHelper(80, 40, 0x1a1a2a, 0x151520);
+  grid.position.y = -15;
+  scene.add(grid);
+}
+addGrid(sceneIndividual);
+addGrid(sceneMerged);
+addGrid(sceneInstanced);
+
+let camIndividual = createCamera(1);
+let camMerged = createCamera(1);
+let camInstanced = createCamera(1);
+
+let renderer = createRenderer();
+
+// Create 3 render targets
+let renderers = [];
+let sections = [];
+
+const countOptions = [1000, 5000, 10000, 50000];
+
+// ─── Build DOM structure ────────────────────────────────────────────────────
+function buildDOM() {
+  container.innerHTML = '';
+  renderers.forEach(r => r.dispose());
+  renderers = [];
+  sections = [];
+
+  const modes = ['individual', 'merged', 'instanced'];
+  const labels = ['INDIVIDUAL MESHES', 'MERGED GEOMETRY', 'INSTANCED MESH'];
+  const fpsIds = ['fps-individual', 'fps-merged', 'fps-instanced'];
+
+  modes.forEach((mode, idx) => {
+    const section = document.createElement('div');
+    section.className = 'render-section';
+    section.id = `section-${mode}`;
+
+    const label = document.createElement('div');
+    label.className = 'section-label';
+    label.textContent = labels[idx];
+    section.appendChild(label);
+
+    const fps = document.createElement('div');
+    fps.className = 'fps-overlay';
+    fps.id = fpsIds[idx];
+    fps.textContent = '0 FPS';
+    section.appendChild(fps);
+
+    const count = document.createElement('div');
+    count.className = 'cube-count-overlay';
+    count.id = `count-${mode}`;
+    count.textContent = `0 CUBES`;
+    section.appendChild(count);
+
+    container.appendChild(section);
+
+    const r = createRenderer();
+    section.appendChild(r.domElement);
+    r.setSize(section.clientWidth, section.clientHeight);
+    renderers.push(r);
+  });
+}
+
+buildDOM();
+
+// ─── Visibility & Mode Control ─────────────────────────────────────────────
+function updateVisibility() {
+  const mode = CONFIG.activeMode;
+  const sections2 = ['individual', 'merged', 'instanced'];
+
+  sections2.forEach(m => {
+    const el = document.getElementById(`section-${m}`);
+    if (!el) return;
+    let show = false;
+    if (mode === 'all') {
+      show = CONFIG[`show${m.charAt(0).toUpperCase() + m.slice(1)}`];
+    } else {
+      show = (mode === m);
+    }
+    el.style.display = show ? 'block' : 'none';
+  });
+
+  // Update renderer sizes
+  renderers.forEach((r, i) => {
+    const visible = sections2.filter((_, idx) => {
+      const m = sections2[idx];
+      const el = document.getElementById(`section-${m}`);
+      return el && el.style.display !== 'none';
+    }).length;
+    const w = visible > 0 ? container.clientWidth / visible : container.clientWidth;
+    const h = container.clientHeight;
+    r.setSize(w, h);
+  });
+}
+
+// ─── Mode Buttons ───────────────────────────────────────────────────────────
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    CONFIG.activeMode = btn.dataset.mode;
+    updateVisibility();
+  });
+});
+
+// ─── GUI ────────────────────────────────────────────────────────────────────
+const gui = new GUI({ container: document.getElementById('lil-gui-container') || document.body });
+gui.add(CONFIG, 'cubeCount', countOptions).name('Cube Count').onChange(v => {
+  buildAllSystems(v);
+});
+gui.add(CONFIG, 'animation').name('Animate');
+gui.add(CONFIG, 'showIndividual').name('Show Individual').onChange(updateVisibility);
+gui.add(CONFIG, 'showMerged').name('Show Merged').onChange(updateVisibility);
+gui.add(CONFIG, 'showInstanced').name('Show Instanced').onChange(updateVisibility);
+
+// ─── Animation ─────────────────────────────────────────────────────────────
+let clock = new THREE.Clock();
+const dummy = new THREE.Object3D();
+const euler = new THREE.Euler();
+
+function animateSystems(delta) {
+  if (!CONFIG.animation) return;
+  const t = clock.getElapsedTime() * 0.3;
+
+  // Individual
+  if (systems.individual) {
+    systems.individual.meshes.forEach((mesh, i) => {
+      const br = mesh.userData.baseRotation;
+      mesh.rotation.x = br.x + t;
+      mesh.rotation.y = br.y + t * 0.7;
+      mesh.rotation.z = br.z + t * 0.3;
+    });
+  }
+
+  // Merged — no per-instance animation (would need shader)
+  // Instanced
+  if (systems.instanced) {
+    const im = systems.instanced.instancedMesh;
+    const baseRotations = im.userData.baseRotations;
+    for (let i = 0; i < CONFIG.cubeCount; i++) {
+      const br = baseRotations[i];
+      dummy.position.set(
+        systems.instanced.data.positions[i*3],
+        systems.instanced.data.positions[i*3+1],
+        systems.instanced.data.positions[i*3+2]
+      );
+      dummy.rotation.set(br.x + t, br.y + t * 0.7, br.z + t * 0.3);
+      dummy.updateMatrix();
+      im.setMatrixAt(i, dummy.matrix);
+    }
+    im.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// ─── FPS Tracking ──────────────────────────────────────────────────────────
+const fpsData = [{ frames: 0, lastTime: performance.now(), fps: 0 },
+                 { frames: 0, lastTime: performance.now(), fps: 0 },
+                 { frames: 0, lastTime: performance.now(), fps: 0 }];
+
+function updateFPS(idx) {
+  const d = fpsData[idx];
+  d.frames++;
+  const now = performance.now();
+  if (now - d.lastTime >= 500) {
+    d.fps = Math.round(d.frames * 1000 / (now - d.lastTime));
+    d.frames = 0;
+    d.lastTime = now;
+    const ids = ['fps-individual', 'fps-merged', 'fps-instanced'];
+    const countIds = ['count-individual', 'count-merged', 'count-instanced'];
+    const el = document.getElementById(ids[idx]);
+    if (el) el.textContent = `${d.fps} FPS`;
+    const countEl = document.getElementById(countIds[idx]);
+    if (countEl) countEl.textContent = `${CONFIG.cubeCount.toLocaleString()} CUBES`;
+  }
+}
+
+// ─── Resize ─────────────────────────────────────────────────────────────────
+function onResize() {
+  updateVisibility();
+  renderers.forEach((r, i) => {
+    const parent = r.domElement.parentElement;
+    if (parent) {
+      r.setSize(parent.clientWidth, parent.clientHeight);
+    }
+  });
+}
+
+window.addEventListener('resize', onResize);
+
+// ─── Main Loop ──────────────────────────────────────────────────────────────
+function render() {
+  requestAnimationFrame(render);
+  const delta = clock.getDelta();
+
+  animateSystems(delta);
+
+  const scenes = [sceneIndividual, sceneMerged, sceneInstanced];
+  const cameras = [camIndividual, camMerged, camInstanced];
+
+  scenes.forEach((scene, i) => {
+    const section = document.getElementById(`section-${['individual','merged','instanced'][i]}`);
+    if (!section || section.style.display === 'none') return;
+    renderers[i].render(scene, cameras[i]);
+    updateFPS(i);
+  });
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+buildAllSystems(CONFIG.cubeCount);
+updateVisibility();
+render();

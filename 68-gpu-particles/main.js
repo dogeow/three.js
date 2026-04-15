@@ -1,0 +1,484 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'three/addons/libs/lil-gui.module.min.js';
+
+// ════════════════════════════════════════════════════════════
+// Vertex Shader
+// ════════════════════════════════════════════════════════════
+const vertexShader = /* glsl */`
+  precision highp float;
+
+  attribute vec3  aPosition;
+  attribute vec3  aVelocity;
+  attribute float aStartTime;
+  attribute float aLifetime;
+  attribute float aSize;
+  attribute vec3  aColor;
+
+  uniform float uTime;
+  uniform float uSpeed;
+  uniform float uSpread;
+  uniform float uSizeScale;
+  uniform float uLifetimeScale;
+  uniform int   uPattern;   // 0=galaxy, 1=fountain, 2=fireworks
+
+  varying vec3  vColor;
+  varying float vAlpha;
+  varying float vLife;
+
+  #define PI  3.14159265358979
+  #define TAU 6.28318530717959
+
+  // Smooth fade-in / fade-out envelope
+  float envelope(float t, float lt) {
+    float life = t / lt;
+    float fadeIn  = smoothstep(0.0, 0.08, life);
+    float fadeOut = 1.0 - smoothstep(0.75, 1.0, life);
+    return fadeIn * fadeOut;
+  }
+
+  void main() {
+    // ── Age & normalized life ──────────────────────────────
+    float age  = mod(uTime * uSpeed + aStartTime, aLifetime * uLifetimeScale);
+    float life = age / (aLifetime * uLifetimeScale);
+    vLife = life;
+
+    // ── Galaxy pattern ─────────────────────────────────────
+    if (uPattern == 0) {
+      float t       = age * 0.18;
+      float angle   = aPosition.x;           // pre-baked spiral angle
+      float radius  = length(aPosition.yz);
+      float armPitch = 2.5;                  // arms per revolution
+
+      // Spiral out
+      float spiralAngle = angle + t * (1.0 + radius * 0.4) * armPitch;
+      float spiralR     = radius + sin(t * 1.7 + angle) * uSpread * 0.3;
+
+      vec3 pos;
+      pos.x = cos(spiralAngle) * spiralR;
+      pos.z = sin(spiralAngle) * spiralR;
+      pos.y = aPosition.y + aVelocity.y * age * 0.12
+            + sin(age * 2.3 + angle) * uSpread * 0.08;
+
+      // Add slight vertical wave
+      pos.y += sin(angle * 3.0 + age) * uSpread * 0.05;
+
+      vColor = aColor;
+      vAlpha = envelope(age, aLifetime * uLifetimeScale);
+
+      // ── Fountain pattern ─────────────────────────────────
+    } else if (uPattern == 1) {
+      float t   = age * 0.6;
+      vec3 pos  = aPosition;
+      pos.y    += aVelocity.y * t - 3.8 * t * t * aVelocity.y;
+      pos.x    += aVelocity.x * t * sin(t * 1.5 + aPosition.z);
+      pos.z    += aVelocity.z * t * cos(t * 1.5 + aPosition.x);
+      // Spiral fall
+      float fall = max(0.0, 1.0 - life * 1.2);
+      pos.x += sin(age * 4.0 + aPosition.z) * fall * uSpread * 0.4;
+      pos.z += cos(age * 4.0 + aPosition.x) * fall * uSpread * 0.4;
+
+      vColor = mix(aColor, vec3(0.4, 0.8, 1.0), life * 0.5);
+      vAlpha = envelope(age, aLifetime * uLifetimeScale) * (1.0 - life * 0.4);
+
+      // ── Fireworks pattern ────────────────────────────────
+    } else {
+      float t = age * 0.5;
+      vec3 pos = aPosition;
+      pos += aVelocity * t;
+      // Gravity & drag
+      pos.y -= 2.2 * t * t;
+      pos.xz *= 1.0 - t * 0.12;
+      // Twinkle burst
+      float burst = sin(age * 12.0 + aPosition.x * 8.0) * 0.5 + 0.5;
+      pos.x += burst * uSpread * 0.08 * sin(aStartTime * 5.0);
+      pos.z += burst * uSpread * 0.08 * cos(aStartTime * 7.0);
+
+      vec3 hotColor = vec3(1.0, 0.9, 0.4);
+      vec3 coolColor = aColor;
+      vColor = mix(hotColor, coolColor, life);
+      vAlpha = envelope(age, aLifetime * uLifetimeScale);
+    }
+
+    // ── Common: depth-scaled point size ───────────────────
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+    float ps = aSize * uSizeScale * (1.0 - life * 0.6);
+    gl_PointSize = clamp(ps * (280.0 / -mvPosition.z), 1.0, 64.0);
+    gl_Position  = projectionMatrix * mvPosition;
+  }
+`;
+
+// ════════════════════════════════════════════════════════════
+// Fragment Shader
+// ════════════════════════════════════════════════════════════
+const fragmentShader = /* glsl */`
+  precision highp float;
+
+  varying vec3  vColor;
+  varying float vAlpha;
+  varying float vLife;
+
+  void main() {
+    // Soft circular particle
+    vec2  uv = gl_PointCoord - 0.5;
+    float d  = length(uv);
+    if (d > 0.5) discard;
+
+    // Core glow
+    float core = 1.0 - smoothstep(0.0, 0.18, d);
+    float halo = pow(1.0 - smoothstep(0.0, 0.5, d), 1.8);
+    float bright = core + halo * 0.6;
+
+    // Inner shimmer
+    float shimmer = sin(d * 20.0 - vLife * 12.0) * 0.08 + 0.92;
+    bright *= shimmer;
+
+    float alpha = vAlpha * bright;
+    vec3  col   = vColor * bright + vec3(0.15) * core; // white-hot core
+
+    gl_FragColor = vec4(col, alpha);
+  }
+`;
+
+// ════════════════════════════════════════════════════════════
+// Init
+// ════════════════════════════════════════════════════════════
+const canvas   = document.createElement('canvas');
+document.body.appendChild(canvas);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000005);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 8000);
+camera.position.set(0, 18, 55);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance   = 5;
+controls.maxDistance    = 200;
+
+// ════════════════════════════════════════════════════════════
+// Params
+// ════════════════════════════════════════════════════════════
+const params = {
+  count:       50000,
+  speed:       1.0,
+  spread:      1.0,
+  lifetime:    1.0,
+  sizeScale:   1.0,
+  pattern:     'Galaxy',
+  colorScheme: 'Nebula',
+};
+
+// ════════════════════════════════════════════════════════════
+// Particle buffer builders
+// ════════════════════════════════════════════════════════════
+const PI  = Math.PI;
+const TAU = Math.PI * 2;
+const rng = () => Math.random();
+const rand = (a, b) => a + rng() * (b - a);
+
+function buildGalaxyBuffers(n) {
+  const aPosition  = new Float32Array(n * 3);
+  const aVelocity  = new Float32Array(n * 3);
+  const aStartTime  = new Float32Array(n);
+  const aLifetime   = new Float32Array(n);
+  const aSize       = new Float32Array(n);
+  const aColor      = new Float32Array(n * 3);
+
+  const ARMS        = 5;
+  const MAX_RADIUS  = 22;
+  const HEIGHT_SPREAD = 3.5;
+
+  for (let i = 0; i < n; i++) {
+    // Spiral arm angle
+    const armId  = Math.floor(rng() * ARMS);
+    const angle  = (armId / ARMS) * TAU + (rng() - 0.5) * 0.7;
+    const radius = rand(0.3, MAX_RADIUS);
+    const height = rand(-HEIGHT_SPREAD, HEIGHT_SPREAD);
+
+    const px = angle;          // bake spiral angle as "x"
+    const py = rand(-HEIGHT_SPREAD, HEIGHT_SPREAD);
+    const pz = radius;
+
+    // Velocity: outward + vertical scatter
+    const vx = rng() * 0.3 - 0.15;
+    const vy = rand(-0.3, 0.8);
+    const vz = rng() * 0.3 - 0.15;
+
+    aPosition[i*3]   = px;
+    aPosition[i*3+1] = py;
+    aPosition[i*3+2] = pz;
+
+    aVelocity[i*3]   = vx;
+    aVelocity[i*3+1] = vy;
+    aVelocity[i*3+2] = vz;
+
+    aStartTime[i]  = rand(0, 60);
+    aLifetime[i]   = rand(8, 20);
+    aSize[i]       = rand(0.4, 2.8);
+
+    // Color: distance-based gradient (blue core → purple → pink)
+    const t = radius / MAX_RADIUS;
+    let r, g, b;
+    if (t < 0.33) {
+      const s = t / 0.33;
+      r = lerp(0.05, 0.4, s);
+      g = lerp(0.2,  0.1, s);
+      b = lerp(0.9,  0.5, s);
+    } else if (t < 0.66) {
+      const s = (t - 0.33) / 0.33;
+      r = lerp(0.4,  0.9, s);
+      g = lerp(0.1,  0.15, s);
+      b = lerp(0.5,  0.7, s);
+    } else {
+      const s = (t - 0.66) / 0.34;
+      r = lerp(0.9,  1.0, s);
+      g = lerp(0.15, 0.6, s);
+      b = lerp(0.7,  0.3, s);
+    }
+    // Bright inner stars
+    if (rng() < 0.04) { r = 1.0; g = 1.0; b = 1.0; }
+
+    aColor[i*3]   = r;
+    aColor[i*3+1] = g;
+    aColor[i*3+2] = b;
+  }
+
+  return { aPosition, aVelocity, aStartTime, aLifetime, aSize, aColor };
+}
+
+function buildFountainBuffers(n) {
+  const aPosition  = new Float32Array(n * 3);
+  const aVelocity  = new Float32Array(n * 3);
+  const aStartTime  = new Float32Array(n);
+  const aLifetime   = new Float32Array(n);
+  const aSize       = new Float32Array(n);
+  const aColor      = new Float32Array(n * 3);
+
+  for (let i = 0; i < n; i++) {
+    const angle = rand(0, TAU);
+    const speed = rand(0.5, 3.5);
+
+    aPosition[i*3]   = 0;
+    aPosition[i*3+1] = 0;
+    aPosition[i*3+2] = 0;
+
+    aVelocity[i*3]   = Math.cos(angle) * speed * 0.5;
+    aVelocity[i*3+1] = rand(2, 5);
+    aVelocity[i*3+2] = Math.sin(angle) * speed * 0.5;
+
+    aStartTime[i] = rand(0, 30);
+    aLifetime[i]  = rand(1.5, 4.0);
+    aSize[i]      = rand(0.5, 2.5);
+
+    const c = new THREE.Color().setHSL(rand(0.55, 0.7), 0.9, 0.6);
+    aColor[i*3]   = c.r;
+    aColor[i*3+1] = c.g;
+    aColor[i*3+2] = c.b;
+  }
+
+  return { aPosition, aVelocity, aStartTime, aLifetime, aSize, aColor };
+}
+
+function buildFireworksBuffers(n) {
+  const aPosition  = new Float32Array(n * 3);
+  const aVelocity  = new Float32Array(n * 3);
+  const aStartTime  = new Float32Array(n);
+  const aLifetime   = new Float32Array(n);
+  const aSize       = new Float32Array(n);
+  const aColor      = new Float32Array(n * 3);
+
+  const BURST = 12;
+  const BURST_N = Math.floor(n / BURST);
+
+  for (let i = 0; i < n; i++) {
+    const burstIdx = Math.floor(i / BURST_N);
+    const t        = (burstIdx / BURST) * 50;
+    const bx       = rand(-20, 20);
+    const by       = rand(5, 25);
+    const bz       = rand(-20, 20);
+
+    const angle  = rand(0, TAU);
+    const elev   = rand(0.1, PI * 0.6);
+    const speed  = rand(2, 8);
+
+    aPosition[i*3]   = bx;
+    aPosition[i*3+1] = by;
+    aPosition[i*3+2] = bz;
+
+    aVelocity[i*3]   = Math.cos(angle) * Math.sin(elev) * speed;
+    aVelocity[i*3+1] = Math.cos(elev) * speed;
+    aVelocity[i*3+2] = Math.sin(angle) * Math.sin(elev) * speed;
+
+    aStartTime[i] = t + rand(0, 0.5);
+    aLifetime[i]  = rand(1.5, 3.5);
+    aSize[i]      = rand(0.6, 3.0);
+
+    const hue = (burstIdx / BURST + rng() * 0.1) % 1;
+    const c = new THREE.Color().setHSL(hue, 1.0, 0.6);
+    aColor[i*3]   = c.r;
+    aColor[i*3+1] = c.g;
+    aColor[i*3+2] = c.b;
+  }
+
+  return { aPosition, aVelocity, aStartTime, aLifetime, aSize, aColor };
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// ════════════════════════════════════════════════════════════
+// Build geometry
+// ════════════════════════════════════════════════════════════
+let geo, mat, points, uniforms;
+
+function buildParticleSystem() {
+  if (points) {
+    geo.dispose();
+    mat.dispose();
+    scene.remove(points);
+  }
+
+  const n = params.count;
+  let buf;
+
+  switch (params.pattern) {
+    case 'Galaxy':    buf = buildGalaxyBuffers(n);    break;
+    case 'Fountain':  buf = buildFountainBuffers(n);  break;
+    case 'Fireworks': buf = buildFireworksBuffers(n);  break;
+  }
+
+  geo = new THREE.BufferGeometry();
+  geo.setAttribute('aPosition',  new THREE.BufferAttribute(buf.aPosition,  3));
+  geo.setAttribute('aVelocity',  new THREE.BufferAttribute(buf.aVelocity,  3));
+  geo.setAttribute('aStartTime', new THREE.BufferAttribute(buf.aStartTime,  1));
+  geo.setAttribute('aLifetime',  new THREE.BufferAttribute(buf.aLifetime,   1));
+  geo.setAttribute('aSize',       new THREE.BufferAttribute(buf.aSize,        1));
+  geo.setAttribute('aColor',      new THREE.BufferAttribute(buf.aColor,      3));
+
+  uniforms = {
+    uTime:        { value: 0 },
+    uSpeed:       { value: params.speed },
+    uSpread:      { value: params.spread },
+    uSizeScale:   { value: params.sizeScale },
+    uLifetimeScale: { value: params.lifetime },
+    uPattern:     { value: ['Galaxy','Fountain','Fireworks'].indexOf(params.pattern) },
+  };
+
+  mat = new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    uniforms,
+    transparent:  true,
+    depthWrite:   false,
+    blending:     THREE.AdditiveBlending,
+  });
+
+  points = new THREE.Points(geo, mat);
+  scene.add(points);
+}
+
+buildParticleSystem();
+
+// ════════════════════════════════════════════════════════════
+// Background: faint nebula planes
+// ════════════════════════════════════════════════════════════
+(function addNebula() {
+  const planeGeo = new THREE.PlaneGeometry(200, 200);
+  const nebulaVS = /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+  `;
+  const nebulaFS = /* glsl */`
+    precision highp float;
+    varying vec2 vUv;
+    uniform float uTime;
+
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p); vec2 f = fract(p); f = f*f*(3.0-2.0*f);
+      return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+                 mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+    }
+    float fbm(vec2 p) {
+      float v=0.0, a=0.5;
+      for(int i=0;i<4;i++){ v+=a*noise(p); p*=2.1; a*=0.5; }
+      return v;
+    }
+
+    void main() {
+      vec2 uv = vUv - 0.5;
+      float n = fbm(uv * 3.0 + uTime * 0.01);
+      vec3 col = mix(vec3(0.01,0.0,0.04), vec3(0.04,0.0,0.12), n);
+      float edge = 1.0 - smoothstep(0.3, 0.5, length(uv));
+      gl_FragColor = vec4(col * edge, edge * 0.4);
+    }
+  `;
+
+  for (let i = 0; i < 2; i++) {
+    const m = new THREE.ShaderMaterial({
+      vertexShader: nebulaVS,
+      fragmentShader: nebulaFS,
+      uniforms: { uTime: { value: 0 } },
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(planeGeo, m);
+    mesh.rotation.x = -Math.PI * 0.5;
+    mesh.position.y = i === 0 ? -30 : 30;
+    scene.add(mesh);
+  }
+})();
+
+// ════════════════════════════════════════════════════════════
+// GUI
+// ════════════════════════════════════════════════════════════
+const gui = new GUI({ title: 'GPU 粒子系统' });
+
+const pFolder = gui.addFolder('粒子参数');
+pFolder.add(params, 'count',      1000,  200000, 1000).name('粒子数量').onFinishChange(buildParticleSystem);
+pFolder.add(params, 'speed',      0.1,   5.0,   0.05).name('速度').onChange(v => { if (uniforms) uniforms.uSpeed.value = v; });
+pFolder.add(params, 'spread',     0.1,   5.0,   0.05).name('扩散').onChange(v => { if (uniforms) uniforms.uSpread.value = v; });
+pFolder.add(params, 'lifetime',   0.1,   3.0,   0.05).name('生命期').onChange(v => { if (uniforms) uniforms.uLifetimeScale.value = v; });
+pFolder.add(params, 'sizeScale',  0.1,   4.0,   0.05).name('尺寸').onChange(v => { if (uniforms) uniforms.uSizeScale.value = v; });
+pFolder.open();
+
+const sFolder = gui.addFolder('形态');
+sFolder.add(params, 'pattern', ['Galaxy','Fountain','Fireworks']).name('模式').onFinishChange(buildParticleSystem);
+sFolder.open();
+
+// ════════════════════════════════════════════════════════════
+// Resize
+// ════════════════════════════════════════════════════════════
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ════════════════════════════════════════════════════════════
+// Animate
+// ════════════════════════════════════════════════════════════
+const clock = new THREE.Clock();
+
+(function animate() {
+  requestAnimationFrame(animate);
+
+  const t = clock.getElapsedTime();
+  if (uniforms) uniforms.uTime.value = t;
+
+  // Update nebula planes
+  scene.traverse(obj => {
+    if (obj.isMesh && obj.material.uniforms && obj.material.uniforms.uTime) {
+      obj.material.uniforms.uTime.value = t;
+    }
+  });
+
+  controls.update();
+  renderer.render(scene, camera);
+})();

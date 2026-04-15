@@ -1,0 +1,99 @@
+import * as THREE from 'three'
+
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 1, 6)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+document.body.appendChild(renderer.domElement)
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5))
+const light = new THREE.DirectionalLight(0xffffff, 1)
+light.position.set(3, 4, 5)
+scene.add(light)
+
+// ============ 用 Canvas 生成纹理 ============
+// 实战中通常用 TextureLoader 从图片加载：
+//   const tex = new THREE.TextureLoader().load('/path/to/img.jpg')
+// 这里为了让示例完全离线可跑，用 Canvas 临时画一张
+
+function makeCheckerTexture(size = 256, color1 = '#4a90e2', color2 = '#fff') {
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d')
+  const cell = size / 8
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      ctx.fillStyle = (x + y) % 2 ? color1 : color2
+      ctx.fillRect(x * cell, y * cell, cell, cell)
+    }
+  }
+  return new THREE.CanvasTexture(c)
+}
+
+// 简易法线贴图：把灰度噪声当法线
+function makeBumpyNormal(size = 256) {
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d')
+  const img = ctx.createImageData(size, size)
+  for (let i = 0; i < img.data.length; i += 4) {
+    const n = Math.random() * 40 - 20
+    img.data[i]     = 128 + n     // R = X 法线
+    img.data[i + 1] = 128 + n     // G = Y 法线
+    img.data[i + 2] = 255         // B = Z 法线（朝外）
+    img.data[i + 3] = 255
+  }
+  ctx.putImageData(img, 0, 0)
+  return new THREE.CanvasTexture(c)
+}
+
+// ============ 三个球展示不同贴图用法 ============
+
+// (1) 普通颜色贴图
+const tex1 = makeCheckerTexture()
+const sphere1 = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 64, 64),
+  new THREE.MeshStandardMaterial({ map: tex1 })
+)
+sphere1.position.x = -2.5
+
+// (2) 让纹理重复 4×4 次：常用于地砖、墙面
+const tex2 = makeCheckerTexture(256, '#e74c3c', '#fff')
+tex2.wrapS = tex2.wrapT = THREE.RepeatWrapping
+tex2.repeat.set(4, 4)
+const sphere2 = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 64, 64),
+  new THREE.MeshStandardMaterial({ map: tex2 })
+)
+
+// (3) 颜色贴图 + 法线贴图：表面看起来凹凸不平
+const tex3 = makeCheckerTexture(256, '#27ae60', '#ecf0f1')
+const normal = makeBumpyNormal()
+const sphere3 = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 64, 64),
+  new THREE.MeshStandardMaterial({
+    map: tex3,
+    normalMap: normal,
+    normalScale: new THREE.Vector2(2, 2)
+  })
+)
+sphere3.position.x = 2.5
+
+scene.add(sphere1, sphere2, sphere3)
+
+// ============ 渲染 ============
+function animate() {
+  requestAnimationFrame(animate)
+  ;[sphere1, sphere2, sphere3].forEach(s => (s.rotation.y += 0.005))
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})

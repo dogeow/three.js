@@ -1,0 +1,657 @@
+import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+    // ─── Scene Setup ─────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111827);
+    scene.fog = new THREE.FogExp2(0x111827, 0.04);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2.5, 7);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 2;
+    controls.maxDistance = 20;
+    controls.target.set(0, 1.4, 0);
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.5, 0.7
+    );
+    composer.addPass(bloomPass);
+
+    // ─── Lights ─────────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0x334466, 0.6));
+
+    const sun = new THREE.DirectionalLight(0xffeedd, 1.4);
+    sun.position.set(5, 8, 4);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 30;
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -6;
+    sun.shadow.camera.right = sun.shadow.camera.top = 6;
+    scene.add(sun);
+
+    const fill = new THREE.DirectionalLight(0x4466aa, 0.4);
+    fill.position.set(-4, 3, -2);
+    scene.add(fill);
+
+    const rim = new THREE.PointLight(0x88ccff, 0.8, 12);
+    rim.position.set(0, 4, -4);
+    scene.add(rim);
+
+    // ─── Floor ──────────────────────────────────────────────────────────────
+    const floorMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(20, 20),
+      new THREE.MeshStandardMaterial({ color: 0x1a2233, roughness: 0.9, metalness: 0.1 })
+    );
+    floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.receiveShadow = true;
+    scene.add(floorMesh);
+
+    const grid = new THREE.GridHelper(20, 20, 0x2a3a55, 0x1e2a3a);
+    grid.position.y = 0.002;
+    scene.add(grid);
+
+    // ─── Skeleton Builder ───────────────────────────────────────────────────
+    // Bone hierarchy (world positions, root at y=0):
+    //   root (0, 0, 0)
+    //   ├─ hipBone (0, 0.95, 0)
+    //   │   ├─ spineBone (0, 1.20, 0)
+    //   │   │   ├─ chestBone (0, 1.55, 0)
+    //   │   │   │   ├─ neckBone (0, 1.80, 0)
+    //   │   │   │   │   └─ headBone (0, 2.05, 0)
+    //   │   │   │   ├─ lShoulderBone (-0.30, 1.60, 0)
+    //   │   │   │   │   └─ lUpperArmBone (-0.65, 1.55, 0)
+    //   │   │   │   │       └─ lForearmBone (-1.10, 1.40, 0)
+    //   │   │   │   │           └─ lHandBone (-1.40, 1.28, 0)
+    //   │   │   │   └─ rShoulderBone (0.30, 1.60, 0)
+    //   │   │   │       └─ rUpperArmBone (0.65, 1.55, 0)
+    //   │   │   │           └─ rForearmBone (1.10, 1.40, 0)
+    //   │   │   │               └─ rHandBone (1.40, 1.28, 0)
+    //   │   │   ├─ lHipBone (-0.16, 0.90, 0)
+    //   │   │   │   └─ lThighBone (-0.18, 0.52, 0)
+    //   │   │   │       └─ lShinBone (-0.20, 0.08, 0)
+    //   │   │   │           └─ lFootBone (-0.20, 0.02, 0.08)
+    //   │   │   └─ rHipBone (0.16, 0.90, 0)
+    //   │   │       └─ rThighBone (0.18, 0.52, 0)
+    //   │   │           └─ rShinBone (0.20, 0.08, 0)
+    //   │   │               └─ rFootBone (0.20, 0.02, 0.08)
+
+    const boneData = [
+      { name: 'root',        pos: [0,      0,     0   ], parent: -1 },
+      { name: 'hipBone',     pos: [0,      0.95,  0   ], parent: 0  },
+      { name: 'spineBone',   pos: [0,      1.20,  0   ], parent: 1  },
+      { name: 'chestBone',   pos: [0,      1.55,  0   ], parent: 2  },
+      { name: 'neckBone',    pos: [0,      1.80,  0   ], parent: 3  },
+      { name: 'headBone',    pos: [0,      2.05,  0   ], parent: 4  },
+      { name: 'lShoulder',   pos: [-0.30,  1.60,  0   ], parent: 3  },
+      { name: 'lUpperArm',   pos: [-0.65,  1.55,  0   ], parent: 6  },
+      { name: 'lForearm',    pos: [-1.10,  1.40,  0   ], parent: 7  },
+      { name: 'lHand',       pos: [-1.40,  1.28,  0   ], parent: 8  },
+      { name: 'rShoulder',   pos: [0.30,   1.60,  0   ], parent: 3  },
+      { name: 'rUpperArm',   pos: [0.65,   1.55,  0   ], parent: 10 },
+      { name: 'rForearm',    pos: [1.10,   1.40,  0   ], parent: 11 },
+      { name: 'rHand',       pos: [1.40,   1.28,  0   ], parent: 12 },
+      { name: 'lHip',        pos: [-0.16,  0.90,  0   ], parent: 1  },
+      { name: 'lThigh',      pos: [-0.18,  0.52,  0   ], parent: 14 },
+      { name: 'lShin',       pos: [-0.20,  0.08,  0   ], parent: 15 },
+      { name: 'lFoot',       pos: [-0.20,  0.02,  0.08], parent: 16 },
+      { name: 'rHip',        pos: [0.16,   0.90,  0   ], parent: 1  },
+      { name: 'rThigh',      pos: [0.18,   0.52,  0   ], parent: 18 },
+      { name: 'rShin',       pos: [0.20,   0.08,  0   ], parent: 19 },
+      { name: 'rFoot',       pos: [0.20,   0.02,  0.08], parent: 20 },
+    ];
+
+    const bones = [];
+    const skeleton = new THREE.Skeleton();
+
+    for (const bd of boneData) {
+      const bone = new THREE.Bone();
+      bone.name = bd.name;
+      bone.position.set(...bd.pos);
+      bones.push(bone);
+      skeleton.bones.push(bone);
+      if (bd.parent >= 0) {
+        bones[bd.parent].add(bone);
+      }
+    }
+
+    // ─── Limb Segments (pairs: [startBoneIdx, endBoneIdx, radius]) ──────────
+    const limbSegs = [
+      // Torso
+      [1,  2,  0.13],  // hip → spine
+      [2,  3,  0.14],  // spine → chest
+      [3,  4,  0.07],  // chest → neck
+      [4,  5,  0.10],  // neck → head
+      // Left arm
+      [3,  6,  0.06],  // chest → lShoulder
+      [6,  7,  0.05],  // lShoulder → lUpperArm
+      [7,  8,  0.04],  // lUpperArm → lForearm
+      [8,  9,  0.035], // lForearm → lHand
+      // Right arm
+      [3,  10, 0.06],  // chest → rShoulder
+      [10, 11, 0.05],  // rShoulder → rUpperArm
+      [11, 12, 0.04],  // rUpperArm → rForearm
+      [12, 13, 0.035], // rForearm → rHand
+      // Left leg
+      [1,  14, 0.07],  // hip → lHip
+      [14, 15, 0.06],  // lHip → lThigh
+      [15, 16, 0.05],  // lThigh → lShin
+      [16, 17, 0.04],  // lShin → lFoot
+      // Right leg
+      [1,  18, 0.07],  // hip → rHip
+      [18, 19, 0.06],  // rHip → rThigh
+      [19, 20, 0.05],  // rThigh → rShin
+      [20, 21, 0.04],  // rShin → rFoot
+    ];
+
+    // ─── Build Skeleton Lines (visual bones) ───────────────────────────────
+    const boneLinePositions = [];
+    const boneLineColors = [];
+
+    const skinColors  = [0x60a5fa, 0x60a5fa, 0x60a5fa]; // light-blue for skin
+    const clothColors = [0xf472b6, 0xf472b6, 0xf472b6]; // pink-ish for shirt
+    const pantsColors = [0x6ee7b7, 0x6ee7b7, 0x6ee7b7]; // green for pants
+
+    function getSegColor(segIdx) {
+      if (segIdx >= 4 && segIdx <= 7)  return clothColors[0]; // left arm
+      if (segIdx >= 8 && segIdx <= 11) return clothColors[0]; // right arm
+      if (segIdx >= 12 && segIdx <= 15) return pantsColors[0]; // left leg
+      if (segIdx >= 16 && segIdx <= 19) return pantsColors[0]; // right leg
+      if (segIdx === 3) return skinColors[0]; // neck / head
+      return clothColors[0];
+    }
+
+    for (let si = 0; si < limbSegs.length; si++) {
+      const [bi, bj] = limbSegs[si];
+      const bp = bones[bi].getWorldPosition(new THREE.Vector3());
+      const bq = bones[bj].getWorldPosition(new THREE.Vector3());
+      const c = new THREE.Color(getSegColor(si));
+      boneLinePositions.push(bp.x, bp.y, bp.z, bq.x, bq.y, bq.z);
+      boneLineColors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    }
+
+    const boneLinesGeo = new THREE.BufferGeometry();
+    boneLinesGeo.setAttribute('position', new THREE.Float32BufferAttribute(boneLinePositions, 3));
+    boneLinesGeo.setAttribute('color',    new THREE.Float32BufferAttribute(boneLineColors, 3));
+
+    const boneLinesMat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2 });
+    const boneLines = new THREE.LineSegments(boneLinesGeo, boneLinesMat);
+    boneLines.visible = true;
+    scene.add(boneLines);
+
+    // ─── Bone Joint Spheres ────────────────────────────────────────────────
+    const jointMeshes = [];
+    const jointGeo = new THREE.SphereGeometry(0.035, 8, 6);
+
+    for (let bi = 0; bi < bones.length; bi++) {
+      const isEnd = [9, 13, 17, 21].includes(bi); // hand/foot tips – smaller
+      const r = isEnd ? 0.028 : 0.04;
+      const mat = new THREE.MeshStandardMaterial({
+        color: bi === 0 ? 0xffffff : 0xaaddff,
+        emissive: bi === 0 ? 0x224466 : 0x112233,
+        roughness: 0.3,
+        metalness: 0.6
+      });
+      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
+      m.castShadow = true;
+      m.userData.boneIndex = bi;
+      jointMeshes.push(m);
+      scene.add(m);
+    }
+
+    // ─── Skinned Mesh (Cylinder limbs) ─────────────────────────────────────
+    function buildSkinnedMesh() {
+      const segs = 8;
+      const posArr = [];
+      const skinIdxArr = [];
+      const skinWgtArr = [];
+      const idxArr = [];
+
+      for (let si = 0; si < limbSegs.length; si++) {
+        const [bi, bj, radius] = limbSegs[si];
+        const bp = bones[bi].position.clone();
+        const bq = bones[bj].position.clone();
+        const dir = bq.clone().sub(bp);
+        const len = dir.length();
+        const mid = bp.clone().add(bq).multiplyScalar(0.5);
+
+        // Build cylinder aligned to Y, then positioned/oriented
+        const cylGeo = new THREE.CylinderGeometry(radius, radius, len, segs, 1, false);
+        const cylPos = cylGeo.attributes.position.array;
+
+        // Rotate cylinder to align with bone direction
+        const up = new THREE.Vector3(0, 1, 0);
+        const quat = new THREE.Quaternion().setFromUnitVectors(up, dir.clone().normalize());
+        const posArrOffset = posArr.length / 3;
+
+        for (let vi = 0; vi < cylPos.length; vi += 3) {
+          const v = new THREE.Vector3(cylPos[vi], cylPos[vi + 1], cylPos[vi + 2]);
+          v.applyQuaternion(quat);
+          v.add(mid);
+          posArr.push(v.x, v.y, v.z);
+          skinIdxArr.push(bi, bj, 0, 0);
+          skinWgtArr.push(0.5, 0.5, 0, 0);
+        }
+
+        const cylIdx = cylGeo.index.array;
+        for (let ii = 0; ii < cylIdx.length; ii += 3) {
+          idxArr.push(cylIdx[ii] + posArrOffset, cylIdx[ii + 1] + posArrOffset, cylIdx[ii + 2] + posArrOffset);
+        }
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position',  new THREE.Float32BufferAttribute(posArr, 3));
+      geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIdxArr, 4));
+      geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(skinWgtArr, 4));
+      geo.setIndex(idxArr);
+      geo.computeVertexNormals();
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x60a5fa,
+        roughness: 0.5,
+        metalness: 0.2,
+        skinning: true,
+        side: THREE.DoubleSide
+      });
+
+      const mesh = new THREE.SkinnedMesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.add(skeleton.bones[0]);
+      mesh.bind(skeleton);
+      return mesh;
+    }
+
+    let skinnedMesh = buildSkinnedMesh();
+    scene.add(skinnedMesh);
+
+    // ─── Head Mesh ─────────────────────────────────────────────────────────
+    const headMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 12, 10),
+      new THREE.MeshStandardMaterial({ color: 0xffd5b5, roughness: 0.6, metalness: 0.0 })
+    );
+    headMesh.castShadow = true;
+    // headMesh is positioned at headBone world pos each frame
+
+    // ─── Hand/Foot meshes ──────────────────────────────────────────────────
+    function makeHand(isLeft) {
+      const g = new THREE.Group();
+      // palm
+      g.add(Object.assign(
+        new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.05),
+          new THREE.MeshStandardMaterial({ color: 0xffd5b5, roughness: 0.7 })),
+        { position: new THREE.Vector3(0, 0, 0) }
+      ));
+      for (let f = 0; f < 4; f++) {
+        const fing = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.012, 0.010, 0.07, 6),
+          new THREE.MeshStandardMaterial({ color: 0xffd5b5, roughness: 0.7 })
+        );
+        fing.position.set(-0.028 + f * 0.02, -0.05, 0);
+        fing.rotation.z = 0.1;
+        g.add(fing);
+      }
+      // thumb
+      const th = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.010, 0.05, 6),
+        new THREE.MeshStandardMaterial({ color: 0xffd5b5, roughness: 0.7 })
+      );
+      th.position.set(isLeft ? 0.04 : -0.04, -0.02, 0.01);
+      th.rotation.z = isLeft ? -0.5 : 0.5;
+      g.add(th);
+      g.traverse(m => m.isMesh && (m.castShadow = true));
+      return g;
+    }
+
+    function makeFoot(isLeft) {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.04, 0.15),
+        new THREE.MeshStandardMaterial({ color: 0x334466, roughness: 0.8 })
+      ));
+      // toe
+      const toe = new THREE.Mesh(
+        new THREE.BoxGeometry(0.07, 0.035, 0.06),
+        new THREE.MeshStandardMaterial({ color: 0x334466, roughness: 0.8 })
+      );
+      toe.position.set(0, -0.005, 0.10);
+      g.add(toe);
+      g.traverse(m => m.isMesh && (m.castShadow = true));
+      return g;
+    }
+
+    const lHandMesh = makeHand(true);
+    const rHandMesh = makeHand(false);
+    const lFootMesh = makeFoot(true);
+    const rFootMesh = makeFoot(false);
+    scene.add(lHandMesh, rHandMesh, lFootMesh, rFootMesh);
+
+    // ─── Bone Interaction (Raycasting) ──────────────────────────────────────
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const dragPlane = new THREE.Plane();
+    const dragOffset = new THREE.Vector3();
+    let dragBone = null;
+    let dragAxis = null; // 'x' | 'y' | 'z'
+    let prevAngle = 0;
+
+    const axisColors = { x: 0xff4444, y: 0x44ff44, z: 0x4488ff };
+    let axisLines = [];
+
+    function createAxisLines() {
+      axisLines.forEach(l => scene.remove(l));
+      axisLines = [];
+      const len = 0.5;
+      const matX = new THREE.LineBasicMaterial({ color: axisColors.x });
+      const matY = new THREE.LineBasicMaterial({ color: axisColors.y });
+      const matZ = new THREE.LineBasicMaterial({ color: axisColors.z });
+      const mkLine = (mat, ex, ey, ez) => {
+        const g = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(ex * len, ey * len, ez * len)
+        ]);
+        return new THREE.Line(g, mat);
+      };
+      axisLines.push(mkLine(matX, 1, 0, 0), mkLine(matY, 0, 1, 0), mkLine(matZ, 0, 0, 1));
+    }
+    createAxisLines();
+
+    function setAxisLinesVisible(v) { axisLines.forEach(l => { l.visible = v; }); }
+
+    function getBoneWorldPos(bi) {
+      return bones[bi].getWorldPosition(new THREE.Vector3());
+    }
+
+    function onMouseDown(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(jointMeshes);
+
+      if (hits.length > 0) {
+        const bi = hits[0].object.userData.boneIndex;
+        if (bi === 0) return; // root bone – skip
+
+        dragBone = bones[bi];
+        controls.enabled = false;
+
+        // Determine dominant axis from camera view
+        const boneWorldPos = getBoneWorldPos(bi);
+        const camDir = camera.getWorldDirection(new THREE.Vector3());
+        const toCam = camDir.clone().negate();
+
+        // Pick axis with highest absolute dot product against camera direction
+        const axes = [
+          { axis: 'x', dir: new THREE.Vector3(1, 0, 0) },
+          { axis: 'y', dir: new THREE.Vector3(0, 1, 0) },
+          { axis: 'z', dir: new THREE.Vector3(0, 0, 1) },
+        ];
+        let best = axes[0];
+        let bestDot = Math.abs(axes[0].dir.clone().transformDirection(dragBone.matrixWorld).dot(toCam));
+        for (const a of axes) {
+          const d = Math.abs(a.dir.clone().transformDirection(dragBone.matrixWorld).dot(toCam));
+          if (d > bestDot) { bestDot = d; best = a; }
+        }
+        dragAxis = best.axis;
+
+        // Build drag plane perpendicular to chosen axis at bone world pos
+        const planeNormal = dragBone.matrixWorld.clone().extractRotation().multiplyVector3(
+          best.dir.clone()
+        ).normalize();
+        dragPlane.setFromNormalAndCoplanarPoint(planeNormal, boneWorldPos);
+
+        // Project intersection onto drag plane to get offset
+        const hitPt = new THREE.Vector3();
+        raycaster.ray.intersectPlane(dragPlane, hitPt);
+        dragOffset.subVectors(boneWorldPos, hitPt);
+
+        // Compute angle for relative rotation
+        prevAngle = Math.atan2(
+          e.clientY - rect.top - rect.height / 2,
+          e.clientX - rect.left - rect.width / 2
+        );
+
+        // Show axis lines
+        setAxisLinesVisible(true);
+        const wp = getBoneWorldPos(bi);
+        axisLines.forEach(l => l.position.copy(wp));
+      }
+    }
+
+    function onMouseMove(e) {
+      if (!dragBone) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const hitPt = new THREE.Vector3();
+      raycaster.ray.intersectPlane(dragPlane, hitPt);
+      hitPt.add(dragOffset);
+
+      // Project hit point onto the bone's axis to find delta angle
+      const boneWorldPos = getBoneWorldPos(bones.indexOf(dragBone));
+      const toHit = hitPt.clone().sub(boneWorldPos);
+      const axVec = dragBone.matrixWorld.clone().extractRotation().multiplyVector3(
+        dragAxis === 'x' ? new THREE.Vector3(1, 0, 0) :
+        dragAxis === 'y' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1)
+      );
+
+      // Relative rotation around axis
+      const currentAngle = Math.atan2(
+        e.clientY - rect.top - rect.height / 2,
+        e.clientX - rect.left - rect.width / 2
+      );
+      const deltaAngle = currentAngle - prevAngle;
+      prevAngle = currentAngle;
+
+      // Apply rotation
+      const euler = new THREE.Euler().setFromQuaternion(dragBone.quaternion, 'XYZ');
+      euler[dragAxis] += deltaAngle;
+      dragBone.quaternion.setFromEuler(euler);
+      dragBone.updateMatrixWorld(true);
+    }
+
+    function onMouseUp() {
+      if (dragBone) {
+        dragBone = null;
+        dragAxis = null;
+        controls.enabled = true;
+        setAxisLinesVisible(false);
+      }
+    }
+
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
+    renderer.domElement.addEventListener('mousemove', onMouseMove);
+    renderer.domElement.addEventListener('mouseup', onMouseUp);
+    renderer.domElement.addEventListener('mouseleave', onMouseUp);
+
+    // ─── GUI ────────────────────────────────────────────────────────────────
+    const params = {
+      animationSpeed: 1.0,
+      boneVisibility: true,
+      showMesh: true,
+      showAxes: false,
+      postProcessing: true,
+    };
+
+    const gui = new GUI({ title: 'Controls' });
+    gui.add(params, 'animationSpeed', 0, 3, 0.01).name('Anim Speed');
+    gui.add(params, 'boneVisibility').onChange(v => {
+      boneLines.visible = v;
+      jointMeshes.forEach(m => { m.visible = v; });
+    }).name('Show Bones');
+    gui.add(params, 'showMesh').onChange(v => {
+      skinnedMesh.visible = v;
+      headMesh.visible = v;
+      lHandMesh.visible = v;
+      rHandMesh.visible = v;
+      lFootMesh.visible = v;
+      rFootMesh.visible = v;
+    }).name('Show Mesh');
+    gui.add(params, 'showAxes').onChange(v => {
+      if (!dragBone) setAxisLinesVisible(v);
+    }).name('Show Axes');
+    gui.add(params, 'postProcessing').onChange(v => {
+      if (v) composer.enabled = true;
+      else   composer.enabled = false;
+    }).name('Bloom FX');
+
+    // ─── Update Bone Lines ─────────────────────────────────────────────────
+    function updateBoneLines() {
+      const pos = boneLinesGeo.attributes.position.array;
+      const col = boneLinesGeo.attributes.color.array;
+
+      for (let si = 0; si < limbSegs.length; si++) {
+        const [bi, bj] = limbSegs[si];
+        const bp = getBoneWorldPos(bi);
+        const bq = getBoneWorldPos(bj);
+        const base = si * 6;
+        pos[base]     = bp.x; pos[base + 1] = bp.y; pos[base + 2] = bp.z;
+        pos[base + 3] = bq.x; pos[base + 4] = bq.y; pos[base + 5] = bq.z;
+      }
+      boneLinesGeo.attributes.position.needsUpdate = true;
+
+      // Axis lines follow selected bone
+      if (dragBone && dragAxis) {
+        const wp = getBoneWorldPos(bones.indexOf(dragBone));
+        axisLines.forEach(l => l.position.copy(wp));
+      }
+    }
+
+    // ─── Animation State ────────────────────────────────────────────────────
+    let walkCycle = 0;
+
+    function proceduralAnimation(dt) {
+      const speed = params.animationSpeed;
+      const t = walkCycle;
+
+      // Breathing (spine + chest expand/contract)
+      const breath = Math.sin(t * 1.5) * 0.03;
+      bones[2].scale.y = 1 + breath;        // spine
+      bones[3].scale.set(1 + breath * 0.5, 1 + breath, 1 + breath * 0.5); // chest
+
+      // Head bob & sway
+      bones[5].rotation.z = Math.sin(t * 1.5) * 0.03;
+      bones[5].rotation.x = Math.sin(t * 0.8) * 0.04;
+
+      // Arm swing (opposite phases)
+      const armSwing = Math.sin(t) * 0.35;
+      bones[7].rotation.x =  armSwing;  // left upper arm
+      bones[8].rotation.x =  Math.max(0,  armSwing) * 0.6 + 0.1; // left forearm slight bend
+      bones[11].rotation.x = -armSwing; // right upper arm
+      bones[12].rotation.x =  Math.max(0, -armSwing) * 0.6 + 0.1; // right forearm
+
+      // Elbow bend compensation
+      bones[8].rotation.z  =  Math.sin(t + 0.5) * 0.08;
+      bones[12].rotation.z = -Math.sin(t + 0.5) * 0.08;
+
+      // Leg swing (opposite phases)
+      const legSwing = Math.sin(t) * 0.4;
+      const kneeBend = Math.max(0, Math.sin(t + Math.PI * 0.5)) * 0.5; // bent when behind
+      const kneeBend2 = Math.max(0, Math.sin(t - Math.PI * 0.5)) * 0.5;
+
+      bones[15].rotation.x = -legSwing;   // left thigh
+      bones[16].rotation.x =  kneeBend;   // left shin (knee bends backward)
+      bones[19].rotation.x =  legSwing;   // right thigh
+      bones[20].rotation.x =  kneeBend2;  // right shin
+
+      // Hip tilt
+      bones[1].rotation.z = Math.sin(t) * 0.06;
+
+      // Foot – keep roughly horizontal
+      const footPhase = t + Math.PI * 0.5;
+      bones[17].rotation.x = Math.sin(footPhase) * 0.15;
+      bones[21].rotation.x = Math.sin(t) * 0.15;
+
+      walkCycle += dt * speed * 2.2;
+    }
+
+    // ─── Update Meshes ─────────────────────────────────────────────────────
+    function updateMeshes() {
+      // Update skinned mesh
+      if (skinnedMesh.visible) {
+        skinnedMesh.skeleton.update();
+        skinnedMesh.bind(skinnedMesh.skeleton);
+      }
+
+      // Head mesh
+      if (headMesh.visible) {
+        const hp = getBoneWorldPos(5);
+        headMesh.position.copy(hp);
+        const hq = bones[5].getWorldQuaternion(new THREE.Quaternion());
+        headMesh.quaternion.copy(hq);
+      }
+
+      // Hand/Foot meshes
+      const handFootPairs = [
+        { mesh: lHandMesh, idx: 9 },
+        { mesh: rHandMesh, idx: 13 },
+        { mesh: lFootMesh, idx: 17 },
+        { mesh: rFootMesh, idx: 21 },
+      ];
+      for (const { mesh, idx } of handFootPairs) {
+        if (!mesh.visible) continue;
+        const wp = getBoneWorldPos(idx);
+        mesh.position.copy(wp);
+        mesh.quaternion.copy(bones[idx].getWorldQuaternion(new THREE.Quaternion()));
+      }
+
+      // Joint spheres
+      for (let bi = 0; bi < bones.length; bi++) {
+        jointMeshes[bi].position.copy(getBoneWorldPos(bi));
+      }
+    }
+
+    // ─── Resize ────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ─── Animation Loop ────────────────────────────────────────────────────
+    let lastTime = performance.now();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const now = performance.now();
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      controls.update();
+      proceduralAnimation(dt);
+      updateBoneLines();
+      updateMeshes();
+
+      if (params.postProcessing) {
+        composer.render();
+      } else {
+        renderer.render(scene, camera);
+      }
+    }
+
+    animate();

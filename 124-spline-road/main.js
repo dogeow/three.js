@@ -1,0 +1,464 @@
+import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ─── Simplex Noise ──────────────────────────────────────────────────────────
+    class SimplexNoise {
+      constructor(seed = 0) {
+        this.p = new Uint8Array(512);
+        const perm = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) perm[i] = i;
+        let s = seed;
+        for (let i = 255; i > 0; i--) {
+          s = (s * 16807) % 2147483647;
+          const j = s % (i + 1);
+          [perm[i], perm[j]] = [perm[j], perm[i]];
+        }
+        for (let i = 0; i < 512; i++) this.p[i] = perm[i & 255];
+      }
+
+      _grad(hash, x, y) {
+        const h = hash & 7;
+        const u = h < 4 ? x : y;
+        const v = h < 4 ? y : x;
+        return ((h & 1) ? -u : u) + ((h & 2) ? -2 * v : 2 * v);
+      }
+
+      noise2D(x, y) {
+        const F2 = 0.5 * (Math.sqrt(3) - 1);
+        const G2 = (3 - Math.sqrt(3)) / 6;
+        const s = (x + y) * F2;
+        const i = Math.floor(x + s);
+        const j = Math.floor(y + s);
+        const t = (i + j) * G2;
+        const X0 = i - t, Y0 = j - t;
+        const x0 = x - X0, y0 = y - Y0;
+        const i1 = x0 > y0 ? 1 : 0;
+        const j1 = x0 > y0 ? 0 : 1;
+        const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+        const x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+        const ii = i & 255, jj = j & 255;
+        let n0 = 0, n1 = 0, n2 = 0;
+        let t0 = 0.5 - x0 * x0 - y0 * y0;
+        if (t0 >= 0) { t0 *= t0; n0 = t0 * t0 * this._grad(this.p[ii + this.p[jj]], x0, y0); }
+        let t1 = 0.5 - x1 * x1 - y1 * y1;
+        if (t1 >= 0) { t1 *= t1; n1 = t1 * t1 * this._grad(this.p[ii + i1 + this.p[jj + j1]], x1, y1); }
+        let t2 = 0.5 - x2 * x2 - y2 * y2;
+        if (t2 >= 0) { t2 *= t2; n2 = t2 * t2 * this._grad(this.p[ii + 1 + this.p[jj + 1]], x2, y2); }
+        return 70 * (n0 + n1 + n2);
+      }
+
+      fbm(x, y, octaves = 4, lacunarity = 2, gain = 0.5) {
+        let val = 0, amp = 1, freq = 1, max = 0;
+        for (let o = 0; o < octaves; o++) {
+          val += this.noise2D(x * freq, y * freq) * amp;
+          max += amp;
+          amp *= gain;
+          freq *= lacunarity;
+        }
+        return val / max;
+      }
+    }
+
+    const noise = new SimplexNoise(42);
+
+    // ─── Scene Setup ────────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+    scene.fog = new THREE.FogExp2(0x87ceeb, 0.004);
+
+    const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 2000);
+    camera.position.set(0, 20, 60);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    document.body.appendChild(renderer.domElement);
+
+    // ─── Controls ──────────────────────────────────────────────────────────────
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 - 0.05;
+    controls.minDistance = 5;
+    controls.maxDistance = 600;
+
+    // ─── Lights ────────────────────────────────────────────────────────────────
+    const ambientLight = new THREE.AmbientLight(0xffeedd, 0.5);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.8);
+    sunLight.position.set(80, 120, 60);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 600;
+    sunLight.shadow.camera.left = -150;
+    sunLight.shadow.camera.right = 150;
+    sunLight.shadow.camera.top = 150;
+    sunLight.shadow.camera.bottom = -150;
+    sunLight.shadow.bias = -0.001;
+    scene.add(sunLight);
+
+    const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3a5c2e, 0.4);
+    scene.add(hemi);
+
+    // ─── Skybox (simple gradient sky) ─────────────────────────────────────────
+    {
+      const skyGeo = new THREE.SphereGeometry(900, 32, 16);
+      const skyMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: {
+          topColor: { value: new THREE.Color(0x1a6ab5) },
+          bottomColor: { value: new THREE.Color(0xb0d8f0) },
+          offset: { value: 20 },
+          exponent: { value: 0.5 }
+        },
+        vertexShader: `
+          varying vec3 vWorldPosition;
+          void main() {
+            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPos.xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 topColor;
+          uniform vec3 bottomColor;
+          uniform float offset;
+          uniform float exponent;
+          varying vec3 vWorldPosition;
+          void main() {
+            float h = normalize(vWorldPosition + offset).y;
+            gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+          }
+        `
+      });
+      scene.add(new THREE.Mesh(skyGeo, skyMat));
+    }
+
+    // ─── Terrain ───────────────────────────────────────────────────────────────
+    const terrainGeo = new THREE.PlaneGeometry(600, 600, 180, 180);
+    terrainGeo.rotateX(-Math.PI / 2);
+
+    const posArr = terrainGeo.attributes.position;
+    for (let i = 0; i < posArr.count; i++) {
+      const x = posArr.getX(i);
+      const z = posArr.getZ(i);
+      const h = noise.fbm(x * 0.012, z * 0.012, 5, 2.1, 0.48) * 28 + noise.fbm(x * 0.04, z * 0.04, 2) * 6;
+      posArr.setY(i, h);
+    }
+    terrainGeo.computeVertexNormals();
+
+    const terrainMat = new THREE.MeshStandardMaterial({
+      color: 0x4a7c3f,
+      roughness: 0.9,
+      metalness: 0.0,
+      flatShading: false,
+    });
+
+    const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
+    terrainMesh.receiveShadow = true;
+    scene.add(terrainMesh);
+
+    // ─── Spline Road ───────────────────────────────────────────────────────────
+    const roadWidth = 10;
+    const laneCount = 3;
+    const laneWidth = roadWidth / laneCount;
+
+    const roadPoints = [
+      new THREE.Vector3(-200, 0, 80),
+      new THREE.Vector3(-120, 0, 40),
+      new THREE.Vector3(-60, 0, 20),
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(60, 0, -30),
+      new THREE.Vector3(120, 0, -20),
+      new THREE.Vector3(180, 0, 40),
+      new THREE.Vector3(200, 0, 100),
+    ];
+
+    // Raise road above terrain noise
+    for (let i = 0; i < roadPoints.length; i++) {
+      const rp = roadPoints[i];
+      const h = noise.fbm(rp.x * 0.012, rp.z * 0.012, 5, 2.1, 0.48) * 28 + noise.fbm(rp.x * 0.04, rp.z * 0.04, 2) * 6;
+      rp.y = h + 0.5;
+    }
+
+    const curve = new THREE.CatmullRomCurve3(roadPoints, false, 'catmullrom', 0.5);
+    const roadSegments = 300;
+    const roadCurvePoints = curve.getSpacedPoints(roadSegments);
+
+    // Build road ribbon geometry
+    function buildRoadGeometry(curve, width, segments) {
+      const verts = [];
+      const uvs = [];
+      const indices = [];
+
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const pt = curve.getPoint(t);
+        const tan = curve.getTangent(t).normalize();
+
+        const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+
+        const lx = pt.x - right.x * width * 0.5;
+        const lz = pt.z - right.z * width * 0.5;
+        const rx = pt.x + right.x * width * 0.5;
+        const rz = pt.z + right.z * width * 0.5;
+        const ly = pt.y + 0.05;
+        const ry = pt.y + 0.05;
+
+        verts.push(lx, ly, lz, rx, ry, rz);
+        uvs.push(0, t * 20, 1, t * 20);
+
+        if (i < segments) {
+          const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
+          indices.push(a, b, c, b, d, c);
+        }
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+      return geo;
+    }
+
+    const roadGeo = buildRoadGeometry(curve, roadWidth, roadSegments);
+    const roadMat = new THREE.MeshStandardMaterial({
+      color: 0x2a2a2a,
+      roughness: 0.85,
+      metalness: 0.05,
+    });
+    const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+    roadMesh.receiveShadow = true;
+    roadMesh.castShadow = false;
+    scene.add(roadMesh);
+
+    // Road shoulder / edge lines
+    function addRoadEdgeLine(offset) {
+      const pts = [];
+      for (let i = 0; i <= roadSegments; i++) {
+        const t = i / roadSegments;
+        const pt = curve.getPoint(t);
+        const tan = curve.getTangent(t).normalize();
+        const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+        pts.push(new THREE.Vector3(
+          pt.x + right.x * offset,
+          pt.y + 0.12,
+          pt.z + right.z * offset
+        ));
+      }
+      const edgeGeo = new THREE.BufferGeometry().setFromPoints(pts);
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+      return new THREE.Line(edgeGeo, edgeMat);
+    }
+
+    scene.add(addRoadEdgeLine(-roadWidth * 0.5));
+    scene.add(addRoadEdgeLine(roadWidth * 0.5));
+
+    // Center yellow line
+    {
+      const pts = [];
+      for (let i = 0; i <= roadSegments; i++) {
+        const t = i / roadSegments;
+        const pt = curve.getPoint(t);
+        pts.push(new THREE.Vector3(pt.x, pt.y + 0.12, pt.z));
+      }
+      const cGeo = new THREE.BufferGeometry().setFromPoints(pts);
+      const cMat = new THREE.LineBasicMaterial({ color: 0xffcc00 });
+      scene.add(new THREE.Line(cGeo, cMat));
+    }
+
+    // ─── Lane Markings (dashed white) ─────────────────────────────────────────
+    {
+      const dashLen = 4;
+      const dashGap = 6;
+      const dashWidth = 0.25;
+      const dashHeight = 0.05;
+
+      const laneOffsets = [-roadWidth / 2 + laneWidth * 0.5, roadWidth / 2 - laneWidth * 0.5];
+      const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+      laneOffsets.forEach(offset => {
+        let accum = 0;
+        for (let i = 0; i < roadSegments; i++) {
+          const t0 = i / roadSegments;
+          const t1 = (i + 1) / roadSegments;
+          const pt0 = curve.getPoint(t0);
+          const pt1 = curve.getPoint(t1);
+          const dist = pt0.distanceTo(pt1);
+          accum += dist;
+
+          if (accum >= dashGap * 0.5 && accum < dashGap * 0.5 + dashLen) {
+            const tan = curve.getTangent((t0 + t1) * 0.5).normalize();
+            const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+            const mid = new THREE.Vector3().lerpVectors(pt0, pt1, 0.5);
+            const dashGeo = new THREE.BoxGeometry(dist + 0.1, dashHeight, dashWidth);
+            const dashMesh = new THREE.Mesh(dashGeo, dashMat);
+            dashMesh.position.set(
+              mid.x + right.x * offset,
+              mid.y + 0.12,
+              mid.z + right.z * offset
+            );
+            dashMesh.rotation.y = -Math.atan2(tan.z, tan.x);
+            scene.add(dashMesh);
+          }
+
+          if (accum >= dashGap * 0.5 + dashLen + dashGap) {
+            accum = 0;
+          }
+        }
+      });
+    }
+
+    // ─── Trees ────────────────────────────────────────────────────────────────
+    const trunkCount = 350;
+    const canopyCount = 350;
+
+    const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 4, 6);
+    const canopyGeo = new THREE.ConeGeometry(2.5, 6, 6);
+
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.9 });
+    const canopyMat = new THREE.MeshStandardMaterial({ color: 0x2d6e1e, roughness: 0.8 });
+
+    const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, trunkCount);
+    const canopyMesh = new THREE.InstancedMesh(canopyGeo, canopyMat, canopyCount);
+
+    trunkMesh.castShadow = true;
+    trunkMesh.receiveShadow = true;
+    canopyMesh.castShadow = true;
+    canopyMesh.receiveShadow = true;
+
+    scene.add(trunkMesh);
+    scene.add(canopyMesh);
+
+    const treeMat = new THREE.Matrix4();
+    const canopyMat2 = new THREE.Matrix4();
+    let treeIdx = 0;
+    const rng = { v: 12345, next() { this.v = (this.v * 16807 + 0) % 2147483647; return (this.v - 1) / 2147483646; } };
+
+    for (let i = 0; i < roadSegments; i++) {
+      const t = i / roadSegments;
+      const pt = curve.getPoint(t);
+      const tan = curve.getTangent(t).normalize();
+      const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+
+      const numTrees = rng.next() < 0.3 ? 2 : 1;
+      for (let j = 0; j < numTrees && treeIdx < trunkCount; j++) {
+        const side = rng.next() < 0.5 ? -1 : 1;
+        const dist = roadWidth * 0.5 + 5 + rng.next() * 25;
+        const offset = rng.next() * 3;
+        const angle = rng.next() * Math.PI * 2;
+        const tx = pt.x + right.x * side * dist + Math.cos(angle) * offset;
+        const tz = pt.z + right.z * side * dist + Math.sin(angle) * offset;
+
+        const h = noise.fbm(tx * 0.012, tz * 0.012, 5, 2.1, 0.48) * 28 + noise.fbm(tx * 0.04, tz * 0.04, 2) * 6;
+        const scale = 0.7 + rng.next() * 0.8;
+        const trunkH = 3 + rng.next() * 2;
+        const canopyH = 5 + rng.next() * 3;
+
+        treeMat.makeScale(scale, scale, scale);
+        treeMat.setPosition(tx, h + trunkH * scale * 0.5, tz);
+        trunkMesh.setMatrixAt(treeIdx, treeMat);
+
+        canopyMat2.makeScale(scale, scale, scale);
+        canopyMat2.setPosition(tx, h + trunkH * scale + canopyH * scale * 0.5, tz);
+        canopyMesh.setMatrixAt(treeIdx, canopyMat2);
+
+        treeIdx++;
+      }
+    }
+
+    // Fill remaining slots off-screen
+    for (let i = treeIdx; i < trunkCount; i++) {
+      treeMat.makeScale(0.001, 0.001, 0.001);
+      treeMat.setPosition(9999, -100, 9999);
+      trunkMesh.setMatrixAt(i, treeMat);
+      canopyMesh.setMatrixAt(i, treeMat);
+    }
+
+    trunkMesh.instanceMatrix.needsUpdate = true;
+    canopyMesh.instanceMatrix.needsUpdate = true;
+
+    // ─── State ────────────────────────────────────────────────────────────────
+    let followCam = true;
+    let speed = 1.0;
+    let t = 0;
+
+    const camPos = new THREE.Vector3();
+    const lookTarget = new THREE.Vector3();
+    const upVec = new THREE.Vector3(0, 1, 0);
+
+    // ─── UI ───────────────────────────────────────────────────────────────────
+    const speedSlider = document.getElementById('speedSlider');
+    const speedVal = document.getElementById('speedVal');
+    const toggleBtn = document.getElementById('toggleBtn');
+
+    speedSlider.addEventListener('input', () => {
+      speed = parseFloat(speedSlider.value);
+      speedVal.textContent = speed.toFixed(1);
+    });
+
+    toggleBtn.addEventListener('click', () => {
+      followCam = !followCam;
+      toggleBtn.textContent = followCam ? 'Follow Cam ON' : 'Follow Cam OFF';
+      toggleBtn.classList.toggle('active', followCam);
+    });
+
+    // ─── Window Attachments ───────────────────────────────────────────────────
+    window.scene = scene;
+    window.camera = camera;
+    window.renderer = renderer;
+    window.controls = controls;
+    window.roadMesh = roadMesh;
+    window.terrainMesh = terrainMesh;
+    window.treeMesh = trunkMesh;
+
+    // ─── Animation Loop ───────────────────────────────────────────────────────
+    const _tmpQuat = new THREE.Quaternion();
+    const _tmpFwd = new THREE.Vector3();
+    const _tmpRight = new THREE.Vector3();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const baseSpeed = 0.00025;
+      t = (t + baseSpeed * speed) % 1;
+
+      if (followCam) {
+        const pt = curve.getPoint(t);
+        const tan = curve.getTangent(t).normalize();
+
+        // Camera sits above and behind current point
+        _tmpFwd.copy(tan).multiplyScalar(-12);
+        _tmpRight.set(-tan.z, 0, tan.x).normalize().multiplyScalar(0);
+        camPos.copy(pt).addScaledVector(tan, -12).add(new THREE.Vector3(0, 6, 0));
+        camera.position.copy(camPos);
+
+        // Look slightly ahead
+        const lookPt = curve.getPoint((t + 0.015) % 1);
+        lookTarget.copy(lookPt).add(new THREE.Vector3(0, 2, 0));
+        camera.lookAt(lookTarget);
+
+        controls.target.copy(lookTarget);
+        controls.update();
+      } else {
+        controls.update();
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ─── Resize ───────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });

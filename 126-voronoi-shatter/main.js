@@ -1,0 +1,443 @@
+import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
+
+    // --- Voronoi helper ---
+    function generateVoronoiCellPoints(centroid, seedPoints, radius) {
+      const points = [];
+      // Add centroid
+      points.push(centroid.clone());
+
+      // Find nearest seed points (cells that share a boundary with this cell)
+      const distances = seedPoints.map((sp, i) => ({
+        idx: i,
+        dist: sp.distanceTo(centroid)
+      }));
+      distances.sort((a, b) => a.dist - b.dist);
+
+      // Take the centroid cell's own seed and its nearest neighbors
+      const neighborCount = Math.min(6, seedPoints.length);
+      const relevantSeeds = distances.slice(0, neighborCount).map(d => seedPoints[d.idx]);
+
+      // Add the relevant seed points
+      relevantSeeds.forEach(sp => points.push(sp.clone()));
+
+      // Add random jittered points on the surface of a sphere around centroid
+      const jitterCount = 8;
+      for (let i = 0; i < jitterCount; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = radius * (0.7 + Math.random() * 0.5);
+        const p = new THREE.Vector3(
+          r * Math.sin(phi) * Math.cos(theta),
+          r * Math.sin(phi) * Math.sin(theta),
+          r * Math.cos(phi)
+        );
+        p.add(centroid);
+        points.push(p);
+      }
+
+      return points;
+    }
+
+    // --- Scene setup ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0f);
+    scene.fog = new THREE.Fog(0x0a0a0f, 25, 60);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 4, 14);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 5;
+    controls.maxDistance = 40;
+    controls.target.set(0, 1.5, 0);
+
+    // --- Lighting ---
+    const ambientLight = new THREE.AmbientLight(0x1a1a2e, 2.5);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 3.5);
+    dirLight.position.set(8, 16, 8);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 60;
+    dirLight.shadow.camera.left = -15;
+    dirLight.shadow.camera.right = 15;
+    dirLight.shadow.camera.top = 15;
+    dirLight.shadow.camera.bottom = -15;
+    dirLight.shadow.bias = -0.0005;
+    scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0x4466ff, 1.2);
+    fillLight.position.set(-6, 8, -4);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.PointLight(0xff4466, 2, 20);
+    rimLight.position.set(-4, 3, -6);
+    scene.add(rimLight);
+
+    // --- Ground ---
+    const groundGeo = new THREE.PlaneGeometry(60, 60);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x0d0d18,
+      roughness: 0.92,
+      metalness: 0.08
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // --- Grid ---
+    const gridHelper = new THREE.GridHelper(60, 40, 0x1a1a3e, 0x0d0d22);
+    gridHelper.position.y = -1.99;
+    scene.add(gridHelper);
+
+    // --- Object definition ---
+    const OBJECT_CENTER = new THREE.Vector3(0, 2, 0);
+    const NUM_SEEDS = 28;
+    const SHATTER_DURATION = 2.5;
+    const REASSEMBLE_DURATION = 1.2;
+    const CELL_RADIUS = 0.7;
+
+    let sourceGeo = null;
+    let pieces = [];
+    let originalPositions = [];
+    let state = 'solid'; // 'solid' | 'shattered' | 'reassembling'
+    let stateTimer = 0;
+
+    // --- Create Voronoi pieces from source geometry ---
+    function createPieces() {
+      // Remove old pieces
+      pieces.forEach(p => {
+        scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        p.mesh.material.dispose();
+      });
+      pieces = [];
+      originalPositions = [];
+
+      // Use a sphere geometry as source
+      const sphereGeo = new THREE.SphereGeometry(2.2, 32, 24);
+      const positions = sphereGeo.attributes.position;
+      const vertexCount = positions.count;
+      const vertices = [];
+      for (let i = 0; i < vertexCount; i++) {
+        vertices.push(new THREE.Vector3(
+          positions.getX(i),
+          positions.getY(i),
+          positions.getZ(i)
+        ));
+      }
+
+      // Generate random seed points on/in the sphere
+      const seedPoints = [];
+      for (let i = 0; i < NUM_SEEDS; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = Math.pow(Math.random(), 1/3) * 2.2;
+        seedPoints.push(new THREE.Vector3(
+          r * Math.sin(phi) * Math.cos(theta),
+          r * Math.sin(phi) * Math.sin(theta),
+          r * Math.cos(phi)
+        ));
+      }
+
+      // Assign each vertex to nearest seed (Voronoi partition)
+      const assignments = new Array(NUM_SEEDS).fill(null).map(() => []);
+      const tempVec = new THREE.Vector3();
+      for (let vi = 0; vi < vertexCount; vi++) {
+        tempVec.set(
+          positions.getX(vi),
+          positions.getY(vi),
+          positions.getZ(vi)
+        );
+        let minDist = Infinity;
+        let nearest = 0;
+        for (let si = 0; si < NUM_SEEDS; si++) {
+          const d = tempVec.distanceToSquared(seedPoints[si]);
+          if (d < minDist) {
+            minDist = d;
+            nearest = si;
+          }
+        }
+        assignments[nearest].push(tempVec.clone());
+      }
+
+      // Build ConvexGeometry for each cell
+      for (let si = 0; si < NUM_SEEDS; si++) {
+        const cellVerts = assignments[si];
+        if (cellVerts.length < 4) continue;
+
+        // Add extra points around centroid for volume
+        const centroid = new THREE.Vector3();
+        cellVerts.forEach(v => centroid.add(v));
+        centroid.divideScalar(cellVerts.length);
+
+        const extraPoints = generateVoronoiCellPoints(centroid, seedPoints, CELL_RADIUS);
+        const allPoints = [...cellVerts, ...extraPoints];
+
+        // Ensure we have enough points for ConvexGeometry
+        if (allPoints.length < 4) continue;
+
+        let geo;
+        try {
+          geo = new ConvexGeometry(allPoints);
+        } catch (e) {
+          // Fallback: use simplified convex hull
+          const pts = allPoints.slice(0, Math.min(allPoints.length, 30));
+          if (pts.length < 4) continue;
+          try { geo = new ConvexGeometry(pts); } catch (e2) { continue; }
+        }
+
+        // Translate geometry to world position
+        geo.translate(OBJECT_CENTER.x, OBJECT_CENTER.y, OBJECT_CENTER.z);
+
+        // Material with emissive edge glow
+        const hue = (si / NUM_SEEDS);
+        const color = new THREE.Color().setHSL(hue * 0.15 + 0.55, 0.7, 0.5);
+        const emissive = new THREE.Color().setHSL(hue * 0.15 + 0.55, 0.9, 0.15);
+
+        const mat = new THREE.MeshStandardMaterial({
+          color: color,
+          emissive: emissive,
+          emissiveIntensity: 0.4,
+          roughness: 0.25,
+          metalness: 0.6,
+          transparent: true,
+          opacity: 1,
+          side: THREE.DoubleSide
+        });
+
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        const origPos = new THREE.Vector3(
+          OBJECT_CENTER.x,
+          OBJECT_CENTER.y,
+          OBJECT_CENTER.z
+        );
+
+        pieces.push({
+          mesh,
+          originalPosition: origPos.clone(),
+          originalQuaternion: new THREE.Quaternion(),
+          velocity: new THREE.Vector3(),
+          angularVelocity: new THREE.Vector3(),
+          state: 'solid'
+        });
+        originalPositions.push(origPos.clone());
+      }
+
+      sphereGeo.dispose();
+    }
+
+    // --- Shatter ---
+    function triggerShatter() {
+      if (state !== 'solid') return;
+      state = 'shattered';
+      stateTimer = 0;
+
+      pieces.forEach(p => {
+        const dir = p.originalPosition.clone().sub(OBJECT_CENTER).normalize();
+        if (dir.length() < 0.01) {
+          dir.set(
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2
+          ).normalize();
+        }
+        const speed = 3 + Math.random() * 5;
+        p.velocity.copy(dir).multiplyScalar(speed);
+        p.velocity.y += 1 + Math.random() * 2;
+
+        p.angularVelocity.set(
+          (Math.random() - 0.5) * 8,
+          (Math.random() - 0.5) * 8,
+          (Math.random() - 0.5) * 8
+        );
+
+        p.mesh.visible = true;
+        p.mesh.material.opacity = 1;
+        p.mesh.material.emissiveIntensity = 0.6;
+      });
+
+      updateStatus('Shattering...');
+    }
+
+    // --- Reassemble ---
+    function triggerReassemble() {
+      if (state !== 'shattered') return;
+      state = 'reassembling';
+      stateTimer = 0;
+
+      pieces.forEach(p => {
+        p.mesh.material.emissiveIntensity = 0.1;
+      });
+
+      updateStatus('Reassembling...');
+    }
+
+    function updateStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
+
+    // --- Animation ---
+    const clock = new THREE.Clock();
+    const dummy = new THREE.Object3D();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      stateTimer += dt;
+
+      controls.update();
+
+      if (state === 'shattered') {
+        let allGone = true;
+        pieces.forEach(p => {
+          // Physics update
+          p.velocity.y -= 9.8 * dt * 0.5;
+          p.mesh.position.addScaledVector(p.velocity, dt);
+
+          // Rotation
+          const euler = new THREE.Euler(
+            p.angularVelocity.x * dt,
+            p.angularVelocity.y * dt,
+            p.angularVelocity.z * dt,
+            'XYZ'
+          );
+          const qDelta = new THREE.Quaternion().setFromEuler(euler);
+          p.mesh.quaternion.premultiply(qDelta);
+
+          // Ground collision
+          if (p.mesh.position.y < -1.5) {
+            p.mesh.position.y = -1.5;
+            p.velocity.y *= -0.2;
+            p.velocity.x *= 0.7;
+            p.velocity.z *= 0.7;
+            p.angularVelocity.multiplyScalar(0.5);
+          }
+
+          // Fade out
+          const progress = stateTimer / SHATTER_DURATION;
+          if (progress > 0.5) {
+            const fadeProgress = (progress - 0.5) / 0.5;
+            p.mesh.material.opacity = 1 - fadeProgress;
+            p.mesh.material.emissiveIntensity = 0.6 * (1 - fadeProgress);
+          }
+
+          if (p.mesh.material.opacity > 0.01) allGone = false;
+        });
+
+        if (stateTimer >= SHATTER_DURATION) {
+          if (allGone) {
+            updateStatus('Press R to reset');
+          } else {
+            pieces.forEach(p => {
+              p.mesh.visible = false;
+            });
+            updateStatus('Press R to reset');
+          }
+        }
+      }
+
+      if (state === 'reassembling') {
+        const t = Math.min(stateTimer / REASSEMBLE_DURATION, 1);
+        const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; // easeInOutCubic
+
+        pieces.forEach((p, i) => {
+          p.mesh.visible = true;
+          p.mesh.position.lerpVectors(
+            p.mesh.position,
+            p.originalPosition,
+            ease * 0.15 + 0.01
+          );
+          p.mesh.quaternion.slerp(p.originalQuaternion, ease * 0.15 + 0.01);
+          p.mesh.material.opacity = ease;
+          p.mesh.material.emissiveIntensity = 0.4 * (1 - ease) + 0.02;
+        });
+
+        if (t >= 1) {
+          pieces.forEach(p => {
+            p.mesh.position.copy(p.originalPosition);
+            p.mesh.quaternion.copy(p.originalQuaternion);
+            p.mesh.material.opacity = 1;
+            p.mesh.material.emissiveIntensity = 0.4;
+            p.velocity.set(0, 0, 0);
+            p.angularVelocity.set(0, 0, 0);
+          });
+          state = 'solid';
+          updateStatus('Click the object to shatter');
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    // --- Input ---
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function onMouseClick(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      if (state === 'solid') {
+        const intersects = raycaster.intersectObjects(pieces.map(p => p.mesh));
+        if (intersects.length > 0) {
+          triggerShatter();
+        }
+      }
+    }
+
+    function onKeyDown(event) {
+      if (event.key === 'r' || event.key === 'R') {
+        if (state === 'shattered' || state === 'solid') {
+          triggerReassemble();
+        }
+      }
+    }
+
+    window.addEventListener('click', onMouseClick);
+    window.addEventListener('keydown', onKeyDown);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- Attach to window ---
+    window.scene = scene;
+    window.camera = camera;
+    window.renderer = renderer;
+    window.controls = controls;
+    window.pieces = pieces;
+    window.originalPositions = originalPositions;
+
+    // --- Expose trigger functions globally ---
+    window.triggerShatter = triggerShatter;
+    window.triggerReassemble = triggerReassemble;
+
+    // --- Init ---
+    createPieces();
+    animate();
+    updateStatus('Click the object to shatter');

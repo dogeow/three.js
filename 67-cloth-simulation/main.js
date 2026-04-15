@@ -1,0 +1,436 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'three/addons/libs/lil-gui.module.min.js';
+
+// --- Config ---
+const GRID_SIZE = 22;
+const CLOTH_WIDTH = 10;
+const CLOTH_HEIGHT = 8;
+const START_Y = 6;
+const DT = 0.016;
+const CONSTRAINT_ITERATIONS = 8;
+
+// --- Scene Setup ---
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.FogExp2(0x1a1a2e, 0.04);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 2, 18);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 1, 0);
+
+// --- Lights ---
+const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xffeedd, 1.4);
+sun.position.set(8, 12, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 1024;
+sun.shadow.mapSize.height = 1024;
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 60;
+sun.shadow.camera.left = -15;
+sun.shadow.camera.right = 15;
+sun.shadow.camera.top = 15;
+sun.shadow.camera.bottom = -15;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0x8899ff, 0.4);
+fill.position.set(-5, 4, -8);
+scene.add(fill);
+
+// --- Ground ---
+const groundGeo = new THREE.PlaneGeometry(40, 40);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x0d0d1a,
+  roughness: 0.9,
+  metalness: 0.1
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// --- Simulation State ---
+let particles = [];
+let constraints = [];
+let clothGeo = null;
+let clothMesh = null;
+let selectedParticle = null;
+
+const params = {
+  gravity: -9.8,
+  wind: 3.0,
+  damping: 0.97,
+  stiffness: 1.0,
+  color: '#e05a5a',
+  reset: resetCloth
+};
+
+function initCloth() {
+  particles = [];
+  constraints = [];
+
+  const stepX = CLOTH_WIDTH / (GRID_SIZE - 1);
+  const stepY = CLOTH_HEIGHT / (GRID_SIZE - 1);
+
+  // Create particles
+  for (let i = 0; i < GRID_SIZE; i++) {
+    for (let j = 0; j < GRID_SIZE; j++) {
+      const x = j * stepX - CLOTH_WIDTH / 2;
+      const y = START_Y - i * stepY;
+      const z = 0;
+      const pinned = i === 0; // pin top row
+      particles.push({
+        x, y, z,
+        px: x, py: y, pz: z,
+        pinned
+      });
+    }
+  }
+
+  // Structural constraints (horizontal & vertical)
+  for (let i = 0; i < GRID_SIZE; i++) {
+    for (let j = 0; j < GRID_SIZE; j++) {
+      // horizontal
+      if (j < GRID_SIZE - 1) {
+        addConstraint(i, j, i, j + 1);
+      }
+      // vertical
+      if (i < GRID_SIZE - 1) {
+        addConstraint(i, j, i + 1, j);
+      }
+    }
+  }
+
+  // Shear constraints (diagonals)
+  for (let i = 0; i < GRID_SIZE - 1; i++) {
+    for (let j = 0; j < GRID_SIZE - 1; j++) {
+      addConstraint(i, j, i + 1, j + 1);
+      addConstraint(i + 1, j, i, j + 1);
+    }
+  }
+
+  // Bend constraints (skip one)
+  for (let i = 0; i < GRID_SIZE; i++) {
+    for (let j = 0; j < GRID_SIZE; j++) {
+      if (j < GRID_SIZE - 2) {
+        addConstraint(i, j, i, j + 2);
+      }
+      if (i < GRID_SIZE - 2) {
+        addConstraint(i, j, i + 2, j);
+      }
+    }
+  }
+
+  buildGeometry();
+}
+
+function addConstraint(i1, j1, i2, j2) {
+  const p1 = particles[i1 * GRID_SIZE + j1];
+  const p2 = particles[i2 * GRID_SIZE + j2];
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const dz = p2.z - p1.z;
+  const rest = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  constraints.push({ i1, j1, i2, j2, rest });
+}
+
+function buildGeometry() {
+  if (clothMesh) {
+    scene.remove(clothMesh);
+    clothGeo.dispose();
+  }
+
+  const rows = GRID_SIZE;
+  const cols = GRID_SIZE;
+  const vertexCount = rows * cols;
+  const positionArray = new Float32Array(vertexCount * 3);
+  const uvArray = new Float32Array(vertexCount * 2);
+  const indexArray = [];
+
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      const idx = i * cols + j;
+      const p = particles[idx];
+      positionArray[idx * 3] = p.x;
+      positionArray[idx * 3 + 1] = p.y;
+      positionArray[idx * 3 + 2] = p.z;
+      uvArray[idx * 2] = j / (cols - 1);
+      uvArray[idx * 2 + 1] = 1 - i / (rows - 1);
+
+      if (i < rows - 1 && j < cols - 1) {
+        const a = idx;
+        const b = (i + 1) * cols + j;
+        const c = (i + 1) * cols + (j + 1);
+        const d = i * cols + (j + 1);
+        indexArray.push(a, b, c, a, c, d);
+      }
+    }
+  }
+
+  clothGeo = new THREE.BufferGeometry();
+  clothGeo.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
+  clothGeo.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
+  clothGeo.setIndex(indexArray);
+
+  const color = new THREE.Color(params.color);
+  const clothMat = new THREE.MeshStandardMaterial({
+    color,
+    side: THREE.DoubleSide,
+    roughness: 0.7,
+    metalness: 0.1,
+    flatShading: false
+  });
+
+  clothMesh = new THREE.Mesh(clothGeo, clothMat);
+  clothMesh.castShadow = true;
+  clothMesh.receiveShadow = true;
+  scene.add(clothMesh);
+}
+
+function resetCloth() {
+  initCloth();
+}
+
+function updateSimulation() {
+  const ax = 0;
+  const ay = params.gravity;
+  const az = params.wind;
+
+  // Verlet integration
+  for (const p of particles) {
+    if (p.pinned) continue;
+    const vx = (p.x - p.px) * params.damping;
+    const vy = (p.y - p.py) * params.damping;
+    const vz = (p.z - p.pz) * params.damping;
+    p.px = p.x;
+    p.py = p.y;
+    p.pz = p.z;
+    p.x += vx + ax * DT * DT;
+    p.y += vy + ay * DT * DT;
+    p.z += vz + az * DT * DT;
+  }
+
+  // Constraint satisfaction
+  for (let iter = 0; iter < CONSTRAINT_ITERATIONS; iter++) {
+    for (const c of constraints) {
+      const p1 = particles[c.i1 * GRID_SIZE + c.j1];
+      const p2 = particles[c.i2 * GRID_SIZE + c.j2];
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const dz = p2.z - p1.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < 0.0001) continue;
+      const diff = ((dist - c.rest) / dist) * params.stiffness;
+      const ox = dx * diff * 0.5;
+      const oy = dy * diff * 0.5;
+      const oz = dz * diff * 0.5;
+      if (!p1.pinned) {
+        p1.x += ox;
+        p1.y += oy;
+        p1.z += oz;
+      }
+      if (!p2.pinned) {
+        p2.x -= ox;
+        p2.y -= oy;
+        p2.z -= oz;
+      }
+    }
+
+    // Re-enforce drag
+    if (selectedParticle && !selectedParticle.pinned) {
+      selectedParticle.px = selectedParticle.x;
+      selectedParticle.py = selectedParticle.y;
+      selectedParticle.pz = selectedParticle.z;
+    }
+  }
+
+  // Floor collision
+  for (const p of particles) {
+    if (p.y < -2) {
+      p.y = -2;
+      p.py = p.y;
+    }
+  }
+
+  // Update geometry
+  if (clothGeo) {
+    const pos = clothGeo.attributes.position.array;
+    for (let i = 0; i < particles.length; i++) {
+      pos[i * 3] = particles[i].x;
+      pos[i * 3 + 1] = particles[i].y;
+      pos[i * 3 + 2] = particles[i].z;
+    }
+    clothGeo.attributes.position.needsUpdate = true;
+    clothGeo.computeVertexNormals();
+  }
+}
+
+// --- Mouse Interaction ---
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const dragPlane = new THREE.Plane();
+const planeIntersect = new THREE.Vector3();
+let isDragging = false;
+
+function getMouseNDC(event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+}
+
+function findClosestParticle(point) {
+  let closest = null;
+  let minDist = Infinity;
+  const threshold = 1.2;
+  for (const p of particles) {
+    if (p.pinned) continue;
+    const dx = p.x - point.x;
+    const dy = p.y - point.y;
+    const dz = p.z - point.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d < minDist) {
+      minDist = d;
+      closest = p;
+    }
+  }
+  return minDist < threshold ? closest : null;
+}
+
+renderer.domElement.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  getMouseNDC(e);
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(clothMesh);
+  if (intersects.length > 0) {
+    controls.enabled = false;
+    isDragging = true;
+    const hit = intersects[0].point;
+    selectedParticle = findClosestParticle(hit);
+    if (selectedParticle) {
+      // Set drag plane perpendicular to camera at hit point
+      const normal = camera.getWorldDirection(new THREE.Vector3()).negate();
+      dragPlane.setFromNormalAndCoplanarPoint(normal, hit);
+    }
+  }
+});
+
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (!isDragging || !selectedParticle) return;
+  getMouseNDC(e);
+  raycaster.setFromCamera(mouse, camera);
+  if (raycaster.ray.intersectPlane(dragPlane, planeIntersect)) {
+    selectedParticle.x = planeIntersect.x;
+    selectedParticle.y = planeIntersect.y;
+    selectedParticle.z = planeIntersect.z;
+  }
+});
+
+renderer.domElement.addEventListener('mouseup', () => {
+  isDragging = false;
+  selectedParticle = null;
+  controls.enabled = true;
+});
+
+// Touch support
+renderer.domElement.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  getMouseNDC(t);
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(clothMesh);
+  if (intersects.length > 0) {
+    controls.enabled = false;
+    isDragging = true;
+    const hit = intersects[0].point;
+    selectedParticle = findClosestParticle(hit);
+    if (selectedParticle) {
+      const normal = camera.getWorldDirection(new THREE.Vector3()).negate();
+      dragPlane.setFromNormalAndCoplanarPoint(normal, hit);
+    }
+  }
+}, { passive: true });
+
+renderer.domElement.addEventListener('touchmove', (e) => {
+  if (!isDragging || !selectedParticle || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  getMouseNDC(t);
+  raycaster.setFromCamera(mouse, camera);
+  if (raycaster.ray.intersectPlane(dragPlane, planeIntersect)) {
+    selectedParticle.x = planeIntersect.x;
+    selectedParticle.y = planeIntersect.y;
+    selectedParticle.z = planeIntersect.z;
+  }
+}, { passive: true });
+
+renderer.domElement.addEventListener('touchend', () => {
+  isDragging = false;
+  selectedParticle = null;
+  controls.enabled = true;
+});
+
+// --- GUI ---
+const gui = new GUI({ title: '布料控制' });
+gui.add(params, 'gravity', -20, 0, 0.1).name('重力 Gravity');
+gui.add(params, 'wind', -10, 15, 0.1).name('风力 Wind');
+gui.add(params, 'damping', 0.9, 1.0, 0.005).name('阻尼 Damping');
+gui.add(params, 'stiffness', 0.1, 1.0, 0.05).name('刚度 Stiffness');
+gui.addColor(params, 'color').name('布料颜色').onChange((v) => {
+  clothMesh.material.color.set(v);
+});
+gui.add(params, 'reset').name('重置 Reset');
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- Init & Loop ---
+initCloth();
+
+// Ambient particles for atmosphere
+const dustCount = 200;
+const dustGeo = new THREE.BufferGeometry();
+const dustPos = new Float32Array(dustCount * 3);
+for (let i = 0; i < dustCount; i++) {
+  dustPos[i * 3] = (Math.random() - 0.5) * 30;
+  dustPos[i * 3 + 1] = (Math.random() - 0.5) * 20;
+  dustPos[i * 3 + 2] = (Math.random() - 0.5) * 20;
+}
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+const dustMat = new THREE.PointsMaterial({ color: 0xaabbff, size: 0.04, transparent: true, opacity: 0.4 });
+const dust = new THREE.Points(dustGeo, dustMat);
+scene.add(dust);
+
+function animate() {
+  requestAnimationFrame(animate);
+  updateSimulation();
+  controls.update();
+
+  // Drift dust
+  const dp = dustGeo.attributes.position.array;
+  for (let i = 0; i < dustCount; i++) {
+    dp[i * 3] += Math.sin(Date.now() * 0.001 + i) * 0.002;
+    dp[i * 3 + 1] += 0.003;
+    if (dp[i * 3 + 1] > 10) dp[i * 3 + 1] = -10;
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+
+  renderer.render(scene, camera);
+}
+animate();

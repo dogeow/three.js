@@ -1,0 +1,592 @@
+import * as THREE from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ─── Attach key objects to window ───────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000005);
+document.body.appendChild(renderer.domElement);
+window.renderer = renderer;
+
+const scene = new THREE.Scene();
+window.scene = scene;
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 8);
+window.camera = camera;
+
+// Post-processing-like bloom simulation via additive blending on a separate pass
+const composerEffect = {
+  renderTargetA: new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.HalfFloatType
+  }),
+  renderTargetB: new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.HalfFloatType
+  })
+};
+window.composerEffect = composerEffect;
+
+const clock = new THREE.Clock();
+window.clock = clock;
+
+// ─── Shaders ─────────────────────────────────────────────────────────────────
+const blobVertexShader = /* glsl */`
+  precision highp float;
+
+  uniform float uTime;
+  uniform float uPhase;
+  uniform float uBlobSize;
+  uniform float uNoiseStrength;
+  uniform float uHoverIntensity;
+
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
+  varying vec3 vWorldPosition;
+  varying float vDisplacement;
+  varying float vNoise;
+
+  // Simplex-like noise
+  vec3 mod289v3(vec3 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+  vec4 mod289v4(vec4 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+  vec4 permute(vec4 x) { return mod289v4(((x*34.0)+1.0)*x); }
+  vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+  float snoise(vec3 v) {
+    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    i = mod289v3(i);
+    vec4 p = permute(permute(permute(
+      i.z + vec4(0.0, i1.z, i2.z, 1.0))
+      + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+      + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    float n_ = 0.142857142857;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0)*2.0 + 1.0;
+    vec4 s1 = floor(b1)*2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+  }
+
+  float fbm(vec3 p) {
+    float val = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+    for (int i = 0; i < 4; i++) {
+      val += amp * snoise(p * freq);
+      freq *= 2.0;
+      amp *= 0.5;
+    }
+    return val;
+  }
+
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+
+    float t = uTime + uPhase;
+
+    // Multi-frequency displacement
+    float disp1 = sin(position.x * 3.0 + t * 0.8) * sin(position.y * 2.5 + t * 0.6) * sin(position.z * 2.8 + t * 0.7);
+    float disp2 = sin(position.y * 4.0 + t * 1.1) * cos(position.x * 3.5 + t * 0.9) * 0.5;
+    float disp3 = fbm(position * 1.5 + vec3(t * 0.15, t * 0.12, t * 0.18)) * uNoiseStrength;
+
+    float hoverBoost = 1.0 + uHoverIntensity * 0.3;
+    float displacement = (disp1 * 0.3 + disp2 * 0.2 + disp3 * 0.5) * uBlobSize * hoverBoost;
+
+    vDisplacement = displacement;
+    vNoise = disp3;
+
+    vec3 displaced = position + normal * displacement;
+
+    vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
+    vViewPosition = -mvPosition.xyz;
+    vWorldPosition = (modelMatrix * vec4(displaced, 1.0)).xyz;
+
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const blobFragmentShader = /* glsl */`
+  precision highp float;
+
+  uniform vec3 uBaseColor;
+  uniform vec3 uRimColor;
+  uniform float uIridescence;
+  uniform float uTime;
+  uniform float uHoverIntensity;
+  uniform float uSpawnProgress;
+  uniform vec3 uLightPos;
+  uniform int uColorScheme;
+  uniform float uSSSIntensity;
+
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
+  varying vec3 vWorldPosition;
+  varying float vDisplacement;
+  varying float vNoise;
+
+  vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+
+  void main() {
+    vec3 normal = normalize(vNormal);
+    vec3 viewDir = normalize(vViewPosition);
+    vec3 lightDir = normalize(uLightPos - vWorldPosition);
+
+    float fresnel = 1.0 - max(dot(normal, viewDir), 0.0);
+    fresnel = pow(fresnel, 2.0);
+
+    // Iridescence based on view angle and displacement
+    float iridAngle = dot(normal, viewDir);
+    float hueShift = iridAngle * uIridescence * 0.4 + vDisplacement * 0.15 + uTime * 0.05;
+    vec3 iridescentColor = hsv2rgb(vec3(fract(hueShift), 0.8, 1.0));
+
+    // Color schemes
+    vec3 schemeColor;
+    if (uColorScheme == 0) {
+      // Rainbow
+      schemeColor = uBaseColor;
+    } else if (uColorScheme == 1) {
+      // Fire: orange -> red -> yellow
+      float heat = dot(normal, viewDir) * 0.5 + 0.5 + vNoise * 0.3;
+      vec3 fireA = vec3(1.0, 0.2, 0.05);
+      vec3 fireB = vec3(1.0, 0.8, 0.1);
+      vec3 fireC = vec3(0.8, 0.05, 0.0);
+      schemeColor = mix(mix(fireC, fireA, heat), fireB, smoothstep(0.5, 1.0, heat));
+    } else if (uColorScheme == 2) {
+      // Ice: cyan -> blue -> white
+      float chill = dot(normal, viewDir) * 0.5 + 0.5;
+      vec3 iceA = vec3(0.0, 0.6, 1.0);
+      vec3 iceB = vec3(0.4, 0.9, 1.0);
+      vec3 iceC = vec3(0.8, 0.95, 1.0);
+      schemeColor = mix(iceA, mix(iceB, iceC, chill), chill);
+    } else {
+      // Alien: green -> purple -> magenta
+      float alien = dot(normal, viewDir) * 0.5 + 0.5 + vNoise * 0.2;
+      vec3 alienA = vec3(0.1, 1.0, 0.3);
+      vec3 alienB = vec3(0.6, 0.0, 1.0);
+      vec3 alienC = vec3(1.0, 0.1, 0.8);
+      schemeColor = mix(mix(alienA, alienB, alien), alienC, smoothstep(0.6, 1.0, alien));
+    }
+
+    // Mix base color with iridescence
+    vec3 color = mix(schemeColor, iridescentColor, uIridescence * fresnel * 0.6);
+
+    // Fresnel rim
+    float rimStrength = 0.8 + uHoverIntensity * 1.5;
+    color += uRimColor * fresnel * fresnel * rimStrength;
+
+    // Subsurface scattering approximation
+    float sss = pow(max(dot(viewDir, -lightDir), 0.0), 2.0) * uSSSIntensity;
+    vec3 sssColor = schemeColor * 2.0 * sss * (1.0 - fresnel);
+    color += sssColor;
+
+    // Internal glow from noise/displacement
+    float innerGlow = smoothstep(-0.3, 0.3, vDisplacement) * 0.4;
+    color += schemeColor * innerGlow;
+
+    // Hover pulse
+    float hoverPulse = sin(uTime * 6.0) * 0.5 + 0.5;
+    color += schemeColor * uHoverIntensity * hoverPulse * 0.5;
+
+    // Spawn fade-in
+    float alpha = smoothstep(0.0, 0.3, uSpawnProgress);
+    alpha = mix(alpha, 1.0, 0.9);
+
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+// ─── Blob Class ───────────────────────────────────────────────────────────────
+class Blob {
+  constructor(params = {}) {
+    this.phase = params.phase ?? Math.random() * Math.PI * 2;
+    this.orbitRadius = params.orbitRadius ?? 1.5 + Math.random() * 1.5;
+    this.orbitSpeed = params.orbitSpeed ?? (0.15 + Math.random() * 0.15) * (Math.random() < 0.5 ? 1 : -1);
+    this.orbitTilt = params.orbitTilt ?? (Math.random() - 0.5) * 0.8;
+    this.orbitPhase = params.orbitPhase ?? Math.random() * Math.PI * 2;
+    this.baseSize = params.baseSize ?? 0.8 + Math.random() * 0.4;
+    this.noiseStrength = params.noiseStrength ?? 0.3 + Math.random() * 0.3;
+    this.colorHue = params.colorHue ?? Math.random();
+    this.hoverIntensity = 0;
+    this.targetHover = 0;
+    this.spawnProgress = 0;
+    this.spawning = params.spawning ?? false;
+    this.dying = false;
+    this.deathProgress = 1;
+    this.mesh = null;
+    this.material = null;
+    this.id = Blob.nextId++;
+    this.isHovered = false;
+  }
+
+  createMaterial(colorHue, colorScheme) {
+    const hue = colorHue ?? this.colorHue;
+    const baseColor = new THREE.Color().setHSL(hue, 0.8, 0.5);
+    const rimColor = new THREE.Color().setHSL((hue + 0.15) % 1.0, 1.0, 0.7);
+
+    const lightPos = new THREE.Vector3(5, 5, 5);
+
+    this.material = new THREE.ShaderMaterial({
+      vertexShader: blobVertexShader,
+      fragmentShader: blobFragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uPhase: { value: this.phase },
+        uBlobSize: { value: this.baseSize },
+        uNoiseStrength: { value: this.noiseStrength },
+        uHoverIntensity: { value: 0 },
+        uSpawnProgress: { value: this.spawnProgress },
+        uBaseColor: { value: baseColor },
+        uRimColor: { value: rimColor },
+        uIridescence: { value: 0.6 },
+        uLightPos: { value: lightPos },
+        uColorScheme: { value: colorScheme },
+        uSSSIntensity: { value: 0.5 }
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+  }
+
+  createMesh() {
+    const geo = new THREE.IcosahedronGeometry(1.2, 5);
+    this.createMaterial();
+    this.mesh = new THREE.Mesh(geo, this.material);
+    this.mesh.userData.blob = this;
+    scene.add(this.mesh);
+  }
+
+  update(time, dt, params) {
+    // Orbit position
+    const t = time * this.orbitSpeed + this.orbitPhase;
+    const x = Math.cos(t) * this.orbitRadius;
+    const y = Math.sin(t * 0.7) * this.orbitRadius * 0.4 + Math.sin(t * 1.3) * this.orbitTilt;
+    const z = Math.sin(t) * this.orbitRadius * 0.6;
+
+    if (this.mesh) {
+      this.mesh.position.set(x, y, z);
+
+      // Hover smoothing
+      this.hoverIntensity += (this.targetHover - this.hoverIntensity) * 0.08;
+
+      // Spawn animation
+      if (this.spawning) {
+        this.spawnProgress += dt * 1.5;
+        if (this.spawnProgress >= 1) {
+          this.spawnProgress = 1;
+          this.spawning = false;
+        }
+        const scale = this.spawnProgress * (1 + (1 - this.spawnProgress) * 0.5);
+        this.mesh.scale.setScalar(scale);
+      }
+
+      // Death animation
+      if (this.dying) {
+        this.deathProgress -= dt * 1.2;
+        if (this.deathProgress <= 0) {
+          this.dying = false;
+          return true; // signal removal
+        }
+        this.mesh.scale.setScalar(this.deathProgress);
+      }
+
+      // Update uniforms
+      const u = this.material.uniforms;
+      u.uTime.value = time;
+      u.uHoverIntensity.value = this.hoverIntensity;
+      u.uSpawnProgress.value = this.spawnProgress;
+      u.uIridescence.value = params.iridescence;
+      u.uColorScheme.value = params.colorScheme;
+    }
+    return false;
+  }
+
+  dispose() {
+    if (this.mesh) {
+      scene.remove(this.mesh);
+      this.mesh.geometry.dispose();
+      this.material.dispose();
+    }
+  }
+}
+Blob.nextId = 0;
+
+// ─── State ───────────────────────────────────────────────────────────────────
+const params = {
+  blobCount: 3,
+  blobSizeMultiplier: 1.0,
+  iridescence: 0.6,
+  colorScheme: 0 // 0=rainbow, 1=fire, 2=ice, 3=alien
+};
+window.params = params;
+
+const colorSchemes = ['Rainbow', 'Fire', 'Ice', 'Alien'];
+
+// ─── Blob Management ─────────────────────────────────────────────────────────
+const blobs = [];
+window.blobs = blobs;
+
+function createBlob(options = {}) {
+  const blob = new Blob({
+    phase: Math.random() * Math.PI * 2,
+    orbitRadius: 1.2 + Math.random() * 2.0,
+    orbitSpeed: 0.12 + Math.random() * 0.18,
+    orbitTilt: (Math.random() - 0.5) * 0.9,
+    orbitPhase: Math.random() * Math.PI * 2,
+    baseSize: (0.7 + Math.random() * 0.5) * params.blobSizeMultiplier,
+    noiseStrength: 0.25 + Math.random() * 0.35,
+    colorHue: Math.random(),
+    spawning: true,
+    ...options
+  });
+  blob.createMesh();
+  blobs.push(blob);
+  return blob;
+}
+
+function removeBlob(blob) {
+  blob.dispose();
+  const idx = blobs.indexOf(blob);
+  if (idx !== -1) blobs.splice(idx, 1);
+}
+
+// Initial blobs
+for (let i = 0; i < params.blobCount; i++) {
+  createBlob();
+}
+
+// ─── Raycaster ────────────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hoveredBlob = null;
+
+window.addEventListener('mousemove', (e) => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+});
+
+window.addEventListener('click', (e) => {
+  if (blobs.length >= 6) return;
+
+  // Convert click to normalized device coords
+  const nx = (e.clientX / window.innerWidth) * 2 - 1;
+  const ny = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
+  const meshArray = blobs.map(b => b.mesh);
+  const intersects = raycaster.intersectObjects(meshArray);
+
+  if (intersects.length > 0) {
+    const hit = intersects[0].point;
+    const blob = createBlob({
+      orbitRadius: 0.5,
+      baseSize: 0.3,
+      phase: Math.random() * Math.PI * 2
+    });
+    if (blob.mesh) {
+      blob.mesh.position.copy(hit);
+      blob.orbitRadius = 0.5;
+    }
+  } else {
+    // Spawn near camera in front
+    const dir = new THREE.Vector3(nx, ny, 0.5).unproject(camera).sub(camera.position).normalize();
+    const spawnPos = camera.position.clone().add(dir.multiplyScalar(5));
+    const blob = createBlob({ orbitRadius: 0.5, baseSize: 0.3 });
+    if (blob.mesh) {
+      blob.mesh.position.copy(spawnPos);
+    }
+  }
+});
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: 'Blob Controls' });
+
+gui.add(params, 'blobCount', 1, 6, 1).name('Blob Count').onChange((v) => {
+  while (blobs.length < v) createBlob();
+  while (blobs.length > v) {
+    const blob = blobs[blobs.length - 1];
+    blob.dying = true;
+    setTimeout(() => removeBlob(blob), 2000);
+    break;
+  }
+});
+
+gui.add(params, 'blobSizeMultiplier', 0.3, 2.0, 0.05).name('Blob Size').onChange((v) => {
+  blobs.forEach(b => {
+    if (b.material) b.material.uniforms.uBlobSize.value = b.baseSize * v;
+  });
+});
+
+gui.add(params, 'iridescence', 0, 1, 0.01).name('Iridescence');
+
+gui.add(params, 'colorScheme', 0, 3, 1, colorSchemes).name('Color Scheme').step(1).onChange((v) => {
+  blobs.forEach(b => {
+    if (b.material) b.material.uniforms.uColorScheme.value = v;
+  });
+});
+
+// ─── Background Particles ─────────────────────────────────────────────────────
+const particleCount = 200;
+const particleGeo = new THREE.BufferGeometry();
+const pPositions = new Float32Array(particleCount * 3);
+const pSizes = new Float32Array(particleCount);
+for (let i = 0; i < particleCount; i++) {
+  pPositions[i * 3] = (Math.random() - 0.5) * 20;
+  pPositions[i * 3 + 1] = (Math.random() - 0.5) * 20;
+  pPositions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+  pSizes[i] = Math.random() * 2 + 0.5;
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+particleGeo.setAttribute('size', new THREE.BufferAttribute(pSizes, 1));
+
+const particleMat = new THREE.ShaderMaterial({
+  vertexShader: /* glsl */`
+    attribute float size;
+    varying float vAlpha;
+    uniform float uTime;
+    void main() {
+      vAlpha = 0.3 + 0.2 * sin(uTime * 0.5 + position.x * 0.1);
+      vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = size * (200.0 / -mvPos.z);
+      gl_Position = projectionMatrix * mvPos;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    varying float vAlpha;
+    uniform float uTime;
+    void main() {
+      float d = distance(gl_PointCoord, vec2(0.5));
+      if (d > 0.5) discard;
+      float alpha = vAlpha * (1.0 - d * 2.0);
+      gl_FragColor = vec4(0.5, 0.6, 1.0, alpha);
+    }
+  `,
+  uniforms: { uTime: { value: 0 } },
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending
+});
+
+const particleMesh = new THREE.Points(particleGeo, particleMat);
+scene.add(particleMesh);
+window.particleMesh = particleMesh;
+
+// ─── Subtle Grid Floor ────────────────────────────────────────────────────────
+const gridHelper = new THREE.GridHelper(30, 30, 0x111133, 0x0a0a22);
+gridHelper.position.y = -5;
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.15;
+scene.add(gridHelper);
+
+// ─── Ambient Light ────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x222244, 0.5);
+scene.add(ambientLight);
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composerEffect.renderTargetA.setSize(window.innerWidth, window.innerHeight);
+  composerEffect.renderTargetB.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Camera Orbit ─────────────────────────────────────────────────────────────
+let cameraAngle = 0;
+const cameraRadius = 8;
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+
+  const time = clock.getElapsedTime();
+  const dt = clock.getDelta() || 0.016;
+
+  // Camera gentle orbit
+  cameraAngle += 0.001;
+  camera.position.x = Math.sin(cameraAngle) * cameraRadius;
+  camera.position.z = Math.cos(cameraAngle) * cameraRadius;
+  camera.position.y = Math.sin(cameraAngle * 0.5) * 2;
+  camera.lookAt(0, 0, 0);
+
+  // Raycasting for hover
+  raycaster.setFromCamera(mouse, camera);
+  const meshArray = blobs.filter(b => b.mesh).map(b => b.mesh);
+  const intersects = raycaster.intersectObjects(meshArray);
+
+  if (intersects.length > 0) {
+    const hitBlob = intersects[0].object.userData.blob;
+    if (hoveredBlob !== hitBlob) {
+      if (hoveredBlob) hoveredBlob.targetHover = 0;
+      hoveredBlob = hitBlob;
+    }
+    if (hoveredBlob) hoveredBlob.targetHover = 1;
+    document.body.style.cursor = 'pointer';
+  } else {
+    if (hoveredBlob) hoveredBlob.targetHover = 0;
+    hoveredBlob = null;
+    document.body.style.cursor = 'default';
+  }
+
+  // Update blobs
+  for (let i = blobs.length - 1; i >= 0; i--) {
+    const shouldRemove = blobs[i].update(time, dt, params);
+    if (shouldRemove) {
+      blobs.splice(i, 1);
+    }
+  }
+
+  // Update particles
+  particleMat.uniforms.uTime.value = time;
+
+  // Update blobs material uniforms for color scheme
+  blobs.forEach(b => {
+    if (b.material && b.material.uniforms.uColorScheme) {
+      b.material.uniforms.uColorScheme.value = params.colorScheme;
+    }
+  });
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener('click', () => {}, { capture: true });

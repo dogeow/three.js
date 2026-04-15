@@ -1,0 +1,110 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x071018)
+scene.fog = new THREE.FogExp2(0x071018, 0.02)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(8, 5.8, 10.5)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.target.set(0, 2.1, 0)
+
+scene.add(new THREE.HemisphereLight(0x8be9fd, 0x071018, 0.9))
+scene.add(new THREE.AmbientLight(0xffffff, 0.2))
+const dir = new THREE.DirectionalLight(0xffffff, 1.6)
+dir.position.set(6, 10, 5)
+scene.add(dir)
+const rim = new THREE.PointLight(0x8be9fd, 18, 20)
+rim.position.set(-4, 4.5, 4)
+scene.add(rim)
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(15, 72),
+  new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.98 })
+)
+floor.rotation.x = -Math.PI / 2
+floor.position.y = -1.6
+scene.add(floor)
+
+const baseRing = new THREE.Mesh(
+  new THREE.TorusGeometry(3.6, 0.12, 20, 120),
+  new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.26 })
+)
+baseRing.rotation.x = Math.PI / 2
+baseRing.position.y = 1.15
+scene.add(baseRing)
+
+const material = new THREE.MeshPhysicalMaterial({
+  color: 0x74c0ff,
+  emissive: 0x2563eb,
+  emissiveIntensity: 0.45,
+  metalness: 0.08,
+  roughness: 0.08,
+  clearcoat: 1,
+  clearcoatRoughness: 0.08
+})
+
+const effect = new MarchingCubes(56, material, true, true, 100000)
+effect.position.y = 2.1
+effect.scale.set(6.4, 6.4, 6.4)
+effect.isolation = 58
+scene.add(effect)
+
+const isoInput = document.querySelector('#iso')
+const isoValue = document.querySelector('#iso-value')
+isoInput.value = String(effect.isolation)
+isoValue.textContent = String(effect.isolation)
+isoInput.addEventListener('input', (event) => {
+  effect.isolation = Number(event.target.value)
+  isoValue.textContent = event.target.value
+})
+
+const blobCount = 6
+const subtract = 10
+const orbitStrength = 1.18 / (((Math.sqrt(blobCount) - 1) / 4) + 1)
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  effect.reset()
+  effect.addBall(
+    0.5,
+    0.5 + Math.sin(t * 1.4) * 0.04,
+    0.5,
+    1.45,
+    subtract
+  )
+
+  for (let i = 0; i < blobCount; i++) {
+    const angle = t * (0.65 + i * 0.06) + i * 1.1
+    const radius = 0.19 + (i % 2) * 0.05
+    const x = 0.5 + Math.cos(angle) * radius
+    const y = 0.5 + Math.sin(t * 1.7 + i * 0.7) * 0.14
+    const z = 0.5 + Math.sin(angle * 1.2) * radius
+    effect.addBall(x, y, z, orbitStrength, subtract)
+  }
+
+  baseRing.rotation.z = t * 0.2
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+})

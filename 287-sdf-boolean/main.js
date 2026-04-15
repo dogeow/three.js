@@ -1,0 +1,388 @@
+import * as THREE from 'three';
+    import { GUI } from 'lil-gui';
+
+    // --- Configuration ---
+    const config = {
+      mode: 'union',
+      smoothK: 0.35,
+      shapeScale: 1.0,
+      camDistance: 4.5,
+      rotationSpeed: 0.4,
+      baseColor: '#c471ed',
+      emissiveColor: '#f3722c',
+      roughness: 0.18,
+      metalness: 0.7,
+      envIntensity: 1.2,
+      normalStrength: 1.0
+    };
+
+    let modeIndex = 0;
+    const modes = ['union', 'subtract', 'intersect'];
+    const modeLabels = { union: 'SMOOTH UNION (smin)', subtract: 'SUBTRACTION', intersect: 'INTERSECTION' };
+
+    // --- Scene Setup ---
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 1;
+
+    // --- SDF Shaders ---
+    const sdfVertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position, 1.0);
+      }
+    `;
+
+    const sdfFragmentShader = `
+      precision highp float;
+
+      varying vec2 vUv;
+
+      uniform vec2 uResolution;
+      uniform float uTime;
+      uniform float uSmoothK;
+      uniform float uShapeScale;
+      uniform float uCamDistance;
+      uniform vec3 uBaseColor;
+      uniform vec3 uEmissiveColor;
+      uniform float uRoughness;
+      uniform float uMetalness;
+      uniform float uEnvIntensity;
+      uniform float uNormalStrength;
+      uniform int uMode; // 0=union, 1=subtract, 2=intersect
+
+      #define MAX_STEPS 128
+      #define MAX_DIST 30.0
+      #define SURF_DIST 0.001
+      #define PI 3.14159265359
+
+      // --- SDF Primitives ---
+      float sdSphere(vec3 p, float r) { return length(p) - r; }
+      float sdBox(vec3 p, vec3 b) {
+        vec3 q = abs(p) - b;
+        return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+      }
+      float sdTorus(vec3 p, vec2 t) {
+        vec2 q = vec2(length(p.xz) - t.x, p.y);
+        return length(q) - t.y;
+      }
+      float sdCappedCylinder(vec3 p, float h, float r) {
+        vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h);
+        return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+      }
+      float sdOctahedron(vec3 p, float s) {
+        p = abs(p);
+        return (p.x + p.y + p.z - s) * 0.57735027;
+      }
+
+      // --- Smooth Minimum (Polynomial) ---
+      float smin(float a, float b, float k) {
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        return mix(b, a, h) - k * h * (1.0 - h);
+      }
+
+      // --- Boolean Operations ---
+      float opUnion(float a, float b) { return smin(a, b, uSmoothK); }
+      float opSubtract(float a, float b) { return max(a, -b); }
+      float opIntersect(float a, float b) { return max(a, b); }
+
+      // --- Scene SDF with 3 complex shapes ---
+      float sceneSDF(vec3 p) {
+        float s = uShapeScale;
+        float t = uTime * 0.4;
+
+        // Shape 1: Twisted torus knot
+        vec3 p1 = p;
+        p1.xz = mat2(cos(t * 0.7), -sin(t * 0.7), sin(t * 0.7), cos(t * 0.7)) * p1.xz;
+        float torusKnot = sdTorus(p1, vec2(0.6 * s, 0.22 * s));
+        float sphere1 = sdSphere(p1, 0.55 * s);
+        float knotWithHole = opSubtract(torusKnot, sphere1);
+
+        // Shape 2: Rounded box with octahedron carved
+        vec3 p2 = p - vec3(1.3 * s, 0.3 * s, 0.0);
+        p2.xz = mat2(cos(t * 0.5), -sin(t * 0.5), sin(t * 0.5), cos(t * 0.5)) * p2.xz;
+        float box = sdBox(p2, vec3(0.38 * s));
+        float octa = sdOctahedron(p2, 0.5 * s);
+        float boxWithOcta = opSubtract(box, octa);
+
+        // Shape 3: Cylinder with sphere subtraction (pipe-like)
+        vec3 p3 = p - vec3(-1.2 * s, -0.25 * s, 0.3 * s);
+        p3.xy = mat2(cos(t * 0.6), -sin(t * 0.6), sin(t * 0.6), cos(t * 0.6)) * p3.xy;
+        float cyl = sdCappedCylinder(p3, 0.5 * s, 0.3 * s);
+        float sphere2 = sdSphere(p3, 0.38 * s);
+        float pipe = opSubtract(cyl, sphere2);
+
+        // Combine all 3 shapes based on mode
+        float d;
+        if (uMode == 0) {
+          // Union: all 3 merged smoothly
+          d = opUnion(opUnion(knotWithHole, boxWithOcta), pipe);
+        } else if (uMode == 1) {
+          // Subtraction: pipe carves box, box carves knot
+          d = opSubtract(opSubtract(knotWithHole, boxWithOcta), pipe);
+        } else {
+          // Intersection: where all 3 overlap
+          d = opIntersect(opIntersect(knotWithHole, boxWithOcta), pipe);
+        }
+
+        return d;
+      }
+
+      // --- Raymarching ---
+      float rayMarch(vec3 ro, vec3 rd) {
+        float d = 0.0;
+        for (int i = 0; i < MAX_STEPS; i++) {
+          vec3 p = ro + rd * d;
+          float ds = sceneSDF(p);
+          d += ds;
+          if (ds < SURF_DIST || d > MAX_DIST) break;
+        }
+        return d;
+      }
+
+      // --- Normal calculation via gradient ---
+      vec3 calcNormal(vec3 p) {
+        float eps = 0.001;
+        vec2 e = vec2(1.0, -1.0) * eps;
+        return normalize(
+          e.xyy * sceneSDF(p + e.xyy) +
+          e.yyx * sceneSDF(p + e.yyx) +
+          e.yxy * sceneSDF(p + e.yxy) +
+          e.xxx * sceneSDF(p + e.xxx)
+        );
+      }
+
+      // --- Soft Shadows ---
+      float softShadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
+        float res = 1.0;
+        float t = mint;
+        for (int i = 0; i < 32; i++) {
+          if (t >= maxt) break;
+          float h = sceneSDF(ro + rd * t);
+          if (h < 0.001) return 0.0;
+          res = min(res, k * h / t);
+          t += clamp(h, 0.02, 0.2);
+        }
+        return clamp(res, 0.0, 1.0);
+      }
+
+      // --- Ambient Occlusion ---
+      float calcAO(vec3 p, vec3 n) {
+        float occ = 0.0;
+        float sca = 1.0;
+        for (int i = 0; i < 5; i++) {
+          float h = 0.01 + 0.12 * float(i);
+          float d = sceneSDF(p + h * n);
+          occ += (h - d) * sca;
+          sca *= 0.95;
+        }
+        return clamp(1.0 - 3.0 * occ, 0.0, 1.0);
+      }
+
+      // --- PBR-like lighting ---
+      vec3 pbrLighting(vec3 p, vec3 n, vec3 rd) {
+        vec3 baseCol = uBaseColor;
+
+        // Key light (warm)
+        vec3 lightPos1 = vec3(3.0, 4.0, 2.0);
+        vec3 lightCol1 = vec3(1.0, 0.95, 0.85) * 3.5;
+
+        // Fill light (cool)
+        vec3 lightPos2 = vec3(-3.0, 1.5, -2.0);
+        vec3 lightCol2 = vec3(0.4, 0.6, 1.0) * 1.8;
+
+        // Rim light
+        vec3 lightPos3 = vec3(0.0, -2.0, 3.0);
+        vec3 lightCol3 = uEmissiveColor * 1.2;
+
+        // Shadows
+        float shadow1 = softShadow(p + n * 0.01, normalize(lightPos1 - p), 0.02, 5.0, 16.0);
+        float shadow2 = softShadow(p + n * 0.01, normalize(lightPos2 - p), 0.02, 5.0, 12.0);
+
+        // AO
+        float ao = calcAO(p, n);
+
+        // Diffuse
+        float diff1 = max(dot(n, normalize(lightPos1 - p)), 0.0);
+        float diff2 = max(dot(n, normalize(lightPos2 - p)), 0.0);
+        float diff3 = max(dot(n, normalize(lightPos3 - p)), 0.0);
+
+        // Specular (GGX-inspired)
+        float rough = uRoughness;
+        vec3 viewDir = -rd;
+        vec3 halfVec1 = normalize(normalize(lightPos1 - p) + viewDir);
+        float spec1 = pow(max(dot(n, halfVec1), 0.0), (1.0 - rough) * 128.0) * (1.0 - rough);
+
+        vec3 halfVec2 = normalize(normalize(lightPos2 - p) + viewDir);
+        float spec2 = pow(max(dot(n, halfVec2), 0.0), (1.0 - rough) * 64.0) * (1.0 - rough * 0.5);
+
+        // Fresnel
+        float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0);
+        float metallicFresnel = mix(fresnel * 0.04, fresnel, uMetalness);
+
+        // Combine
+        vec3 ambient = baseCol * 0.06 * ao;
+        vec3 diffuse = baseCol * (diff1 * shadow1 * lightCol1 + diff2 * shadow2 * lightCol2 + diff3 * lightCol3 * 0.5);
+        vec3 specular = (spec1 * shadow1 * lightCol1 + spec2 * shadow2 * lightCol2) * mix(0.04, 1.0, uMetalness);
+        vec3 rim = metallicFresnel * lightCol3 * 0.4;
+
+        // Environment reflection (fake)
+        vec3 reflDir = reflect(-viewDir, n);
+        float envSky = smoothstep(-0.5, 0.8, reflDir.y);
+        vec3 envColor = mix(vec3(0.02, 0.03, 0.06), vec3(0.15, 0.2, 0.4), envSky);
+        vec3 reflection = envColor * uEnvIntensity * metallicFresnel * (1.0 - rough);
+
+        vec3 color = ambient + diffuse + specular + rim + reflection;
+        return color;
+      }
+
+      // --- Camera ---
+      mat3 setCamera(vec3 ro, vec3 ta, float cr) {
+        vec3 cw = normalize(ta - ro);
+        vec3 cp = vec3(sin(cr), cos(cr), 0.0);
+        vec3 cu = normalize(cross(cw, cp));
+        vec3 cv = cross(cu, cw);
+        return mat3(cu, cv, cw);
+      }
+
+      void main() {
+        vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y;
+
+        float t = uTime;
+        vec3 ro = vec3(
+          uCamDistance * cos(t * 0.4),
+          1.5 + sin(t * 0.3) * 0.5,
+          uCamDistance * sin(t * 0.4)
+        );
+        vec3 ta = vec3(0.0, 0.0, 0.0);
+
+        mat3 ca = setCamera(ro, ta, 0.0);
+        vec3 rd = ca * normalize(vec3(uv, 1.6));
+
+        float d = rayMarch(ro, rd);
+
+        vec3 col = vec3(0.02, 0.03, 0.06); // bg
+        // subtle gradient bg
+        col += vec3(0.03, 0.02, 0.05) * (1.0 - length(uv) * 0.5);
+
+        if (d < MAX_DIST) {
+          vec3 p = ro + rd * d;
+          vec3 n = calcNormal(p);
+          // Perturb normal for micro-details
+          n = normalize(n + vec3(
+            sin(p.x * 12.0 + t) * 0.02 * uNormalStrength,
+            cos(p.y * 14.0 + t * 1.3) * 0.02 * uNormalStrength,
+            sin(p.z * 10.0 + t * 0.7) * 0.02 * uNormalStrength
+          ));
+
+          col = pbrLighting(p, n, rd);
+        }
+
+        // Vignette
+        col *= 1.0 - 0.35 * length(uv);
+
+        // Gamma
+        col = pow(col, vec3(0.4545));
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    // --- Mesh ---
+    const geo = new THREE.PlaneGeometry(2, 2);
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: sdfVertexShader,
+      fragmentShader: sdfFragmentShader,
+      uniforms: {
+        uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+        uTime: { value: 0 },
+        uSmoothK: { value: config.smoothK },
+        uShapeScale: { value: config.shapeScale },
+        uCamDistance: { value: config.camDistance },
+        uBaseColor: { value: new THREE.Color(config.baseColor) },
+        uEmissiveColor: { value: new THREE.Color(config.emissiveColor) },
+        uRoughness: { value: config.roughness },
+        uMetalness: { value: config.metalness },
+        uEnvIntensity: { value: config.envIntensity },
+        uNormalStrength: { value: config.normalStrength },
+        uMode: { value: 0 }
+      }
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+
+    // --- GUI ---
+    const gui = new GUI({ title: 'SDF Boolean Controls' });
+    gui.add(config, 'mode', { 'UNION': 'union', 'SUBTRACT': 'subtract', 'INTERSECT': 'intersect' })
+      .name('Boolean Mode').onChange(v => {
+        modeIndex = modes.indexOf(v);
+        mat.uniforms.uMode.value = modeIndex;
+        document.getElementById('modeLabel').textContent = modeLabels[v.toUpperCase()] || modeLabels[v];
+      });
+    gui.add(config, 'smoothK', 0.0, 1.5, 0.01).name('Smooth Factor (k)').onChange(v => {
+      mat.uniforms.uSmoothK.value = v;
+    });
+    gui.add(config, 'shapeScale', 0.3, 2.0, 0.01).name('Shape Scale').onChange(v => {
+      mat.uniforms.uShapeScale.value = v;
+    });
+    gui.add(config, 'camDistance', 2.0, 10.0, 0.1).name('Camera Distance').onChange(v => {
+      mat.uniforms.uCamDistance.value = v;
+    });
+    gui.addColor(config, 'baseColor').name('Base Color').onChange(v => {
+      mat.uniforms.uBaseColor.value.set(v);
+    });
+    gui.addColor(config, 'emissiveColor').name('Rim Color').onChange(v => {
+      mat.uniforms.uEmissiveColor.value.set(v);
+    });
+    gui.add(config, 'roughness', 0.0, 1.0, 0.01).name('Roughness').onChange(v => {
+      mat.uniforms.uRoughness.value = v;
+    });
+    gui.add(config, 'metalness', 0.0, 1.0, 0.01).name('Metalness').onChange(v => {
+      mat.uniforms.uMetalness.value = v;
+    });
+    gui.add(config, 'envIntensity', 0.0, 3.0, 0.05).name('Env Reflection').onChange(v => {
+      mat.uniforms.uEnvIntensity.value = v;
+    });
+    gui.add(config, 'normalStrength', 0.0, 2.0, 0.05).name('Normal Detail').onChange(v => {
+      mat.uniforms.uNormalStrength.value = v;
+    });
+
+    // --- Interaction ---
+    renderer.domElement.addEventListener('click', () => {
+      modeIndex = (modeIndex + 1) % 3;
+      config.mode = modes[modeIndex];
+      mat.uniforms.uMode.value = modeIndex;
+      const labelEl = document.getElementById('modeLabel');
+      if (labelEl) {
+        const labels = ['SMOOTH UNION (smin)', 'SUBTRACTION', 'INTERSECTION'];
+        labelEl.textContent = labels[modeIndex];
+      }
+      // Update lil-gui to match
+      const controllers = gui.controllersRecursive();
+      controllers.forEach(c => {
+        if (c.property() === 'mode') c.updateDisplay();
+      });
+    });
+
+    // --- Resize ---
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+    });
+
+    // --- Loop ---
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      mat.uniforms.uTime.value = clock.getElapsedTime();
+      renderer.render(scene, camera);
+    }
+    animate();

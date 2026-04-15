@@ -745,6 +745,20 @@ animate()
 
 ## 附录：全部示例索引
 
+- **karplus-strong-string** — [2955](./2955-karplus-strong-string/index.html)
+- **cloth-particle-sim** — [2956](./2956-cloth-particle-sim/index.html)
+- **a-star-pathfinding** — [2957](./2957-a-star-pathfinding/index.html)
+- **3d-boolean-csg-editor** — [2958](./2958-3d-boolean-csg-editor/index.html)
+- **soap-bubble-foam** — [2959](./2959-soap-bubble-foam/index.html)
+- **procedural-terrain-weathering** — [2960](./2960-procedural-terrain-weathering/index.html)
+
+- **dendritic-growth** — [2948](./2948-dendritic-growth/index.html)
+- **multiphase-fluid** — [2949](./2949-multiphase-fluid/index.html)
+- **voronoi-tissue** — [2950](./2950-voronoi-tissue/index.html)
+- **minimal-surfaces** — [2951](./2951-minimal-surfaces/index.html)
+- **traffic-intersection** — [2952](./2952-traffic-intersection/index.html)
+- **procedural-tree-lsystem** — [2954](./2954-procedural-tree-lsystem/index.html)
+
 - **ferrofluid-spikes** — [2942](./2942-ferrofluid-spikes/index.html)
 - **soliton-wave** — [2943](./2943-soliton-wave/index.html)
 - **morphogenesis-sim** — [2944](./2944-morphogenesis-sim/index.html)

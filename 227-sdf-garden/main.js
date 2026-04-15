@@ -1,0 +1,516 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/*
+ * ============================================================
+ * 技术点
+ * ============================================================
+ * SDF (Signed Distance Field / 有符号距离场)
+ *   - 空间中任意一点返回到最近表面的有符号距离
+ *   - 负值 = 内部, 0 = 表面, 正值 = 外部
+ *
+ * Raymarching (光线步进)
+ *   - 从摄像机发出射线, 以 SDF 定义的步长逐步逼近表面
+ *   - 当步长 < epsilon 时认为命中表面
+ *
+ * SDF 基础图元
+ *   - sdSphere, sdBox, sdTorus, sdCapsule
+ *
+ * 布尔运算（光滑）
+ *   - opSmoothUnion:  min(d1, d2) -> exp(-k*d1) + exp(-k*d2) / k
+ *   - opSmoothSubtraction: 光滑地从一个形状中减去另一个
+ *   - opSmoothIntersection: 光滑地取两个形状的交集
+ *
+ * 软阴影
+ *   - shadowMarch(): 从表面点向光源步进, 累计阻挡程度
+ *   - penumbra = k / (k + t), k 越大阴影越硬
+ *
+ * 环境光遮蔽 (AO)
+ *   - marchAlongNormal() 采样法线方向多个点, 累加 SDF 值
+ *   - AO 越小（接近0）= 缝隙深处; 越大越接近1
+ *
+ * 后处理
+ *   - Reinhard 色调映射 + gamma 校正 (2.2)
+ * ============================================================
+ */
+
+// ── Renderer ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// ── Scene & Camera ─────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+// ── Controls ────────────────────────────────────────────────────────────────
+const controls = new OrbitControls(new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100), renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 1.5, 0);
+controls.minDistance = 3;
+controls.maxDistance = 30;
+controls.update();
+
+// ── Raymarching Vertex Shader ─────────────────────────────────────────────
+const vert = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+  }
+`;
+
+// ── Raymarching Fragment Shader ───────────────────────────────────────────
+const frag = /* glsl */`
+precision highp float;
+
+uniform vec2  uResolution;
+uniform float uTime;
+uniform vec3  uCamPos;
+uniform vec3  uCamDir;
+uniform vec3  uCamRight;
+uniform vec3  uCamUp;
+uniform float uFovTan;
+
+varying vec2 vUv;
+
+#define MAX_STEPS  128
+#define MAX_DIST   80.0
+#define EPSILON    0.0008
+#define SHAD_EPS   0.002
+
+// ─── Utility ──────────────────────────────────────────────────────────────
+mat2 rot2(float a) {
+  float c = cos(a), s = sin(a);
+  return mat2(c, -s, s, c);
+}
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
+    f.y);
+}
+
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) {
+    v += a * noise(p);
+    p = p * 2.1 + vec2(1.7, 9.2);
+    a *= 0.5;
+  }
+  return v;
+}
+
+// ─── SDF Primitives ────────────────────────────────────────────────────────
+float sdSphere(vec3 p, float r) {
+  return length(p) - r;
+}
+
+float sdBox(vec3 p, vec3 b) {
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+float sdTorus(vec3 p, vec2 t) {
+  return length(vec2(length(p.xz) - t.x, p.y)) - t.y;
+}
+
+float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
+  vec3 pa = p - a, ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h) - r;
+}
+
+float sdCylinder(vec3 p, float h, float r) {
+  vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h);
+  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
+
+// ─── Boolean Ops ───────────────────────────────────────────────────────────
+float opUnion(float d1, float d2) {
+  return min(d1, d2);
+}
+
+float opSubtract(float d1, float d2) {
+  return max(-d1, d2);
+}
+
+float opIntersect(float d1, float d2) {
+  return max(d1, d2);
+}
+
+// Exponential smooth union (k controls smoothness)
+float opSmoothUnion(float d1, float d2, float k) {
+  float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+  return mix(d2, d1, h) - k * h * (1.0 - h);
+}
+
+float opSmoothSubtraction(float d1, float d2, float k) {
+  float h = clamp(0.5 - 0.5 * (d2 + d1) / k, 0.0, 1.0);
+  return mix(d2, -d1, h) + k * h * (1.0 - h);
+}
+
+float opSmoothIntersection(float d1, float d2, float k) {
+  float h = clamp(0.5 - 0.5 * (d2 - d1) / k, 0.0, 1.0);
+  return mix(d2, d1, h) + k * h * (1.0 - h);
+}
+
+// ─── SDF Components ────────────────────────────────────────────────────────
+
+// SDF Tree: trunk (capsule) + foliage (smooth union of spheres)
+float sdTree(vec3 p) {
+  // Trunk
+  float trunk = sdCapsule(p, vec3(0.0, 0.0, 0.0), vec3(0.0, 1.8, 0.0), 0.12);
+  // Foliage – three layered spheres for a lush crown
+  float f1 = sdSphere(p - vec3(0.0, 1.8, 0.0), 0.85);
+  float f2 = sdSphere(p - vec3(0.5, 1.6, 0.2), 0.65);
+  float f3 = sdSphere(p - vec3(-0.4, 1.9, -0.1), 0.7);
+  float foliage = opSmoothUnion(f1, f2, 0.4);
+  foliage = opSmoothUnion(foliage, f3, 0.4);
+  // Subtract a bit from foliage to give it a carved look
+  foliage = opSmoothSubtraction(sdSphere(p - vec3(0.0, 2.2, 0.0), 0.4), foliage, 0.2);
+  return opSmoothUnion(trunk, foliage, 0.35);
+}
+
+// SDF Rock: squashed sphere + noise displacement
+float sdRock(vec3 p, float s) {
+  p.y *= 1.4;
+  float d = sdSphere(p, s);
+  // Cheap noise displacement on the surface
+  float disp = 0.12 * sin(3.0 * p.x) * sin(3.0 * p.y) * sin(3.0 * p.z);
+  return d + disp;
+}
+
+// SDF Water surface: undulating plane using sin waves
+float sdWater(vec3 p) {
+  float wave = 0.06 * sin(p.x * 2.5 + uTime * 0.8)
+             + 0.04 * sin(p.z * 3.1 + uTime * 1.1)
+             + 0.03 * cos(p.x * 1.8 - p.z * 2.3 + uTime * 0.6);
+  return p.y - wave;
+}
+
+// SDF Ground: plane + gentle fbm height variation
+float sdGround(vec3 p) {
+  float h = 0.18 * fbm(p.xz * 0.5 + 4.0);
+  return p.y - h;
+}
+
+// SDF Stone path: flat discs scattered along a path
+float sdPathStone(vec3 p, vec2 id) {
+  vec2 offset = vec2(hash(id), hash(id + 7.3)) * 1.5 - 0.75;
+  float stone = sdCylinder(p - vec3(offset.x, 0.0, offset.y), 0.04, 0.22);
+  return stone;
+}
+
+// ─── Scene Map ─────────────────────────────────────────────────────────────
+float map(vec3 p) {
+  // Ground
+  float d = sdGround(p);
+
+  // ── Trees ──
+  vec3 p1 = p - vec3(-3.0, 0.0,  2.5);
+  vec3 p2 = p - vec3( 3.5, 0.0,  1.8);
+  vec3 p3 = p - vec3( 0.5, 0.0, -4.0);
+  vec3 p4 = p - vec3(-2.0, 0.0, -3.5);
+  float t1 = sdTree(p1);
+  float t2 = sdTree(p2);
+  float t3 = sdTree(p3);
+  float t4 = sdTree(p4);
+  d = opSmoothUnion(d, t1, 0.3);
+  d = opSmoothUnion(d, t2, 0.3);
+  d = opSmoothUnion(d, t3, 0.3);
+  d = opSmoothUnion(d, t4, 0.3);
+
+  // ── Rocks ──
+  vec3 r1 = p - vec3( 1.5, 0.15,  3.0);
+  vec3 r2 = p - vec3(-1.8, 0.12,  3.8);
+  vec3 r3 = p - vec3( 4.0, 0.2,  -2.0);
+  vec3 r4 = p - vec3(-4.2, 0.1,  -1.5);
+  float rock1 = sdRock(r1, 0.5);
+  float rock2 = sdRock(r2, 0.35);
+  float rock3 = sdRock(r3, 0.6);
+  float rock4 = sdRock(r4, 0.4);
+  d = opSmoothUnion(d, rock1, 0.25);
+  d = opSmoothUnion(d, rock2, 0.2);
+  d = opSmoothUnion(d, rock3, 0.25);
+  d = opSmoothUnion(d, rock4, 0.2);
+
+  // ── Pond ──
+  // Carve a pond depression into the ground, then fill with water
+  float pond = sdSphere(p - vec3(2.0, -0.15, 0.0), 1.8);
+  d = opSmoothSubtraction(pond, d, 0.3);
+  float water = sdWater(p - vec3(2.0, 0.0, 0.0));
+  d = opSmoothUnion(d, water, 0.15);
+
+  // ── Stone path ──
+  for (int i = 0; i < 8; i++) {
+    float fi = float(i);
+    vec2 id = vec2(fi, fi * 1.3 + 0.5);
+    float stone = sdPathStone(p - vec3(-3.0 + fi * 0.6, 0.0, 1.0), id);
+    d = opSmoothUnion(d, stone, 0.1);
+  }
+
+  // ── Small decorative tori near pond ──
+  float torus1 = sdTorus(p - vec3(0.5, 0.25, 0.8), vec2(0.3, 0.06));
+  d = opSmoothUnion(d, torus1, 0.18);
+
+  return d;
+}
+
+// ─── Normal ────────────────────────────────────────────────────────────────
+vec3 getNormal(vec3 p) {
+  const float e = 0.001;
+  return normalize(vec3(
+    map(p + vec3(e, 0, 0)) - map(p - vec3(e, 0, 0)),
+    map(p + vec3(0, e, 0)) - map(p - vec3(0, e, 0)),
+    map(p + vec3(0, 0, e)) - map(p - vec3(0, 0, e))
+  ));
+}
+
+// ─── Ambient Occlusion ─────────────────────────────────────────────────────
+float calcAO(vec3 p, vec3 n) {
+  float occ = 0.0, sca = 1.0;
+  for (int i = 0; i < 5; i++) {
+    float h  = 0.01 + 0.15 * float(i) / 4.0;
+    float d  = map(p + n * h);
+    occ += (h - d) * sca;
+    sca *= 0.75;
+  }
+  return clamp(1.0 - 2.0 * occ, 0.0, 1.0);
+}
+
+// ─── Soft Shadows ──────────────────────────────────────────────────────────
+float softShadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
+  float res = 1.0;
+  float t   = mint;
+  for (int i = 0; i < 32; i++) {
+    float h = map(ro + rd * t);
+    if (h < SHAD_EPS) return 0.0;
+    res = min(res, k * h / t);
+    t += clamp(h, 0.01, 0.3);
+    if (t > maxt) break;
+  }
+  return clamp(res, 0.0, 1.0);
+}
+
+// ─── Material ID ───────────────────────────────────────────────────────────
+// Returns an integer id: 0=ground, 1=tree, 2=rock, 3=water, 4=path
+float getMaterial(vec3 p) {
+  float gnd = sdGround(p);
+  float pond = sdSphere(p - vec3(2.0, -0.15, 0.0), 1.8);
+  float water = sdWater(p - vec3(2.0, 0.0, 0.0));
+  if (water < 0.02) return 3.0;
+  if (pond < 0.02)  return 3.0;
+
+  // Tree test
+  vec3 pts[4];
+  pts[0] = vec3(-3.0, 0.0,  2.5);
+  pts[1] = vec3( 3.5, 0.0,  1.8);
+  pts[2] = vec3( 0.5, 0.0, -4.0);
+  pts[3] = vec3(-2.0, 0.0, -3.5);
+  for (int i = 0; i < 4; i++) {
+    vec3 tp = p - pts[i];
+    float trunk = sdCapsule(tp, vec3(0.0, 0.0, 0.0), vec3(0.0, 1.8, 0.0), 0.13);
+    float f1 = sdSphere(tp - vec3(0.0, 1.8, 0.0), 0.85);
+    if (min(trunk, f1) < 0.02) return 1.0;
+  }
+
+  // Rock test
+  vec3 rp0 = p - vec3( 1.5, 0.15,  3.0);
+  vec3 rp1 = p - vec3(-1.8, 0.12,  3.8);
+  vec3 rp2 = p - vec3( 4.0, 0.2,  -2.0);
+  vec3 rp3 = p - vec3(-4.2, 0.1,  -1.5);
+  if (sdRock(rp0, 0.5) < 0.02) return 2.0;
+  if (sdRock(rp1, 0.35) < 0.02) return 2.0;
+  if (sdRock(rp2, 0.6) < 0.02) return 2.0;
+  if (sdRock(rp3, 0.4) < 0.02) return 2.0;
+
+  // Path
+  for (int i = 0; i < 8; i++) {
+    float fi = float(i);
+    vec2 id = vec2(fi, fi * 1.3 + 0.5);
+    vec2 offset = vec2(hash(id), hash(id + 7.3)) * 1.5 - 0.75;
+    float stone = sdCylinder(p - vec3(-3.0 + fi * 0.6 + offset.x, 0.0, 1.0 + offset.y), 0.04, 0.22);
+    if (stone < 0.02) return 4.0;
+  }
+
+  return 0.0;
+}
+
+// ─── Lighting & Shading ────────────────────────────────────────────────────
+vec3 shade(vec3 ro, vec3 rd, float t) {
+  vec3 p = ro + rd * t;
+  vec3 n = getNormal(p);
+  float mat = getMaterial(p);
+
+  // Sun light
+  vec3 sunDir = normalize(vec3(0.6, 0.8, 0.4));
+  float sunDiff = clamp(dot(n, sunDir), 0.0, 1.0);
+  float shadow   = softShadow(p + n * 0.01, sunDir, 0.02, 12.0, 12.0);
+  float ao       = calcAO(p, n);
+
+  // Sky & ground bounce
+  float skyDiff  = clamp(0.5 + 0.5 * dot(n, vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
+  float bounce   = clamp(0.5 + 0.5 * dot(n, vec3(0.0, -1.0, 0.0)), 0.0, 1.0);
+
+  vec3 col = vec3(0.0);
+
+  if (mat < 0.5) {
+    // Ground – mossy green-brown
+    vec3 gndCol  = vec3(0.22, 0.30, 0.14);
+    vec3 grassCol = vec3(0.18, 0.38, 0.10);
+    float n06 = fbm(p.xz * 1.5);
+    vec3 base = mix(gndCol, grassCol, clamp(n06 * 1.8, 0.0, 1.0));
+    col = base * (sunDiff * shadow * vec3(1.1, 0.95, 0.8) * 1.6
+                 + skyDiff * vec3(0.5, 0.65, 0.85) * 0.5
+                 + bounce * vec3(0.25, 0.3, 0.2) * 0.3);
+    col *= ao;
+  } else if (mat < 1.5) {
+    // Tree
+    float y01 = smoothstep(0.8, 2.2, p.y);
+    vec3 barkCol = vec3(0.35, 0.22, 0.10);
+    vec3 leafCol = mix(vec3(0.15, 0.42, 0.08), vec3(0.28, 0.55, 0.12), noise(p.xz * 2.0));
+    vec3 base = mix(barkCol, leafCol, y01);
+    col = base * (sunDiff * shadow * vec3(1.1, 0.95, 0.8) * 1.5
+                 + skyDiff * vec3(0.5, 0.65, 0.85) * 0.5
+                 + bounce * vec3(0.25, 0.3, 0.2) * 0.3);
+    col *= ao;
+  } else if (mat < 2.5) {
+    // Rock – grey with slight warm tint
+    vec3 rockCol = vec3(0.45, 0.42, 0.38);
+    float rn = noise(p.xz * 3.0 + p.y * 2.0);
+    col = rockCol * (1.0 + 0.15 * rn);
+    col *= (sunDiff * shadow * vec3(1.1, 0.95, 0.85) * 1.4
+           + skyDiff * vec3(0.5, 0.65, 0.85) * 0.4
+           + bounce * vec3(0.2, 0.2, 0.18) * 0.3);
+    col *= ao;
+  } else if (mat < 3.5) {
+    // Water – animated reflections
+    vec3 waterDeep = vec3(0.05, 0.18, 0.28);
+    vec3 waterSurf = vec3(0.12, 0.45, 0.55);
+    float fresnel = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 3.0);
+    vec3 reflCol = vec3(0.55, 0.75, 0.9);
+    vec3 refCol  = mix(waterDeep, waterSurf, fresnel);
+    // Sky reflection
+    refCol = mix(refCol, reflCol, fresnel * 0.5);
+    col = refCol * (sunDiff * 0.6 + 0.4);
+    col += 0.3 * vec3(pow(clamp(dot(reflect(rd, n), sunDir), 0.0, 1.0), 32.0));
+    col *= ao;
+  } else {
+    // Path stone
+    vec3 stoneCol = vec3(0.55, 0.52, 0.48);
+    col = stoneCol * (sunDiff * shadow * vec3(1.1, 1.0, 0.9) * 1.2
+                    + skyDiff * vec3(0.5, 0.6, 0.8) * 0.4
+                    + bounce * vec3(0.2, 0.2, 0.2) * 0.3);
+    col *= ao;
+  }
+
+  // Fog
+  float fog = 1.0 - exp(-t * 0.025);
+  vec3 fogCol = vec3(0.65, 0.72, 0.82);
+  col = mix(col, fogCol, fog);
+
+  return col;
+}
+
+// ─── Raymarcher ────────────────────────────────────────────────────────────
+float raymarch(vec3 ro, vec3 rd) {
+  float t = 0.0;
+  for (int i = 0; i < MAX_STEPS; i++) {
+    float d = map(ro + rd * t);
+    if (d < EPSILON) return t;
+    if (t > MAX_DIST) break;
+    t += max(d * 0.9, EPSILON * 2.0);
+  }
+  return -1.0;
+}
+
+// ─── Camera matrix helper ───────────────────────────────────────────────────
+void buildCamera(in vec2 uv, out vec3 ro, out vec3 rd) {
+  ro = uCamPos;
+  vec3 dir = normalize(uCamDir);
+  vec3 right = normalize(cross(dir, uCamUp));
+  vec3 up = cross(right, dir);
+  rd = normalize(dir + uv.x * uFovTan * right + uv.y * uFovTan * up);
+}
+
+// ─── Main ───────────────────────────────────────────────────────────────────
+void main() {
+  vec2 uv = (vUv * 2.0 - 1.0);
+  uv.x *= uResolution.x / uResolution.y;
+
+  vec3 ro, rd;
+  buildCamera(uv, ro, rd);
+
+  float t = raymarch(ro, rd);
+  vec3 col;
+
+  if (t > 0.0) {
+    col = shade(ro, rd, t);
+  } else {
+    // Sky gradient
+    float y = vUv.y;
+    col = mix(vec3(0.75, 0.85, 1.0), vec3(0.3, 0.5, 0.85), pow(y, 0.6));
+  }
+
+  // Reinhard tone mapping
+  col = col / (col + 1.0);
+  // Gamma 2.2
+  col = pow(col, vec3(1.0 / 2.2));
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// ── Uniforms ────────────────────────────────────────────────────────────────
+const uniforms = {
+  uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+  uTime:       { value: 0.0 },
+  uCamPos:     { value: new THREE.Vector3(6, 4, 8) },
+  uCamDir:     { value: new THREE.Vector3() },
+  uCamRight:   { value: new THREE.Vector3() },
+  uCamUp:      { value: new THREE.Vector3(0, 1, 0) },
+  uFovTan:     { value: Math.tan(THREE.MathUtils.degToRad(60) / 2) },
+};
+
+const mat = new THREE.ShaderMaterial({ vertexShader: vert, fragmentShader: frag, uniforms });
+const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+scene.add(quad);
+
+// ── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+});
+
+// ── Animation Loop ──────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+const perspCam = controls.object;
+
+function animate() {
+  requestAnimationFrame(animate);
+  uniforms.uTime.value = clock.getElapsedTime();
+
+  // Sync orbital camera into shader
+  uniforms.uCamPos.value.copy(perspCam.position);
+  const forward = new THREE.Vector3();
+  perspCam.getWorldDirection(forward);
+  uniforms.uCamDir.value.copy(forward);
+  const right = new THREE.Vector3();
+  right.crossVectors(forward, perspCam.up).normalize();
+  uniforms.uCamRight.value.copy(right);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();

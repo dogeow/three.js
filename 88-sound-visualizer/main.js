@@ -1,0 +1,637 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import GUI from 'three/addons/libs/lil-gui.module.min.js'
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let audioCtx, analyser, dataArray, oscillatorNodes = []
+let started = false
+let currentMode = 'bars'
+let clock = new THREE.Clock()
+
+const params = {
+  audioSource: 'microphone',
+  visualMode: 'bars',
+  colorHue: 0.55,
+  sensitivity: 1.5,
+  smoothing: 0.82,
+  particleCount: 2000,
+  autoRotate: true,
+  beatIntensity: 3.0,
+  bassThreshold: 160
+}
+
+// ─── Scene Setup ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.setClearColor(0x000008)
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.2
+document.body.appendChild(renderer.domElement)
+
+const scene = new THREE.Scene()
+scene.fog = new THREE.FogExp2(0x000008, 0.018)
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000)
+camera.position.set(0, 12, 28)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.05
+controls.autoRotate = params.autoRotate
+controls.autoRotateSpeed = 0.5
+
+// ─── Lighting ─────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x111133, 0.5))
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.3)
+dirLight.position.set(10, 20, 10)
+scene.add(dirLight)
+
+// ─── Environment Particles (background ambience) ───────────────────────────────
+const envParticlesGeo = new THREE.BufferGeometry()
+const envParticlePositions = new Float32Array(1500 * 3)
+for (let i = 0; i < 1500; i++) {
+  envParticlePositions[i * 3] = (Math.random() - 0.5) * 120
+  envParticlePositions[i * 3 + 1] = (Math.random() - 0.5) * 80
+  envParticlePositions[i * 3 + 2] = (Math.random() - 0.5) * 120
+}
+envParticlesGeo.setAttribute('position', new THREE.BufferAttribute(envParticlePositions, 3))
+const envParticlesMat = new THREE.PointsMaterial({ color: 0x334466, size: 0.15, transparent: true, opacity: 0.5 })
+const envParticles = new THREE.Points(envParticlesGeo, envParticlesMat)
+scene.add(envParticles)
+
+// ─── Mode 1: Frequency Bars ──────────────────────────────────────────────────
+const BAR_COUNT = 64
+const barGroup = new THREE.Group()
+scene.add(barGroup)
+const bars = []
+for (let i = 0; i < BAR_COUNT; i++) {
+  const angle = (i / BAR_COUNT) * Math.PI * 2
+  const radius = 8
+  const geo = new THREE.BoxGeometry(0.35, 0.1, 0.35)
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL(params.colorHue + i / BAR_COUNT * 0.3, 0.9, 0.35),
+    emissive: new THREE.Color().setHSL(params.colorHue + i / BAR_COUNT * 0.3, 0.6, 0.1),
+    metalness: 0.3,
+    roughness: 0.4
+  })
+  const bar = new THREE.Mesh(geo, mat)
+  bar.position.set(Math.cos(angle) * radius, 0.05, Math.sin(angle) * radius)
+  bar.rotation.y = angle
+  barGroup.add(bar)
+  bars.push(bar)
+}
+
+// ─── Mode 2: Radial Spectrum ─────────────────────────────────────────────────
+const RADIAL_COUNT = 128
+const radialGroup = new THREE.Group()
+scene.add(radialGroup)
+const radialBars = []
+for (let i = 0; i < RADIAL_COUNT; i++) {
+  const angle = (i / RADIAL_COUNT) * Math.PI * 2
+  const innerR = 3
+  const outerR = 14
+  const geo = new THREE.BoxGeometry(0.18, 0.1, 0.18)
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL((i / RADIAL_COUNT) * 0.5 + params.colorHue, 0.9, 0.4),
+    emissive: new THREE.Color().setHSL((i / RADIAL_COUNT) * 0.5 + params.colorHue, 0.8, 0.05),
+    transparent: true,
+    opacity: 0.85,
+    metalness: 0.5,
+    roughness: 0.3
+  })
+  const bar = new THREE.Mesh(geo, mat)
+  const midR = (innerR + outerR) / 2
+  bar.position.set(Math.cos(angle) * midR, 0.05, Math.sin(angle) * midR)
+  bar.rotation.y = angle
+  radialGroup.add(bar)
+  radialBars.push({ mesh: bar, angle, innerR, outerR })
+}
+
+// Ring decorations
+for (let ring = 0; ring < 3; ring++) {
+  const r = 3 + ring * 3.5
+  const ringGeo = new THREE.TorusGeometry(r, 0.04, 8, 80)
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x223344, transparent: true, opacity: 0.3 })
+  const ringMesh = new THREE.Mesh(ringGeo, ringMat)
+  ringMesh.rotation.x = Math.PI / 2
+  radialGroup.add(ringMesh)
+}
+
+// ─── Mode 3: Waveform Tunnel ─────────────────────────────────────────────────
+const tunnelGeo = new THREE.TorusKnotGeometry(7, 2.5, 200, 24, 2, 3)
+const tunnelOriginal = tunnelGeo.attributes.position.array.slice()
+const tunnelMat = new THREE.MeshStandardMaterial({
+  color: 0x00ccff,
+  emissive: 0x004466,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.6
+})
+const tunnel = new THREE.Mesh(tunnelGeo, tunnelMat)
+const tunnelGroup = new THREE.Group()
+tunnelGroup.add(tunnel)
+scene.add(tunnelGroup)
+
+// Inner glow sphere
+const glowGeo = new THREE.SphereGeometry(1.8, 32, 32)
+const glowMat = new THREE.MeshStandardMaterial({
+  color: 0x0088ff,
+  emissive: 0x0044aa,
+  transparent: true,
+  opacity: 0.15
+})
+const glowSphere = new THREE.Mesh(glowGeo, glowMat)
+tunnelGroup.add(glowSphere)
+
+// ─── Mode 4: Particle Explosion ───────────────────────────────────────────────
+const PARTICLE_COUNT = params.particleCount
+const particlePositions = new Float32Array(PARTICLE_COUNT * 3)
+const particleVelocities = []
+const particleLifetimes = new Float32Array(PARTICLE_COUNT)
+const particleSizes = new Float32Array(PARTICLE_COUNT)
+
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  const phi = Math.acos(2 * Math.random() - 1)
+  const theta = Math.random() * Math.PI * 2
+  const r = 4 + Math.random() * 10
+  particlePositions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
+  particlePositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
+  particlePositions[i * 3 + 2] = r * Math.cos(phi)
+  particleVelocities.push(new THREE.Vector3())
+  particleLifetimes[i] = Math.random()
+  particleSizes[i] = 0.1 + Math.random() * 0.3
+}
+
+const particleGeo = new THREE.BufferGeometry()
+particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3))
+particleGeo.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1))
+
+const particleMat = new THREE.PointsMaterial({
+  color: 0xff6600,
+  size: 0.25,
+  transparent: true,
+  opacity: 0.8,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+})
+const particleSystem = new THREE.Points(particleGeo, particleMat)
+scene.add(particleSystem)
+
+let prevBass = 0
+let bassEnergy = 0
+
+// ─── Mode 5: Geometry Deformation ───────────────────────────────────────────
+const deformGeo = new THREE.IcosahedronGeometry(5, 4)
+const deformOriginal = deformGeo.attributes.position.array.slice()
+const deformMat = new THREE.MeshStandardMaterial({
+  color: 0xff3366,
+  emissive: 0x440022,
+  metalness: 0.7,
+  roughness: 0.2,
+  wireframe: false,
+  side: THREE.DoubleSide
+})
+const deformMesh = new THREE.Mesh(deformGeo, deformMat)
+const deformGroup = new THREE.Group()
+deformGroup.add(deformMesh)
+scene.add(deformGroup)
+
+// Wireframe overlay
+const deformWireMat = new THREE.MeshBasicMaterial({ color: 0xff99aa, wireframe: true, transparent: true, opacity: 0.15 })
+const deformWire = new THREE.Mesh(deformGeo, deformWireMat)
+deformGroup.add(deformWire)
+
+// ─── Floor Grid ──────────────────────────────────────────────────────────────
+const gridHelper = new THREE.GridHelper(40, 40, 0x112233, 0x0a0a1a)
+gridHelper.position.y = -3
+scene.add(gridHelper)
+
+// ─── GUI ──────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: 'Audio Visualizer' })
+gui.domElement.style.position = 'fixed'
+gui.domElement.style.top = '16px'
+gui.domElement.style.right = '16px'
+
+const audioFolder = gui.addFolder('Audio')
+audioFolder.add(params, 'audioSource', ['microphone', 'oscillator', 'beat'])
+  .name('Audio Source').onChange(val => restartAudio(val))
+audioFolder.add(params, 'sensitivity', 0.5, 4.0, 0.1).name('Sensitivity')
+audioFolder.add(params, 'smoothing', 0.5, 0.99, 0.01).name('Smoothing')
+
+const visualFolder = gui.addFolder('Visual')
+visualFolder.add(params, 'visualMode', ['bars', 'radial', 'tunnel', 'particles', 'deform'])
+  .name('Mode').onChange(val => switchMode(val))
+visualFolder.add(params, 'colorHue', 0, 1, 0.01).name('Hue Base')
+visualFolder.add(params, 'autoRotate').name('Auto Rotate')
+visualFolder.add(params, 'particleCount', 500, 5000, 100).name('Particles')
+
+const beatFolder = gui.addFolder('Beat')
+beatFolder.add(params, 'bassThreshold', 100, 220, 5).name('Bass Threshold')
+beatFolder.add(params, 'beatIntensity', 1, 6, 0.1).name('Beat Intensity')
+
+// ─── Audio Setup ─────────────────────────────────────────────────────────────
+async function startAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  analyser = audioCtx.createAnalyser()
+  analyser.fftSize = 256
+  analyser.smoothingTimeConstant = params.smoothing
+  dataArray = new Uint8Array(analyser.frequencyBinCount)
+
+  if (params.audioSource === 'microphone') {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      const source = audioCtx.createMediaStreamSource(stream)
+      source.connect(analyser)
+      document.getElementById('status').textContent = '麦克风已连接'
+      document.getElementById('status').style.color = '#88cc88'
+    } catch (err) {
+      console.warn('Microphone denied, falling back to oscillator:', err)
+      startOscillator()
+    }
+  } else if (params.audioSource === 'oscillator') {
+    startOscillator()
+  } else if (params.audioSource === 'beat') {
+    startBeat()
+  }
+}
+
+function startOscillator() {
+  stopAllOscillators()
+  const types = ['sawtooth', 'square', 'triangle']
+  const freqs = [110, 220, 440, 880, 1760]
+
+  freqs.forEach((freq, idx) => {
+    const osc = audioCtx.createOscillator()
+    const gain = audioCtx.createGain()
+    const lfo = audioCtx.createOscillator()
+    const lfoGain = audioCtx.createGain()
+
+    osc.type = types[idx % types.length]
+    osc.frequency.value = freq
+    gain.gain.value = 0.04 / (idx + 1)
+
+    lfo.frequency.value = 0.2 + idx * 0.1
+    lfoGain.gain.value = gain.gain.value * 0.5
+    lfo.connect(lfoGain)
+    lfoGain.connect(gain.gain)
+
+    osc.connect(gain)
+    gain.connect(analyser)
+    analyser.connect(audioCtx.destination)
+    osc.start()
+    lfo.start()
+    oscillatorNodes.push(osc, lfo)
+  })
+  document.getElementById('status').textContent = '振荡器已启动'
+  document.getElementById('status').style.color = '#ccaa44'
+}
+
+function startBeat() {
+  stopAllOscillators()
+  const bpm = 128
+  const beatInterval = 60 / bpm
+
+  let nextBeatTime = audioCtx.currentTime
+
+  function scheduleBeat() {
+    if (!audioCtx) return
+    while (nextBeatTime < audioCtx.currentTime + 0.2) {
+      // Kick
+      const kickOsc = audioCtx.createOscillator()
+      const kickGain = audioCtx.createGain()
+      kickOsc.frequency.setValueAtTime(150, nextBeatTime)
+      kickOsc.frequency.exponentialRampToValueAtTime(0.01, nextBeatTime + 0.3)
+      kickGain.gain.setValueAtTime(0.8, nextBeatTime)
+      kickGain.gain.exponentialRampToValueAtTime(0.01, nextBeatTime + 0.3)
+      kickOsc.connect(kickGain)
+      kickGain.connect(analyser)
+      kickOsc.start(nextBeatTime)
+      kickOsc.stop(nextBeatTime + 0.3)
+
+      // Snare-ish (noise)
+      const bufferSize = audioCtx.sampleRate * 0.1
+      const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
+      const data = noiseBuffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1
+      const noiseSource = audioCtx.createBufferSource()
+      noiseSource.buffer = noiseBuffer
+      const noiseFilter = audioCtx.createBiquadFilter()
+      noiseFilter.type = 'highpass'
+      noiseFilter.frequency.value = 1000
+      const noiseGain = audioCtx.createGain()
+      noiseGain.gain.setValueAtTime(0.15, nextBeatTime + beatInterval * 0.5)
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, nextBeatTime + beatInterval * 0.5 + 0.1)
+      noiseSource.connect(noiseFilter)
+      noiseFilter.connect(noiseGain)
+      noiseGain.connect(analyser)
+      noiseSource.start(nextBeatTime + beatInterval * 0.5)
+      noiseSource.stop(nextBeatTime + beatInterval * 0.5 + 0.1)
+
+      // Hi-hat
+      const hatOsc = audioCtx.createOscillator()
+      const hatGain = audioCtx.createGain()
+      hatOsc.type = 'square'
+      hatOsc.frequency.value = 8000
+      hatGain.gain.setValueAtTime(0.05, nextBeatTime + beatInterval * 0.25)
+      hatGain.gain.exponentialRampToValueAtTime(0.001, nextBeatTime + beatInterval * 0.25 + 0.05)
+      hatOsc.connect(hatGain)
+      hatGain.connect(analyser)
+      hatOsc.start(nextBeatTime + beatInterval * 0.25)
+      hatOsc.stop(nextBeatTime + beatInterval * 0.25 + 0.05)
+
+      nextBeatTime += beatInterval
+    }
+    setTimeout(scheduleBeat, 50)
+  }
+
+  analyser.connect(audioCtx.destination)
+  scheduleBeat()
+  document.getElementById('status').textContent = '节拍生成器: 128 BPM'
+  document.getElementById('status').style.color = '#cc66aa'
+}
+
+function stopAllOscillators() {
+  oscillatorNodes.forEach(n => { try { n.stop(); n.disconnect() } catch (e) {} })
+  oscillatorNodes = []
+}
+
+function restartAudio(source) {
+  if (!started) return
+  if (audioCtx) {
+    audioCtx.close()
+    audioCtx = null
+  }
+  startAudio()
+}
+
+function switchMode(mode) {
+  currentMode = mode
+  barGroup.visible = false
+  radialGroup.visible = false
+  tunnelGroup.visible = false
+  particleSystem.visible = false
+  deformGroup.visible = false
+
+  if (mode === 'bars') barGroup.visible = true
+  else if (mode === 'radial') radialGroup.visible = true
+  else if (mode === 'tunnel') { tunnelGroup.visible = true; glowSphere.visible = true }
+  else if (mode === 'particles') { particleSystem.visible = true; glowSphere.visible = false }
+  else if (mode === 'deform') { deformGroup.visible = true; glowSphere.visible = false }
+}
+
+// ─── Start Button ─────────────────────────────────────────────────────────────
+document.getElementById('startBtn').addEventListener('click', () => {
+  if (started) return
+  started = true
+  document.getElementById('startBtn').style.display = 'none'
+  startAudio()
+  switchMode(currentMode)
+})
+
+// ─── Update Functions ─────────────────────────────────────────────────────────
+function getAudioData() {
+  if (!analyser || !started) {
+    const t = clock.getElapsedTime()
+    return new Uint8Array(128).map((_, i) =>
+      Math.floor(Math.sin(t * 2 + i * 0.1) * 40 + 60)
+    )
+  }
+  analyser.smoothingTimeConstant = params.smoothing
+  analyser.getByteFrequencyData(dataArray)
+  return dataArray
+}
+
+function updateBars(data) {
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const idx = Math.floor(i * data.length / BAR_COUNT)
+    const value = (data[idx] || 0) * params.sensitivity
+    const height = Math.max(value / 255 * 15, 0.1)
+    bars[i].scale.y = height
+    bars[i].position.y = height / 2
+
+    const hue = (params.colorHue + i / BAR_COUNT * 0.35) % 1
+    const lightness = 0.2 + (value / 255) * 0.6
+    bars[i].material.color.setHSL(hue, 0.85, lightness)
+    bars[i].material.emissive.setHSL(hue, 0.8, value / 255 * 0.3)
+  }
+}
+
+function updateRadial(data) {
+  const bass = data.slice(0, 4).reduce((a, b) => a + b, 0) / 4
+  const scale = 1 + (bass / 255) * 0.3
+
+  for (let i = 0; i < RADIAL_COUNT; i++) {
+    const idx = Math.floor(i * data.length / RADIAL_COUNT)
+    const value = (data[idx] || 0) * params.sensitivity
+    const barHeight = Math.max(value / 255 * 12, 0.05)
+
+    const { mesh, angle, innerR, outerR } = radialBars[i]
+    const midR = innerR + (outerR - innerR) * 0.5 + (value / 255) * 4
+    const r = scale * midR
+    mesh.scale.y = barHeight
+    mesh.position.y = barHeight / 2
+    mesh.position.x = Math.cos(angle) * r
+    mesh.position.z = Math.sin(angle) * r
+
+    const hue = (params.colorHue + i / RADIAL_COUNT * 0.6) % 1
+    const lightness = 0.25 + (value / 255) * 0.55
+    mesh.material.color.setHSL(hue, 0.9, lightness)
+    mesh.material.emissive.setHSL(hue, 0.9, value / 255 * 0.2)
+  }
+
+  radialGroup.rotation.y += 0.002
+}
+
+function updateTunnel(data) {
+  const pos = tunnelGeo.attributes.position
+  const bass = data.slice(0, 6).reduce((a, b) => a + b, 0) / 6
+  const mid = data.slice(6, 32).reduce((a, b) => a + b, 0) / 26
+  const high = data.slice(32, 64).reduce((a, b) => a + b, 0) / 32
+
+  bassEnergy = bass / 255
+
+  for (let i = 0; i < pos.count; i++) {
+    const ox = tunnelOriginal[i * 3]
+    const oy = tunnelOriginal[i * 3 + 1]
+    const oz = tunnelOriginal[i * 3 + 2]
+    const len = Math.sqrt(ox * ox + oy * oy + oz * oz) || 1
+
+    const nx = ox / len, ny = oy / len, nz = oz / len
+    const freqIdx = i % data.length
+    const value = data[freqIdx] / 255 * params.sensitivity
+
+    const bassFactor = bass / 255 * 0.6
+    const midFactor = mid / 255 * 0.3
+    const highFactor = high / 255 * 0.2
+
+    const totalFactor = 1 + bassFactor * 1.5 + midFactor * 0.8 + highFactor * 0.4
+    const wave = Math.sin(i * 0.15 + clock.getElapsedTime() * 2) * value * 0.5
+
+    const newLen = len * totalFactor + wave
+
+    pos.setXYZ(i, ox / len * newLen, oy / len * newLen, oz / len * newLen)
+  }
+  pos.needsUpdate = true
+  tunnelGeo.computeVertexNormals()
+
+  tunnelMat.color.setHSL((params.colorHue + bassEnergy * 0.3) % 1, 0.8, 0.4)
+  tunnelMat.emissive.setHSL(params.colorHue, 0.8, bassEnergy * 0.3)
+
+  glowSphere.scale.setScalar(1 + bassEnergy * params.beatIntensity * 0.5)
+  glowSphere.material.opacity = 0.1 + bassEnergy * 0.25
+
+  tunnelGroup.rotation.x += 0.003
+  tunnelGroup.rotation.y += 0.006
+}
+
+function updateParticles(data) {
+  const bass = data.slice(0, 6).reduce((a, b) => a + b, 0) / 6
+  const mid = data.slice(6, 32).reduce((a, b) => a + b, 0) / 26
+  const high = data.slice(32, 64).reduce((a, b) => a + b, 0) / 32
+
+  // Detect bass hits
+  if (bass > params.bassThreshold && prevBass < params.bassThreshold - 20) {
+    for (let i = 0; i < 30; i++) {
+      const idx = Math.floor(Math.random() * PARTICLE_COUNT)
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(2 * Math.random() - 1)
+      const speed = (bass / 255) * params.beatIntensity * 0.5
+      particleVelocities[idx].set(
+        Math.sin(phi) * Math.cos(theta) * speed,
+        Math.sin(phi) * Math.sin(theta) * speed,
+        Math.cos(phi) * speed
+      )
+      particleLifetimes[idx] = 1.0
+    }
+  }
+  prevBass = bass
+
+  const positions = particleGeo.attributes.position.array
+  const colors = new Float32Array(PARTICLE_COUNT * 3)
+  const sizes = particleGeo.attributes.size.array
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    // Drift outward + audio response
+    const v = particleVelocities[i]
+    positions[i * 3] += v.x * 0.1 + (mid / 255) * 0.05 * Math.sin(i + clock.getElapsedTime())
+    positions[i * 3 + 1] += v.y * 0.1 + (mid / 255) * 0.05 * Math.cos(i + clock.getElapsedTime() * 0.7)
+    positions[i * 3 + 2] += v.z * 0.1 + (high / 255) * 0.05 * Math.sin(i * 0.5 + clock.getElapsedTime() * 1.3)
+
+    // Damping
+    v.multiplyScalar(0.96)
+    particleLifetimes[i] *= 0.98
+
+    // Reset if too far
+    const dist = Math.sqrt(
+      positions[i * 3] ** 2 + positions[i * 3 + 1] ** 2 + positions[i * 3 + 2] ** 2
+    )
+    if (dist > 30 || particleLifetimes[i] < 0.01) {
+      const phi = Math.acos(2 * Math.random() - 1)
+      const theta = Math.random() * Math.PI * 2
+      const r = 3 + Math.random() * 3
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
+      positions[i * 3 + 2] = r * Math.cos(phi)
+      particleVelocities[i].set(0, 0, 0)
+      particleLifetimes[i] = Math.random() * 0.3
+    }
+
+    // Color based on lifetime and frequency
+    const t = particleLifetimes[i]
+    const hue = (params.colorHue + (1 - t) * 0.4 + high / 255 * 0.2) % 1
+    const c = new THREE.Color().setHSL(hue, 0.9, 0.4 + t * 0.4)
+    colors[i * 3] = c.r
+    colors[i * 3 + 1] = c.g
+    colors[i * 3 + 2] = c.b
+
+    sizes[i] = 0.1 + t * 0.4 + (mid / 255) * 0.3
+  }
+
+  particleGeo.attributes.position.needsUpdate = true
+  particleGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  particleGeo.attributes.size.needsUpdate = true
+
+  particleMat.color.setHSL(params.colorHue, 0.8, 0.4 + bass / 255 * 0.3)
+  particleSystem.rotation.y += 0.002
+  particleSystem.rotation.x += 0.001
+}
+
+function updateDeform(data) {
+  const bass = data.slice(0, 6).reduce((a, b) => a + b, 0) / 6
+  const mid = data.slice(6, 32).reduce((a, b) => a + b, 0) / 26
+  const high = data.slice(32, 64).reduce((a, b) => a + b, 0) / 32
+  const pos = deformGeo.attributes.position
+
+  for (let i = 0; i < pos.count; i++) {
+    const ox = deformOriginal[i * 3]
+    const oy = deformOriginal[i * 3 + 1]
+    const oz = deformOriginal[i * 3 + 2]
+    const len = Math.sqrt(ox * ox + oy * oy + oz * oz) || 1
+    const nx = ox / len, ny = oy / len, nz = oz / len
+
+    const wave = Math.sin(ox * 2 + clock.getElapsedTime() * 3) * 0.3
+    const bassDisp = (bass / 255) * params.sensitivity * 2.5
+    const midDisp = (mid / 255) * params.sensitivity * 1.2
+    const highDisp = (high / 255) * params.sensitivity * 0.6
+
+    const totalDisp = wave + bassDisp + midDisp + highDisp
+    const scale = 1 + totalDisp * 0.15
+
+    pos.setXYZ(i, ox * scale, oy * scale, oz * scale)
+  }
+  pos.needsUpdate = true
+  deformGeo.computeVertexNormals()
+
+  deformGroup.rotation.y += 0.004
+  deformGroup.rotation.x = Math.sin(clock.getElapsedTime() * 0.5) * 0.1
+
+  const hue = (params.colorHue + bass / 255 * 0.3) % 1
+  deformMat.color.setHSL(hue, 0.8, 0.4)
+  deformMat.emissive.setHSL(hue, 0.9, bass / 255 * 0.4)
+}
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate)
+  const data = getAudioData()
+  const t = clock.getElapsedTime()
+
+  // Update environment particles
+  const envPos = envParticlesGeo.attributes.position.array
+  for (let i = 0; i < 1500; i++) {
+    envPos[i * 3 + 1] += Math.sin(t * 0.3 + i * 0.1) * 0.003
+  }
+  envParticlesGeo.attributes.position.needsUpdate = true
+  envParticles.rotation.y += 0.0003
+
+  // Update current mode
+  if (started) {
+    switch (currentMode) {
+      case 'bars': updateBars(data); break
+      case 'radial': updateRadial(data); break
+      case 'tunnel': updateTunnel(data); break
+      case 'particles': updateParticles(data); break
+      case 'deform': updateDeform(data); break
+    }
+  } else {
+    // Idle animation
+    barGroup.rotation.y += 0.005
+    tunnelGroup.rotation.y += 0.005
+    radialGroup.rotation.y += 0.003
+    deformGroup.rotation.y += 0.008
+  }
+
+  controls.autoRotate = params.autoRotate
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+// ─── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(window.innerWidth, window.innerHeight)
+})
+
+animate()

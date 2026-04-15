@@ -1,0 +1,459 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ── Params ──────────────────────────────────────────────
+const params = {
+  nodeCount: 100,
+  repulsion: 500,
+  attraction: 0.02,
+  centerGravity: 0.01,
+  damping: 0.9,
+  showEdges: true,
+  showLabels: false,
+  regenerate: () => buildGraph(),
+};
+
+// ── Scene Setup ─────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a12);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2000);
+camera.position.set(0, 0, 120);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 10;
+controls.maxDistance = 500;
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Lighting ─────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x334466, 1.2));
+const dirLight = new THREE.DirectionalLight(0x88aaff, 1.0);
+dirLight.position.set(1, 2, 3);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x4466ff, 1.5, 300);
+pointLight.position.set(-50, 50, -50);
+scene.add(pointLight);
+
+// ── Graph Data ───────────────────────────────────────────
+let nodes = [];
+let edges = [];
+let nodeMeshes = [];
+let edgeMesh = null;
+let edgeMeshThin = null;
+let edgeMeshMed = null;
+
+// ── Community Color Palette ──────────────────────────────
+const palette = [
+  new THREE.Color(0xff6b6b),
+  new THREE.Color(0x4ecdc4),
+  new THREE.Color(0xffe66d),
+  new THREE.Color(0x95e1d3),
+  new THREE.Color(0xf38181),
+  new THREE.Color(0xaa96da),
+  new THREE.Color(0x6c5ce7),
+  new THREE.Color(0x74b9ff),
+  new THREE.Color(0xa29bfe),
+  new THREE.Color(0xfd79a8),
+  new THREE.Color(0x00b894),
+  new THREE.Color(0xfdcb6e),
+];
+
+// ── Build Graph ──────────────────────────────────────────
+function buildGraph() {
+  // Dispose old meshes
+  nodeMeshes.forEach(m => {
+    m.geometry.dispose();
+    m.material.dispose();
+    scene.remove(m);
+  });
+  nodeMeshes = [];
+  [edgeMesh, edgeMeshThin, edgeMeshMed].forEach(m => {
+    if (m) { m.geometry.dispose(); m.material.dispose(); scene.remove(m); }
+  });
+  edgeMesh = null; edgeMeshThin = null; edgeMeshMed = null;
+
+  const N = params.nodeCount;
+  nodes = [];
+  edges = [];
+
+  // Random positions in a sphere
+  for (let i = 0; i < N; i++) {
+    const phi = Math.acos(2 * Math.random() - 1);
+    const theta = Math.random() * Math.PI * 2;
+    const r = 20 + Math.random() * 20;
+    nodes.push({
+      x: r * Math.sin(phi) * Math.cos(theta),
+      y: r * Math.sin(phi) * Math.sin(theta),
+      z: r * Math.cos(phi),
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      vz: (Math.random() - 0.5) * 0.5,
+      fx: 0, fy: 0, fz: 0,
+      fixed: false,
+      degree: 0,
+      id: i,
+    });
+  }
+
+  // Random edges with degree constraints
+  const maxDegree = 6;
+  const minDegree = 1;
+  const degrees = new Array(N).fill(0);
+
+  for (let i = 0; i < N; i++) {
+    const targetEdges = minDegree + Math.floor(Math.random() * (maxDegree - minDegree + 1));
+    for (let t = 0; t < targetEdges; t++) {
+      if (degrees[i] >= maxDegree) break;
+      // Prefer nearby nodes
+      let best = -1, bestDist = Infinity;
+      for (let j = 0; j < N; j++) {
+        if (i === j || degrees[j] >= maxDegree) continue;
+        if (edges.some(e => (e.a === i && e.b === j) || (e.a === j && e.b === i))) continue;
+        const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y, dz = nodes[i].z - nodes[j].z;
+        const d = Math.sqrt(dx*dx+dy*dy+dz*dz);
+        if (d < bestDist) { bestDist = d; best = j; }
+      }
+      if (best >= 0) {
+        edges.push({ a: i, b: best });
+        degrees[i]++;
+        degrees[best]++;
+      }
+    }
+  }
+
+  // Assign degrees
+  nodes.forEach((n, i) => n.degree = degrees[i]);
+
+  // Simple greedy community coloring
+  const communities = new Array(N).fill(-1);
+  const maxColors = palette.length;
+  for (let i = 0; i < N; i++) {
+    const used = new Set();
+    edges.forEach(e => {
+      if (e.a === i) used.add(communities[e.b]);
+      if (e.b === i) used.add(communities[e.a]);
+    });
+    for (let c = 0; c < maxColors; c++) {
+      if (!used.has(c)) { communities[i] = c; break; }
+    }
+    if (communities[i] === -1) communities[i] = i % maxColors;
+  }
+  nodes.forEach((n, i) => n.colorIdx = communities[i]);
+
+  // Create node meshes
+  const baseGeo = new THREE.SphereGeometry(1, 16, 12);
+  nodes.forEach((n, i) => {
+    const deg = n.degree;
+    const radius = 0.6 + deg * 0.18;
+    const mat = new THREE.MeshPhongMaterial({
+      color: palette[n.colorIdx % palette.length],
+      emissive: palette[n.colorIdx % palette.length],
+      emissiveIntensity: 0.15,
+      shininess: 80,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const mesh = new THREE.Mesh(baseGeo, mat);
+    mesh.scale.setScalar(radius);
+    mesh.position.set(n.x, n.y, n.z);
+    mesh.userData.nodeIdx = i;
+    scene.add(mesh);
+    nodeMeshes.push(mesh);
+  });
+
+  updateEdges();
+}
+
+function buildEdgePositions(thickness) {
+  const positions = [];
+  const colors = [];
+  const baseColor = new THREE.Color(0x4466aa);
+  edges.forEach(e => {
+    const a = nodes[e.a], b = nodes[e.b];
+    positions.push(a.x, a.y, a.z);
+    positions.push(b.x, b.y, b.z);
+    const col = palette[nodes[e.a].colorIdx % palette.length].clone().lerp(palette[nodes[e.b].colorIdx % palette.length], 0.5);
+    colors.push(col.r, col.g, col.b);
+    colors.push(col.r, col.g, col.b);
+  });
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  return geo;
+}
+
+function updateEdges() {
+  [edgeMesh, edgeMeshThin, edgeMeshMed].forEach(m => {
+    if (m) { m.geometry.dispose(); m.material.dispose(); scene.remove(m); }
+  });
+  edgeMesh = null; edgeMeshThin = null; edgeMeshMed = null;
+
+  if (!params.showEdges || edges.length === 0) return;
+
+  const geo = buildEdgePositions();
+
+  const matThin = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.25, linewidth: 1 });
+  const matMed  = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5, linewidth: 1 });
+  const matFull = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.75 });
+
+  edgeMesh    = new THREE.LineSegments(geo, matFull);
+  edgeMeshThin = new THREE.LineSegments(geo.clone(), matThin);
+  edgeMeshMed  = new THREE.LineSegments(geo.clone(), matMed);
+
+  edgeMeshThin.scale.setScalar(1.06);
+  edgeMeshMed.scale.setScalar(1.03);
+
+  scene.add(edgeMeshThin);
+  scene.add(edgeMeshMed);
+  scene.add(edgeMesh);
+}
+
+// ── Physics Simulation ───────────────────────────────────
+function simulate() {
+  const REP = params.repulsion;
+  const ATT = params.attraction;
+  const CG  = params.centerGravity;
+  const DMP = params.damping;
+
+  // Reset forces
+  for (let i = 0; i < nodes.length; i++) {
+    nodes[i].fx = 0; nodes[i].fy = 0; nodes[i].fz = 0;
+  }
+
+  // Repulsion (Coulomb)
+  const N = nodes.length;
+  for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const dz = nodes[i].z - nodes[j].z;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) + 0.001;
+      const force = REP / (dist * dist);
+      const fx = dx / dist * force;
+      const fy = dy / dist * force;
+      const fz = dz / dist * force;
+      nodes[i].fx += fx; nodes[i].fy += fy; nodes[i].fz += fz;
+      nodes[j].fx -= fx; nodes[j].fy -= fy; nodes[j].fz -= fz;
+    }
+  }
+
+  // Attraction along edges (Hooke)
+  for (let e = 0; e < edges.length; e++) {
+    const a = nodes[edges[e].a], b = nodes[edges[e].b];
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) + 0.001;
+    const force = ATT * dist;
+    const fx = dx / dist * force, fy = dy / dist * force, fz = dz / dist * force;
+    a.fx += fx; a.fy += fy; a.fz += fz;
+    b.fx -= fx; b.fy -= fy; b.fz -= fz;
+  }
+
+  // Center gravity
+  for (let i = 0; i < N; i++) {
+    nodes[i].fx -= nodes[i].x * CG;
+    nodes[i].fy -= nodes[i].y * CG;
+    nodes[i].fz -= nodes[i].z * CG;
+  }
+
+  // Integrate
+  for (let i = 0; i < N; i++) {
+    const node = nodes[i];
+    if (node.fixed) continue;
+    node.vx = (node.vx + node.fx) * DMP;
+    node.vy = (node.vy + node.fy) * DMP;
+    node.vz = (node.vz + node.fz) * DMP;
+    // Speed clamp
+    const speed = Math.sqrt(node.vx*node.vx + node.vy*node.vy + node.vz*node.vz);
+    if (speed > 10) {
+      node.vx = node.vx / speed * 10;
+      node.vy = node.vy / speed * 10;
+      node.vz = node.vz / speed * 10;
+    }
+    node.x += node.vx;
+    node.y += node.vy;
+    node.z += node.vz;
+  }
+}
+
+// ── Interaction ──────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const label = document.getElementById('label');
+
+let hoveredNode = -1;
+let draggedNode = -1;
+let isDragging = false;
+let prevMouse = new THREE.Vector2();
+let dragPlane = new THREE.Plane();
+let dragOffset = new THREE.Vector3();
+let nodeIntersect = new THREE.Vector3();
+
+function getNodeMeshes() { return nodeMeshes; }
+
+function onMouseMove(e) {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+
+  if (isDragging && draggedNode >= 0) {
+    raycaster.setFromCamera(mouse, camera);
+    raycaster.ray.intersectPlane(dragPlane, nodeIntersect);
+    nodes[draggedNode].x = nodeIntersect.x;
+    nodes[draggedNode].y = nodeIntersect.y;
+    nodes[draggedNode].z = nodeIntersect.z;
+    nodes[draggedNode].vx = 0; nodes[draggedNode].vy = 0; nodes[draggedNode].vz = 0;
+    label.style.display = 'none';
+    return;
+  }
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(nodeMeshes);
+
+  if (intersects.length > 0) {
+    const idx = intersects[0].object.userData.nodeIdx;
+    if (idx !== hoveredNode) {
+      hoveredNode = idx;
+      highlightNode(idx);
+    }
+    label.style.display = 'block';
+    label.style.left = e.clientX + 14 + 'px';
+    label.style.top  = e.clientY - 10 + 'px';
+    label.textContent = `节点 ${idx + 1} · 度 ${nodes[idx].degree}`;
+    document.body.style.cursor = 'pointer';
+  } else {
+    if (hoveredNode >= 0) {
+      resetHighlight();
+      hoveredNode = -1;
+    }
+    label.style.display = 'none';
+    document.body.style.cursor = 'default';
+  }
+}
+
+function highlightNode(idx) {
+  const col = new THREE.Color(0xffffff);
+  nodeMeshes.forEach((m, i) => {
+    const n = nodes[i];
+    if (i === idx) {
+      m.material.emissiveIntensity = 0.8;
+      m.scale.setScalar(m.scale.x * 1.25);
+    } else {
+      const isConnected = edges.some(e => (e.a === idx && e.b === i) || (e.b === idx && e.a === i));
+      m.material.emissiveIntensity = isConnected ? 0.5 : 0.05;
+    }
+  });
+  if (edgeMesh)    edgeMesh.material.opacity    = 0.95;
+  if (edgeMeshMed) edgeMeshMed.material.opacity = 0.6;
+  if (edgeMeshThin) edgeMeshThin.material.opacity = 0.35;
+}
+
+function resetHighlight() {
+  nodeMeshes.forEach(m => {
+    m.material.emissiveIntensity = 0.15;
+    const idx = m.userData.nodeIdx;
+    const deg = nodes[idx].degree;
+    const radius = 0.6 + deg * 0.18;
+    m.scale.setScalar(radius);
+  });
+  if (edgeMesh)    edgeMesh.material.opacity    = 0.75;
+  if (edgeMeshMed) edgeMeshMed.material.opacity = 0.5;
+  if (edgeMeshThin) edgeMeshThin.material.opacity = 0.25;
+}
+
+function onMouseDown(e) {
+  if (e.button !== 0) return;
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(nodeMeshes);
+  if (intersects.length > 0) {
+    isDragging = true;
+    draggedNode = intersects[0].object.userData.nodeIdx;
+    nodes[draggedNode].fixed = true;
+    controls.enabled = false;
+
+    // Drag plane facing camera
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    dragPlane.setFromNormalAndCoplanarPoint(camDir, new THREE.Vector3(nodes[draggedNode].x, nodes[draggedNode].y, nodes[draggedNode].z));
+
+    label.style.display = 'none';
+  }
+}
+
+function onMouseUp() {
+  if (isDragging && draggedNode >= 0) {
+    nodes[draggedNode].fixed = false;
+    nodes[draggedNode].vx = 0; nodes[draggedNode].vy = 0; nodes[draggedNode].vz = 0;
+  }
+  isDragging = false;
+  draggedNode = -1;
+  controls.enabled = true;
+}
+
+window.addEventListener('mousemove', onMouseMove);
+window.addEventListener('mousedown', onMouseDown);
+window.addEventListener('mouseup', onMouseUp);
+
+// ── GUI ──────────────────────────────────────────────────
+const gui = new GUI({ title: '力导向图 Controls' });
+gui.add(params, 'nodeCount', 30, 200, 1).name('节点数量').onChange(() => {
+  nodes.forEach(n => { n.fixed = false; });
+  buildGraph();
+});
+gui.add(params, 'repulsion', 100, 1500, 10).name('库仑斥力');
+gui.add(params, 'attraction', 0.001, 0.1, 0.001).name('弹簧引力');
+gui.add(params, 'centerGravity', 0.001, 0.05, 0.001).name('中心引力');
+gui.add(params, 'damping', 0.8, 0.99, 0.01).name('阻尼系数');
+gui.add(params, 'showEdges').name('显示连线').onChange(v => {
+  if (!v) {
+    [edgeMesh, edgeMeshThin, edgeMeshMed].forEach(m => { if (m) scene.remove(m); });
+    edgeMesh = null; edgeMeshThin = null; edgeMeshMed = null;
+  } else { updateEdges(); }
+});
+gui.add(params, 'showLabels').name('显示标签');
+gui.add(params, 'regenerate').name('重新生成');
+
+// ── Animation Loop ───────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+
+  simulate();
+
+  // Sync node meshes
+  for (let i = 0; i < nodes.length; i++) {
+    nodeMeshes[i].position.set(nodes[i].x, nodes[i].y, nodes[i].z);
+  }
+
+  // Update edge geometry positions
+  if (params.showEdges && edges.length > 0) {
+    const positions = [];
+    edges.forEach(e => {
+      const a = nodes[e.a], b = nodes[e.b];
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    });
+    if (edgeMesh)    edgeMesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    if (edgeMeshMed) edgeMeshMed.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    if (edgeMeshThin) edgeMeshThin.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  }
+
+  // Subtle node rotation
+  nodeMeshes.forEach(m => { m.rotation.y += 0.003; m.rotation.x += 0.001; });
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+buildGraph();
+animate();

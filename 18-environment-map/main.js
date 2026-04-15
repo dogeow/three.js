@@ -1,0 +1,85 @@
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+// RoomEnvironment：程序生成的室内环境，质感漂亮又无需外部 HDR 文件
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x15151f)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 2, 10)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(devicePixelRatio)
+// ⚠️ 色彩管理：Three r152+ 默认开启；这里显式设置保证 PBR 颜色正确
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.0
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// ============ 生成环境贴图 ============
+// PMREMGenerator 把原始环境转成 PBR 所需的预过滤格式
+const pmrem = new THREE.PMREMGenerator(renderer)
+const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+scene.environment = envMap // ⚠️ 设置后所有 PBR 材质自动吃环境光
+// scene.background = envMap // 取消注释可以把环境本身作为背景显示
+
+// ============ 5 颗球：调节 metalness + roughness ============
+// metalness（金属度）：0 = 非金属(塑料/木头)  1 = 金属(铁/金)
+// roughness（粗糙度）：0 = 镜面抛光  1 = 完全磨砂
+const row = [
+  { label: '塑料磨砂', metalness: 0, roughness: 1, color: 0x4a90e2 },
+  { label: '塑料光滑', metalness: 0, roughness: 0.2, color: 0x4a90e2 },
+  { label: '金属磨砂', metalness: 1, roughness: 0.6, color: 0xcccccc },
+  { label: '金属半光', metalness: 1, roughness: 0.25, color: 0xcccccc },
+  { label: '镜面金属', metalness: 1, roughness: 0.02, color: 0xffd700 }
+]
+
+row.forEach((cfg, i) => {
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.8, 64, 64),
+    new THREE.MeshStandardMaterial({
+      color: cfg.color,
+      metalness: cfg.metalness,
+      roughness: cfg.roughness
+    })
+  )
+  sphere.position.x = (i - 2) * 2.2
+  scene.add(sphere)
+})
+
+// 标签：用 Canvas 生成文字贴图 + Sprite
+row.forEach((cfg, i) => {
+  const c = document.createElement('canvas')
+  c.width = 256; c.height = 64
+  const ctx = c.getContext('2d')
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'
+  ctx.fillRect(0, 0, 256, 64)
+  ctx.fillStyle = '#fff'
+  ctx.font = '28px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(cfg.label, 128, 32)
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true })
+  )
+  sprite.scale.set(1.6, 0.4, 1)
+  sprite.position.set((i - 2) * 2.2, -1.3, 0)
+  scene.add(sprite)
+})
+
+function animate() {
+  requestAnimationFrame(animate)
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
