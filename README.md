@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **--help** — [3143](./3143---help/index.html)
+- **mechanical-watch** — [3144](./3144-mechanical-watch/index.html)
+- **origami-folding** — [3145](./3145-origami-folding/index.html)
+- **lattice-boltzmann** — [3146](./3146-lattice-boltzmann/index.html)
+- **sir-epidemic** — [3147](./3147-sir-epidemic/index.html)
+- **plate-tectonics** — [3148](./3148-plate-tectonics/index.html)
+- **clebsch-cubic** — [3149](./3149-clebsch-cubic/index.html)
+- **wang-tiles** — [3150](./3150-wang-tiles/index.html)
+
 - **--list** — [3136](./3136---list/index.html)
 - **cellular-biology-sim** — [3137](./3137-cellular-biology-sim/index.html)
 - **ray-optics-sim** — [3138](./3138-ray-optics-sim/index.html)
