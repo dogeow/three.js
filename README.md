@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 
+- **clockwork-gears** — [2909](./2909-clockwork-gears/index.html)
+- **sandpile-self-organized** — [2910](./2910-sandpile-self-organized/index.html)
+- **soap-bubble-thinfilm** — [2911](./2911-soap-bubble-thinfilm/index.html)
+- **tensegrity-structure** — [2912](./2912-tensegrity-structure/index.html)
+- **magnetic-dipole-field** — [2913](./2913-magnetic-dipole-field/index.html)
+- **liquid-crystal-display** — [2914](./2914-liquid-crystal-display/index.html)
+- **flame-propagation-sim** — [2915](./2915-flame-propagation-sim/index.html)
+- **spring-mass-pendulum** — [2916](./2916-spring-mass-pendulum/index.html)
+
 - **prism-rainbow** — [2898](./2898-prism-rainbow/index.html)
 - **ferris-wheel-sim** — [2899](./2899-ferris-wheel-sim/index.html)
 - **newton-cradle** — [2900](./2900-newton-cradle/index.html)
