@@ -259,7 +259,7 @@
 
         // Portal camera
         this.camera = new THREE.PerspectiveCamera(75, 1, 0.05, 100);
-        this.updateCamera();
+        if (this.otherPortal) this.updateCamera();
       }
 
       updateCamera() {
