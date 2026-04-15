@@ -1360,3 +1360,23 @@ animate()
 - **wind-erosion-terrain** — [353](./353-wind-erosion-terrain/index.html)
 - **wireframe-world** — [82](./82-wireframe-world/index.html)
 - **world-painter** — [294](./294-world-painter/index.html)
+
+## 三十三、RTS与游戏系统（3121~3122）
+
+| # | 章节 | 技术点 |
+|---|------|-------|
+| [3117](./3117-finite-state-machine-npc/index.html) | **FSM NPC AI ★** | 有限状态机、巡逻/追击/攻击/逃跑状态切换、发光指示环 |
+| [3118](./3118-astar-pathfinding-3d/index.html) | **A* 寻路 3D ★** | A*算法可视化、最小堆优先队列、对角移动、启发式高度惩罚 |
+| [3119](./3119-match3-puzzle-game/index.html) | **Match-3 益智 ★** | 宝石交换、连锁消除、级联combo、爆炸粒子特效 |
+| [3120](./3120-dungeon-procedural-generator/index.html) | **程序化地下城 ★** | BSP空间分割、房间生成、走廊连接、程序化火把 |
+| [3121](./3121-rts-unit-selection-prototype/index.html) | **RTS单位选择原型 ★** | 拖拽框选、单位分组、移动指令、攻击指令、右键菜单 |
+| [3122](./3122-tetris-3d/index.html) | **3D 俄罗斯方块 ★** | 3D版俄罗斯方块、三维旋转、整行消除、幽灵块预览 |
+
+## 附录：新增示例索引
+
+- **finite-state-machine-npc** — [3117](./3117-finite-state-machine-npc/index.html)
+- **astar-pathfinding-3d** — [3118](./3118-astar-pathfinding-3d/index.html)
+- **match3-puzzle-game** — [3119](./3119-match3-puzzle-game/index.html)
+- **dungeon-procedural-generator** — [3120](./3120-dungeon-procedural-generator/index.html)
+- **rts-unit-selection-prototype** — [3121](./3121-rts-unit-selection-prototype/index.html)
+- **tetris-3d** — [3122](./3122-tetris-3d/index.html)
