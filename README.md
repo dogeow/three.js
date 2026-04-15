@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **ising-model-phase-transition** — [3389](./3389-ising-model-phase-transition/index.html)
+- **stress-strain-beam-sim** — [3390](./3390-stress-strain-beam-sim/index.html)
+- **delaunay-triangulation-dynamic** — [3391](./3391-delaunay-triangulation-dynamic/index.html)
+- **percolation-cluster-3d** — [3392](./3392-percolation-cluster-3d/index.html)
+- **ray-optics-lab** — [3393](./3393-ray-optics-lab/index.html)
+
 - **shader-material-builder** — [3381](./3381-shader-material-builder/index.html)
 - **swarm-robotics-sim** — [3382](./3382-swarm-robotics-sim/index.html)
 - **path-tracer-global** — [3383](./3383-path-tracer-global/index.html)
