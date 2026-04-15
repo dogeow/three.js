@@ -1,0 +1,428 @@
+import * as THREE from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ========== CONFIGURATION / 配置 ==========
+const TEXTURE_SIZE = 256;
+const PLANE_SEGMENTS = TEXTURE_SIZE;
+const SIM_STEPS_PER_FRAME = 8;
+
+// ========== RENDER TARGETS (Ping-Pong Buffers) ==========
+// 两个 RenderTarget 用于交替读写，实现 GPU 上的反应扩散计算
+let currentRT = new THREE.WebGLRenderTarget(TEXTURE_SIZE, TEXTURE_SIZE, {
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+  format: THREE.RGBAFormat,
+  type: THREE.FloatType,
+  wrapS: THREE.ClampToEdgeWrapping,
+  wrapT: THREE.ClampToEdgeWrapping,
+});
+let nextRT = new THREE.WebGLRenderTarget(TEXTURE_SIZE, TEXTURE_SIZE, {
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+  format: THREE.RGBAFormat,
+  type: THREE.FloatType,
+  wrapS: THREE.ClampToEdgeWrapping,
+  wrapT: THREE.ClampToEdgeWrapping,
+});
+
+// ========== SIMULATION SHADER (Reaction-Diffusion on GPU) ==========
+// 在 GPU 上执行一步 Gray-Scott 反应扩散计算
+const simulationShader = {
+  uniforms: {
+    uPrev: { value: null },          // 输入: 上一步的化学浓度纹理 (RGBA: A, B, _, _)
+    uResolution: { value: new THREE.Vector2(TEXTURE_SIZE, TEXTURE_SIZE) },
+    uFeed: { value: 0.055 },
+    uKill: { value: 0.062 },
+    uDiffuseA: { value: 1.0 },
+    uDiffuseB: { value: 0.5 },
+    uDeltaTime: { value: 1.0 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uPrev;
+    uniform vec2 uResolution;
+    uniform float uFeed;
+    uniform float uKill;
+    uniform float uDiffuseA;
+    uniform float uDiffuseB;
+    uniform float uDeltaTime;
+
+    // 离散拉普拉斯算子 - 使用 4 邻域近似
+    // ∇²A ≈ (A(x+1,y) + A(x-1,y) + A(x,y+1) + A(x,y-1) - 4*A(x,y))
+    vec2 laplacian(vec2 uv) {
+      vec2 texel = 1.0 / uResolution;
+      float a = texture2D(uPrev, uv).r;
+      float b = texture2D(uPrev, uv).g;
+
+      float na = texture2D(uPrev, uv + vec2(texel.x, 0.0)).r;
+      float sa = texture2D(uPrev, uv - vec2(texel.x, 0.0)).r;
+      float wa = texture2D(uPrev, uv + vec2(0.0, texel.y)).r;
+      float ea = texture2D(uPrev, uv - vec2(0.0, texel.y)).r;
+
+      float nb = texture2D(uPrev, uv + vec2(texel.x, 0.0)).g;
+      float sb = texture2D(uPrev, uv - vec2(texel.x, 0.0)).g;
+      float wb = texture2D(uPrev, uv + vec2(0.0, texel.y)).g;
+      float eb = texture2D(uPrev, uv - vec2(0.0, texel.y)).g;
+
+      return vec2(
+        na + sa + wa + ea - 4.0 * a,
+        nb + sb + wb + eb - 4.0 * b
+      );
+    }
+
+    void main() {
+      vec2 uv = vUv;
+      vec4 state = texture2D(uPrev, uv);
+      float a = state.r; // 化学物质 A 浓度
+      float b = state.g; // 化学物质 B 浓度
+
+      // Gray-Scott 反应扩散方程
+      // ∂A/∂t = Da∇²A - AB² + f(1-A)
+      // ∂B/∂t = Db∇²B + AB² - (k+f)B
+      vec2 lap = laplacian(uv);
+      float reaction = a * b * b;
+
+      float da = uDiffuseA * lap.r - reaction + uFeed * (1.0 - a);
+      float db = uDiffuseB * lap.g + reaction - (uKill + uFeed) * b;
+
+      a += da * uDeltaTime;
+      b += db * uDeltaTime;
+
+      // 浓度范围限制
+      a = clamp(a, 0.0, 1.0);
+      b = clamp(b, 0.0, 1.0);
+
+      gl_FragColor = vec4(a, b, 0.0, 1.0);
+    }
+  `,
+};
+
+// ========== SCENE SETUP ==========
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x000000, 1);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 2.5, 3.5);
+camera.lookAt(0, 0, 0);
+
+// ========== SIMULATION CAMERA & SCENE (Full-screen quad) ==========
+// 用于将反应扩散计算渲染到 RenderTarget
+const simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const simScene = new THREE.Scene();
+const simMaterial = new THREE.ShaderMaterial({
+  uniforms: simulationShader.uniforms,
+  vertexShader: simulationShader.vertexShader,
+  fragmentShader: simulationShader.fragmentShader,
+  depthWrite: false,
+  depthTest: false,
+});
+const simQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), simMaterial);
+simScene.add(simQuad);
+
+// ========== DISPLAY MESH (3D Plane with Vertex Displacement) ==========
+// 化学浓度 B 驱动顶点 Y 轴位移，呈现反应扩散的 3D 形态
+const planeGeom = new THREE.PlaneGeometry(4, 4, PLANE_SEGMENTS - 1, PLANE_SEGMENTS - 1);
+planeGeom.rotateX(-Math.PI / 2); // 转为水平面
+
+const displayMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    uTexture: { value: currentRT.texture },
+    uHeightScale: { value: 1.2 },
+    uColorLow: { value: new THREE.Color(0x0a0a1a) },
+    uColorHigh: { value: new THREE.Color(0x44aaff) },
+  },
+  vertexShader: /* glsl */`
+    uniform sampler2D uTexture;
+    uniform float uHeightScale;
+    varying float vB;
+    varying vec2 vUv;
+
+    void main() {
+      vUv = uv;
+      // 从纹理读取化学物质 B 的浓度
+      float b = texture2D(uTexture, uv).g;
+      vB = b;
+
+      // 顶点 Y 位置 = 浓度 * 高度缩放
+      vec3 pos = position;
+      pos.y = b * uHeightScale;
+
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform vec3 uColorLow;
+    uniform vec3 uColorHigh;
+    varying float vB;
+    varying vec2 vUv;
+
+    void main() {
+      // 化学物质 B 浓度 → 颜色映射 (暗 → 亮)
+      vec3 color = mix(uColorLow, uColorHigh, vB);
+      // 添加一些法线感的光照
+      float light = 0.6 + 0.4 * vB;
+      color *= light;
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `,
+  side: THREE.DoubleSide,
+  wireframe: false,
+});
+
+const planeMesh = new THREE.Mesh(planeGeom, displayMaterial);
+scene.add(planeMesh);
+
+// ========== INITIALIZE CHEMICALS (Seed Initial Pattern) ==========
+// 初始化: 化学物质 A=1 (整个区域充满), B=0
+// 然后在中心放置一些 B 的"种子"触发反应
+function initializePattern() {
+  const data = new Float32Array(TEXTURE_SIZE * TEXTURE_SIZE * 4);
+  for (let i = 0; i < TEXTURE_SIZE * TEXTURE_SIZE; i++) {
+    const x = (i % TEXTURE_SIZE) / TEXTURE_SIZE;
+    const y = Math.floor(i / TEXTURE_SIZE) / TEXTURE_SIZE;
+    const cx = 0.5, cy = 0.5;
+    const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+
+    // A = 1 充满整个区域
+    let a = 1.0;
+    // B = 0 初始为空
+    let b = 0.0;
+
+    // 中心放置几个 B 种子点
+    if (dist < 0.12) {
+      a = 0.5;
+      b = 0.25;
+    }
+
+    // 添加一些随机扰动
+    if (Math.random() < 0.01) {
+      b = Math.random() * 0.2;
+    }
+
+    data[i * 4 + 0] = a;
+    data[i * 4 + 1] = b;
+    data[i * 4 + 2] = 0.0;
+    data[i * 4 + 3] = 1.0;
+  }
+
+  const texture = new THREE.DataTexture(
+    data, TEXTURE_SIZE, TEXTURE_SIZE,
+    THREE.RGBAFormat, THREE.FloatType
+  );
+  texture.needsUpdate = true;
+
+  // 将初始化数据复制到 currentRT
+  const initMaterial = new THREE.ShaderMaterial({
+    uniforms: { uData: { value: texture } },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform sampler2D uData;
+      varying vec2 vUv;
+      void main() { gl_FragColor = texture2D(uData, vUv); }
+    `,
+    depthWrite: false,
+    depthTest: false,
+  });
+  const initQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), initMaterial);
+  simScene.remove(simQuad);
+  simScene.add(initQuad);
+  renderer.setRenderTarget(currentRT);
+  renderer.render(simScene, simCamera);
+  renderer.setRenderTarget(null);
+  simScene.remove(initQuad);
+  simScene.add(simQuad);
+  initMaterial.dispose();
+  texture.dispose();
+}
+
+initializePattern();
+
+// ========== CLICK TO ADD CHEMICAL A (Seed Interaction) ==========
+// 鼠标点击: 在点击位置添加一团化学物质 A
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let isMouseDown = false;
+
+renderer.domElement.addEventListener('mousedown', (e) => {
+  isMouseDown = true;
+  addChemicalBlob(e.clientX, e.clientY);
+});
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (isMouseDown) addChemicalBlob(e.clientX, e.clientY);
+});
+renderer.domElement.addEventListener('mouseup', () => { isMouseDown = false; });
+renderer.domElement.addEventListener('mouseleave', () => { isMouseDown = false; });
+
+function addChemicalBlob(mouseX, mouseY) {
+  mouse.x = (mouseX / window.innerWidth) * 2 - 1;
+  mouse.y = -(mouseY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(planeMesh);
+
+  if (intersects.length > 0) {
+    const uv = intersects[0].uv;
+    // 修改 currentRT 纹理: 在点击区域添加高浓度 A
+    const canvas = document.createElement('canvas');
+    canvas.width = TEXTURE_SIZE;
+    canvas.height = TEXTURE_SIZE;
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.createImageData(TEXTURE_SIZE, TEXTURE_SIZE);
+
+    // 读取当前纹理
+    const pixels = new Uint8Array(TEXTURE_SIZE * TEXTURE_SIZE * 4);
+    renderer.readRenderTargetPixels(currentRT, 0, 0, TEXTURE_SIZE, TEXTURE_SIZE, pixels);
+
+    for (let y = 0; y < TEXTURE_SIZE; y++) {
+      for (let x = 0; x < TEXTURE_SIZE; x++) {
+        const dx = (x / TEXTURE_SIZE) - uv.x;
+        const dy = (y / TEXTURE_SIZE) - uv.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const idx = (y * TEXTURE_SIZE + x) * 4;
+
+        // 在点击位置周围半径 0.05 内添加 A
+        if (dist < 0.05) {
+          const falloff = 1.0 - dist / 0.05;
+          pixels[idx + 0] = Math.min(255, pixels[idx + 0] + falloff * 200); // A 增加
+          pixels[idx + 1] = Math.max(0, pixels[idx + 1] - falloff * 150);   // B 减少
+        }
+      }
+    }
+
+    // 创建新纹理
+    const newTex = new THREE.DataTexture(pixels, TEXTURE_SIZE, TEXTURE_SIZE, THREE.RGBAFormat, THREE.UnsignedByteType);
+    newTex.needsUpdate = true;
+
+    // 渲染到 currentRT
+    const blobMaterial = new THREE.ShaderMaterial({
+      uniforms: { uData: { value: newTex } },
+      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`,
+      fragmentShader: `
+        uniform sampler2D uData;
+        varying vec2 vUv;
+        void main() { gl_FragColor = texture2D(uData, vUv); }
+      `,
+      depthWrite: false,
+      depthTest: false,
+    });
+    const blobQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blobMaterial);
+    simScene.remove(simQuad);
+    simScene.add(blobQuad);
+    renderer.setRenderTarget(currentRT);
+    renderer.render(simScene, simCamera);
+    renderer.setRenderTarget(null);
+    simScene.remove(blobQuad);
+    simScene.add(simQuad);
+    blobMaterial.dispose();
+    newTex.dispose();
+  }
+}
+
+// ========== GUI (lil-gui for parameter control) ==========
+// 滑块实时调整 f (feed rate) 和 k (kill rate) 观察不同图案
+const params = {
+  feed: 0.055,
+  kill: 0.062,
+  diffuseA: 1.0,
+  diffuseB: 0.5,
+  heightScale: 1.2,
+  colorHigh: '#44aaff',
+};
+
+const gui = new GUI({ title: 'Gray-Scott 参数' });
+gui.add(params, 'feed', 0.01, 0.1, 0.001).name('Feed Rate (f)').onChange(v => {
+  simMaterial.uniforms.uFeed.value = v;
+});
+gui.add(params, 'kill', 0.01, 0.1, 0.001).name('Kill Rate (k)').onChange(v => {
+  simMaterial.uniforms.uKill.value = v;
+});
+gui.add(params, 'diffuseA', 0.1, 2.0, 0.01).name('Diffuse A').onChange(v => {
+  simMaterial.uniforms.uDiffuseA.value = v;
+});
+gui.add(params, 'diffuseB', 0.1, 2.0, 0.01).name('Diffuse B').onChange(v => {
+  simMaterial.uniforms.uDiffuseB.value = v;
+});
+gui.add(params, 'heightScale', 0.0, 3.0, 0.01).name('Height Scale').onChange(v => {
+  displayMaterial.uniforms.uHeightScale.value = v;
+});
+gui.addColor(params, 'colorHigh').name('Peak Color').onChange(v => {
+  displayMaterial.uniforms.uColorHigh.value.set(v);
+});
+
+// 预设图案参数
+const presets = {
+  spots: () => { params.feed = 0.035; params.kill = 0.065; applyPreset(); },
+  stripes: () => { params.feed = 0.045; params.kill = 0.062; applyPreset(); },
+  maze: () => { params.feed = 0.029; params.kill = 0.057; applyPreset(); },
+  worms: () => { params.feed = 0.078; params.kill = 0.061; applyPreset(); },
+  coral: () => { params.feed = 0.054; params.kill = 0.059; applyPreset(); },
+  mitosis: () => { params.feed = 0.025; params.kill = 0.055; applyPreset(); },
+};
+
+function applyPreset() {
+  simMaterial.uniforms.uFeed.value = params.feed;
+  simMaterial.uniforms.uKill.value = params.kill;
+  gui.controllersRecursive().forEach(c => c.updateDisplay());
+  // 重新初始化
+  initializePattern();
+}
+
+const presetFolder = gui.addFolder('Presets (图案预设)');
+presetFolder.add(presets, 'spots').name('Spots (斑点)');
+presetFolder.add(presets, 'stripes').name('Stripes (条纹)');
+presetFolder.add(presets, 'maze').name('Maze (迷宫)');
+presetFolder.add(presets, 'worms').name('Worms (蠕虫)');
+presetFolder.add(presets, 'coral').name('Coral (珊瑚)');
+presetFolder.add(presets, 'mitosis').name('Mitosis (分裂)');
+presetFolder.close();
+
+// ========== RESIZE ==========
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ========== ANIMATION LOOP ==========
+// 每帧: 执行多次反应扩散步骤 → 交换 buffer → 更新显示网格
+function animate() {
+  requestAnimationFrame(animate);
+
+  // 运行多次模拟步骤
+  simMaterial.uniforms.uPrev.value = currentRT.texture;
+  for (let i = 0; i < SIM_STEPS_PER_FRAME; i++) {
+    simMaterial.uniforms.uPrev.value = currentRT.texture;
+    renderer.setRenderTarget(nextRT);
+    renderer.render(simScene, simCamera);
+    renderer.setRenderTarget(null);
+
+    // Ping-pong: 交换读写 buffer
+    const tmp = currentRT;
+    currentRT = nextRT;
+    nextRT = tmp;
+  }
+
+  // 更新显示网格的纹理引用
+  displayMaterial.uniforms.uTexture.value = currentRT.texture;
+
+  // 缓慢旋转视角欣赏 3D 形态
+  planeMesh.rotation.y += 0.002;
+
+  renderer.render(scene, camera);
+}
+
+animate();

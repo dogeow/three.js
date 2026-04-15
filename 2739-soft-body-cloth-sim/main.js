@@ -47,7 +47,7 @@ scene.add(cloth)
 scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true })))
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.5))
-scene.add(Object.assign(new THREE.DirectionalLight(0xffffff, 1), { position: new THREE.Vector3(10,20,10) }))
+const _dl=new THREE.DirectionalLight(0xffffff, 1);_dl.position.set(10,20,10);scene.add(_dl)
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(2, 32, 32), new THREE.MeshPhongMaterial({ color: 0x4488ff })))
 
 const gravity = -0.001

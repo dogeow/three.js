@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 
+- **traffic-flow-sim** — [2930](./2930-traffic-flow-sim/index.html)
+- **pyroclastic-flow** — [2931](./2931-pyroclastic-flow/index.html)
+- **magnetic-levitation** — [2932](./2932-magnetic-levitation/index.html)
+- **forest-fire-sim** — [2933](./2933-forest-fire-sim/index.html)
+- **liquid-metal-morph** — [2934](./2934-liquid-metal-morph/index.html)
+- **rain-on-glass** — [2935](./2935-rain-on-glass/index.html)
+
 - **vortex-street-sim** — [2926](./2926-vortex-street-sim/index.html)
 - **spin-glass-ising** — [2927](./2927-spin-glass-ising/index.html)
 - **wave-interference-patterns** — [2928](./2928-wave-interference-patterns/index.html)
