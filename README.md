@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 
+- **karman-vortex-street** — [2985](./2985-karman-vortex-street/index.html)
+- **quasicrystal-differential-rotation** — [2987](./2987-quasicrystal-differential-rotation/index.html)
+- **tesseract-4d-rotation** — [2988](./2988-tesseract-4d-rotation/index.html)
+- **generative-typographic-forest** — [2989](./2989-generative-typographic-forest/index.html)
+- **impossible-continuoushausdorff** — [2990](./2990-impossible-continuoushausdorff/index.html)
+
 - **rigid-body-stacking** — [2980](./2980-rigid-body-stacking/index.html)
 - **procedural-texture-shaders** — [2981](./2981-procedural-texture-shaders/index.html)
 - **kinetic-typography** — [2982](./2982-kinetic-typography/index.html)
