@@ -745,6 +745,17 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **voronoi-fracture-concrete** — [3449](./3449-voronoi-fracture-concrete/index.html)
+- **fem-stress-analysis** — [3450](./3450-fem-stress-analysis/index.html)
+- **sintering-granular** — [3451](./3451-sintering-granular/index.html)
+- **procedural-crochet-knit** — [3452](./3452-procedural-crochet-knit/index.html)
+- **inverse-kinematics-leg** — [3453](./3453-inverse-kinematics-leg/index.html)
+- **voxel-tree-generator** — [3454](./3454-voxel-tree-generator/index.html)
+- **real-time-raytracer** — [3455](./3455-real-time-raytracer/index.html)
+- **procedural-moss-lichen** — [3456](./3456-procedural-moss-lichen/index.html)
+- **cloth-pattern-cutting** — [3457](./3457-cloth-pattern-cutting/index.html)
+- **fluid-acoustic-sim** — [3458](./3458-fluid-acoustic-sim/index.html)
+
 - **chaos-double-pendulum** — [3441](./3441-chaos-double-pendulum/index.html)
 - **wave-interference-ripple** — [3442](./3442-wave-interference-ripple/index.html)
 - **magnetic-field-lines** — [3443](./3443-magnetic-field-lines/index.html)
