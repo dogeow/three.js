@@ -1578,6 +1578,14 @@ animate()
 - **wireframe-world** — [82](./82-wireframe-world/index.html)
 - **world-painter** — [294](./294-world-painter/index.html)
 
+- **chaos-attractor** — [3317](./3317-chaos-attractor/index.html)
+- **em-wave-propagation** — [3318](./3318-em-wave-propagation/index.html)
+- **julia-fractal** — [3321](./3321-julia-fractal/index.html)
+- **polarized-light** — [3322](./3322-polarized-light/index.html)
+- **double-helix** — [3323](./3323-double-helix/index.html)
+- **topology** — [3324](./3324-topology/index.html)
+- **rossler-attractor** — [3325](./3325-rossler-attractor/index.html)
+
 ## 三十三、RTS与游戏系统（3121~3122）
 
 | # | 章节 | 技术点 |
