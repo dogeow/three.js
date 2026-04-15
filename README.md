@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 
+- **holographic-sculpture** — [361](./361-holographic-sculpture/index.html)
+- **penrose-stairs** — [362](./362-penrose-stairs/index.html)
+- **thermal-imaging** — [363](./363-thermal-imaging/index.html)
+- **cymatics-pattern** — [364](./364-cymatics-pattern/index.html)
+- **light-painting** — [365](./365-light-painting/index.html)
+
 - **ice-crystal-growth** — [2973](./2973-ice-crystal-growth/index.html)
 - **hair-strand-shader** — [2974](./2974-hair-strand-shader/index.html)
 - **vocoder-audio-visualizer** — [2975](./2975-vocoder-audio-visualizer/index.html)

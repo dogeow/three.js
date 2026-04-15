@@ -115,16 +115,16 @@ import * as THREE from 'three';
         }
 
         // Sobel edge detection on a single channel
-        float sobelChannel(sampler2D tex, vec2 uv, vec2 texel, float channel) {
+        float sobelChannel(sampler2D tex, vec2 uv, vec2 texel, int channel) {
           // 3x3 kernel
-          float tl = texture2D(tex, uv + texel * vec2(-1.0,  1.0))[channel];
-          float tm = texture2D(tex, uv + texel * vec2( 0.0,  1.0))[channel];
-          float tr = texture2D(tex, uv + texel * vec2( 1.0,  1.0))[channel];
-          float ml = texture2D(tex, uv + texel * vec2(-1.0,  0.0))[channel];
-          float mr = texture2D(tex, uv + texel * vec2( 1.0,  0.0))[channel];
-          float bl = texture2D(tex, uv + texel * vec2(-1.0, -1.0))[channel];
-          float bm = texture2D(tex, uv + texel * vec2( 0.0, -1.0))[channel];
-          float br = texture2D(tex, uv + texel * vec2( 1.0, -1.0))[channel];
+          float tl = texture2D(tex, uv + texel * vec2(-1.0,  1.0)), int(channel);
+          float tm = texture2D(tex, uv + texel * vec2( 0.0,  1.0)), int(channel);
+          float tr = texture2D(tex, uv + texel * vec2( 1.0,  1.0)), int(channel);
+          float ml = texture2D(tex, uv + texel * vec2(-1.0,  0.0)), int(channel);
+          float mr = texture2D(tex, uv + texel * vec2( 1.0,  0.0)), int(channel);
+          float bl = texture2D(tex, uv + texel * vec2(-1.0, -1.0)), int(channel);
+          float bm = texture2D(tex, uv + texel * vec2( 0.0, -1.0)), int(channel);
+          float br = texture2D(tex, uv + texel * vec2( 1.0, -1.0)), int(channel);
 
           float gx = -tl - 2.0*ml - bl + tr + 2.0*mr + br;
           float gy =  tl + 2.0*tm + tr - bl - 2.0*bm - br;

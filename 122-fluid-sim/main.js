@@ -87,6 +87,7 @@ import * as THREE from 'three';
     const texelSize = new THREE.Vector2(1 / TEX_SIZE, 1 / TEX_SIZE);
     const simUniforms = () => ({
       uVelocity: { value: null },
+      uTexture: { value: null },
       uSource: { value: null },
       uTarget: { value: null },
       uTexelSize: { value: texelSize },

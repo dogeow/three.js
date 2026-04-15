@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>364 — Cymatics Pattern Art</title>
+<style>
+body{margin:0;overflow:hidden;background:#050510}
+canvas{display:block}
+#info{position:absolute;top:10px;left:10px;color:#aaf;font-family:monospace;font-size:13px;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="info">364 — Cymatics Pattern Art — Chladni Figures</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(0, 8, 0); camera.lookAt(0,0,0);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.2, 0.5, 0.7));
+
+const PC = 15000;
+const pGeo = new THREE.BufferGeometry();
+const pPos = new Float32Array(PC * 3);
+const pCol = new Float32Array(PC * 3);
+
+function chladni(x, z, n, m, t) {
+    const a = Math.sin(n * x * 0.5) * Math.cos(m * z * 0.5);
+    const b = Math.sin(m * x * 0.5) * Math.sin(n * z * 0.5);
+    return (a + b * Math.cos(t)) * 0.5;
+}
+
+let CN = 3, CM = 2, T = 0;
+function updateP() {
+    for (let i = 0; i < PC; i++) {
+        const ang = (i / PC) * Math.PI * 2;
+        const r = Math.sqrt(i / PC) * 8;
+        const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+        const y = chladni(x, z, CN, CM, T);
+        pPos[i*3]=x; pPos[i*3+1]=y; pPos[i*3+2]=z;
+        const iv = Math.abs(y) * 3;
+        const hue = (CN * 0.1 + CM * 0.15 + T * 0.05) % 1;
+        pCol[i*3]=0.5+iv*0.5*(0.5+0.5*Math.sin(hue*6.28));
+        pCol[i*3+1]=0.5+iv*0.3*(0.5+0.5*Math.sin(hue*6.28+2.09));
+        pCol[i*3+2]=1.0*(0.5+0.5*Math.sin(hue*6.28+4.19));
+    }
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+}
+updateP();
+
+const pMat = new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: `
+        attribute vec3 color;
+        varying vec3 vColor;
+        void main() {
+            vColor = color;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = 2.0 * (200.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+        }
+    `,
+    fragmentShader: `
+        varying vec3 vColor;
+        void main() {
+            float d = length(gl_PointCoord - 0.5);
+            if(d > 0.5) discard;
+            gl_FragColor = vec4(vColor, 1.0 - smoothstep(0.3, 0.5, d));
+        }
+    `,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+});
+scene.add(new THREE.Points(pGeo, pMat));
+
+// Vibrating plate
+const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(8, 8, 0.08, 64),
+    new THREE.MeshStandardMaterial({ color: 0x111133, metalness: 0.9, roughness: 0.3, transparent: true, opacity: 0.8 })
+);
+scene.add(plate);
+
+scene.add(new THREE.AmbientLight(0x222244, 2));
+const pL = new THREE.PointLight(0xffffff, 3, 20);
+pL.position.set(3, 4, 3);
+scene.add(pL);
+
+// lil-gui for frequency control
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+const gui = new GUI();
+gui.add({ n: CN }, 'n', 1, 10, 1).name('N (horizontal)').onChange(v => { CN = v; updateP(); });
+gui.add({ m: CM }, 'm', 1, 10, 1).name('M (vertical)').onChange(v => { CM = v; updateP(); });
+
+let t = 0;
+function animate() {
+    requestAnimationFrame(animate);
+    t += 0.016;
+    T = t;
+    plate.rotation.y = t * 0.1;
+    plate.scale.setScalar(1 + Math.sin(t * 5) * 0.003);
+    updateP();
+    controls.update();
+    composer.render();
+}
+animate();
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
