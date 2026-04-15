@@ -1,1 +1,0 @@
-A full-screen GLSL kaleidoscope with 6-fold rotational symmetry, webcam input (noise fallback), animated rotation, hue cycling, and mouse-driven symmetry center shifting.
