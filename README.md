@@ -745,6 +745,22 @@ animate()
 
 ## 附录：全部示例索引
 
+- **voxel-farm-builder** — [2803](./2803-voxel-farm-builder/index.html)
+- **galaxy-cluster-sim** — [2804](./2804-galaxy-cluster-sim/index.html)
+- **crystal-lattice-sim** — [2805](./2805-crystal-lattice-sim/index.html)
+- **audio-waveform-3d** — [2806](./2806-audio-waveform-3d/index.html)
+- **morphing-sphere** — [2807](./2807-morphing-sphere/index.html)
+- **star-field-nav** — [2808](./2808-star-field-nav/index.html)
+- **dna-helix-animation** — [2809](./2809-dna-helix-animation/index.html)
+- **pendulum-wave** — [2810](./2810-pendulum-wave/index.html)
+- **raymarch-sdf-scene** — [2811](./2811-raymarch-sdf-scene/index.html)
+- **node-graph-visualizer** — [2812](./2812-node-graph-visualizer/index.html)
+- **terrain-biome-gen** — [2813](./2813-terrain-biome-gen/index.html)
+- **spring-physics** — [2814](./2814-spring-physics/index.html)
+- **smoke-particle-sim** — [2815](./2815-smoke-particle-sim/index.html)
+- **firework-burst** — [2816](./2816-firework-burst/index.html)
+- **liquid-sim** — [2817](./2817-liquid-sim/index.html)
+
 > 以下为由脚本自动生成的示例，每个类型收录最新版本，★ 表示该技术方向有多个版本。
 
 - **3d-graph-visualization** — [350](./350-3d-graph-visualization/index.html) ★ (共2版)
