@@ -745,6 +745,23 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **light-field-display** — [3435](./3435-light-field-display/index.html)
+- **virtual-production-led-volume** — [3436](./3436-virtual-production-led-volume/index.html)
+- **neural-style-transfer-3d** — [3437](./3437-neural-style-transfer-3d/index.html)
+- **pcb-circuit-3d** — [3438](./3438-pcb-circuit-3d/index.html)
+- **satellite-orbit-planner** — [3439](./3439-satellite-orbit-planner/index.html)
+- **bokeh-depth-reconstruction** — [3440](./3440-bokeh-depth-reconstruction/index.html)
+
+- **物理摆钟** — [3426](./3426-物理摆钟/index.html)
+- **交互式音乐可视化** — [3427](./3427-交互式音乐可视化/index.html)
+- **gpu粒子场** — [3428](./3428-gpu粒子场/index.html)
+- **织物模拟** — [3429](./3429-织物模拟/index.html)
+- **程序化地形** — [3430](./3430-程序化地形/index.html)
+- **体积光渲染** — [3431](./3431-体积光渲染/index.html)
+- **弹簧链条系统** — [3432](./3432-弹簧链条系统/index.html)
+- **全息投影效果** — [3433](./3433-全息投影效果/index.html)
+- **透视矫正hud** — [3434](./3434-透视矫正hud/index.html)
+
 - **agent-based-schelling-segregation** — [3419](./3419-agent-based-schelling-segregation/index.html)
 - **interactive-physics-lab** — [3420](./3420-interactive-physics-lab/index.html)
 - **abstract-expressionism-pollock** — [3421](./3421-abstract-expressionism-pollock/index.html)
