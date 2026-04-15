@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **soft-robotics-sim** — [3394](./3394-soft-robotics-sim/index.html)
+- **black-scholes-3d-surface** — [3395](./3395-black-scholes-3d-surface/index.html)
+- **reinforcement-learning-maze** — [3396](./3396-reinforcement-learning-maze/index.html)
+- **procedural-cloud-city** — [3397](./3397-procedural-cloud-city/index.html)
+- **autonomous-driving-simulation** — [3398](./3398-autonomous-driving-simulation/index.html)
+- **morphogenetic-tissue-sim** — [3399](./3399-morphogenetic-tissue-sim/index.html)
+- **holographic-nearest-neighbor** — [3400](./3400-holographic-nearest-neighbor/index.html)
+
 - **ising-model-phase-transition** — [3389](./3389-ising-model-phase-transition/index.html)
 - **stress-strain-beam-sim** — [3390](./3390-stress-strain-beam-sim/index.html)
 - **delaunay-triangulation-dynamic** — [3391](./3391-delaunay-triangulation-dynamic/index.html)
