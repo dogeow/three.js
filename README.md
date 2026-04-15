@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **delaunay-triangulation** — [3278](./3278-delaunay-triangulation/index.html)
+- **concert-hall-acoustics** — [3279](./3279-concert-hall-acoustics/index.html)
+- **gait-cycle-biomechanics** — [3280](./3280-gait-cycle-biomechanics/index.html)
+- **bloom-filter-visual** — [3281](./3281-bloom-filter-visual/index.html)
+- **grain-growth-sintering** — [3282](./3282-grain-growth-sintering/index.html)
+- **magnetic-reconnection-plasma** — [3283](./3283-magnetic-reconnection-plasma/index.html)
+- **behavior-tree-npc** — [3284](./3284-behavior-tree-npc/index.html)
+
 - **procedural-bonsai-growth** — [3272](./3272-procedural-bonsai-growth/index.html)
 - **fluid-structure-flutter** — [3273](./3273-fluid-structure-flutter/index.html)
 - **music-notation-3d** — [3274](./3274-music-notation-3d/index.html)
