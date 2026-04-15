@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **hatching-npr-sketch** — [3210](./3210-hatching-npr-sketch/index.html)
+- **voronoi-foam-bubble** — [3211](./3211-voronoi-foam-bubble/index.html)
+- **subsurface-scattering-wax** — [3212](./3212-subsurface-scattering-wax/index.html)
+- **hilbert-space-curve-3d** — [3213](./3213-hilbert-space-curve-3d/index.html)
+- **rayleigh-plateau-jet** — [3214](./3214-rayleigh-plateau-jet/index.html)
+- **fluid-structure-coupled-v2** — [3215](./3215-fluid-structure-coupled-v2/index.html)
+
 - **granular-crystallization-sim** — [3204](./3204-granular-crystallization-sim/index.html)
 - **creeping-drying-fluid** — [3205](./3205-creeping-drying-fluid/index.html)
 - **bacterial-growth-pattern** — [3206](./3206-bacterial-growth-pattern/index.html)
