@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 
+- **ice-crystal-growth** — [2973](./2973-ice-crystal-growth/index.html)
+- **hair-strand-shader** — [2974](./2974-hair-strand-shader/index.html)
+- **vocoder-audio-visualizer** — [2975](./2975-vocoder-audio-visualizer/index.html)
+- **snow-accumulation-physics** — [2976](./2976-snow-accumulation-physics/index.html)
+- **fluid-structure-interaction** — [2977](./2977-fluid-structure-interaction/index.html)
+- **ray-tracer-real-time** — [2978](./2978-ray-tracer-real-time/index.html)
+- **granular-pouring-sim** — [2979](./2979-granular-pouring-sim/index.html)
+
 - **neural-network-training-3d** — [2965](./2965-neural-network-training-3d/index.html)
 - **structural-stress-analysis** — [2966](./2966-structural-stress-analysis/index.html)
 - **blood-cell-flow-sim** — [2967](./2967-blood-cell-flow-sim/index.html)
