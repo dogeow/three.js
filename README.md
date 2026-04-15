@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **cellular-biology-mitosis** — [3266](./3266-cellular-biology-mitosis/index.html)
+- **blockchain-transaction-viz** — [3267](./3267-blockchain-transaction-viz/index.html)
+- **impressionist-painting-style** — [3268](./3268-impressionist-painting-style/index.html)
+- **real-time-gis-3d-map** — [3269](./3269-real-time-gis-3d-map/index.html)
+- **granular-synthesis-visualizer** — [3270](./3270-granular-synthesis-visualizer/index.html)
+- **procedural-kirigami-paper-art** — [3271](./3271-procedural-kirigami-paper-art/index.html)
+
 - **volcanic-eruption** — [3258](./3258-volcanic-eruption/index.html)
 - **telescope-optics** — [3259](./3259-telescope-optics/index.html)
 - **drone-swarm-sim** — [3260](./3260-drone-swarm-sim/index.html)
