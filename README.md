@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **granular-crystallization-sim** — [3204](./3204-granular-crystallization-sim/index.html)
+- **creeping-drying-fluid** — [3205](./3205-creeping-drying-fluid/index.html)
+- **bacterial-growth-pattern** — [3206](./3206-bacterial-growth-pattern/index.html)
+- **pinning-depinning-phase** — [3207](./3207-pinning-depinning-phase/index.html)
+- **wavefunction-tomography** — [3208](./3208-wavefunction-tomography/index.html)
+- **microfacet-brdf-pbr** — [3209](./3209-microfacet-brdf-pbr/index.html)
+
 - **conways-game-of-life-3d** — [3198](./3198-conways-game-of-life-3d/index.html)
 - **ray-optics-simulation** — [3199](./3199-ray-optics-simulation/index.html)
 - **supply-demand-3d-chart** — [3200](./3200-supply-demand-3d-chart/index.html)
