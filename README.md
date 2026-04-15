@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **physarum-slime-mold-network** — [3190](./3190-physarum-slime-mold-network/index.html)
+- **viscoelastic-fluid-sim** — [3191](./3191-viscoelastic-fluid-sim/index.html)
+- **ant-colony-optimization-3d** — [3192](./3192-ant-colony-optimization-3d/index.html)
+- **speckle-interferometry-pattern** — [3193](./3193-speckle-interferometry-pattern/index.html)
+- **sand-mandala-generator** — [3194](./3194-sand-mandala-generator/index.html)
+- **root-soil-growth-sim** — [3195](./3195-root-soil-growth-sim/index.html)
+- **real-time-stock-ticker-3d** — [3196](./3196-real-time-stock-ticker-3d/index.html)
+- **gear-transmission-mechanism** — [3197](./3197-gear-transmission-mechanism/index.html)
+
 - **cellular-potts-tissue** — [3186](./3186-cellular-potts-tissue/index.html)
 - **agent-based-market** — [3187](./3187-agent-based-market/index.html)
 - **procedural-gothic-architecture** — [3188](./3188-procedural-gothic-architecture/index.html)
