@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **opinion-dynamics-axelrod** — [3408](./3408-opinion-dynamics-axelrod/index.html)
+- **michelson-interferometer** — [3409](./3409-michelson-interferometer/index.html)
+- **food-web-ecology-3d** — [3410](./3410-food-web-ecology-3d/index.html)
+- **urban-percolation-growth** — [3411](./3411-urban-percolation-growth/index.html)
+- **diffraction-grating-spectrometer** — [3412](./3412-diffraction-grating-spectrometer/index.html)
+
 - **game-of-life-3d** — [3402](./3402-game-of-life-3d/index.html)
 - **geographic-globe** — [3404](./3404-geographic-globe/index.html)
 - **artifact-museum** — [3405](./3405-artifact-museum/index.html)
