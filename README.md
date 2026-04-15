@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 
+- **robot-arm-ik** — [3004](./3004-robot-arm-ik/index.html)
+- **3d-breakout-game** — [3005](./3005-3d-breakout-game/index.html)
+- **procedural-art-shader-gallery** — [3006](./3006-procedural-art-shader-gallery/index.html)
+- **musical-spring-drum** — [3007](./3007-musical-spring-drum/index.html)
+- **vr-3d-painting** — [3008](./3008-vr-3d-painting/index.html)
+- **urban-planning-sim** — [3009](./3009-urban-planning-sim/index.html)
+- **cellular-automata-art** — [3010](./3010-cellular-automata-art/index.html)
+- **kinetic-typography-3d** — [3011](./3011-kinetic-typography-3d/index.html)
+
 - **physics-platformer-sideview** — [2998](./2998-physics-platformer-sideview/index.html)
 - **crowd-emergent-behaviors** — [2999](./2999-crowd-emergent-behaviors/index.html)
 - **heat-transfer-thermodynamics** — [3000](./3000-heat-transfer-thermodynamics/index.html)
