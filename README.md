@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **--analyze-readme** — [3310](./3310---analyze-readme/index.html)
+- **procedural-moss-wall** — [3311](./3311-procedural-moss-wall/index.html)
+- **reaction-diffusion-pattern** — [3312](./3312-reaction-diffusion-pattern/index.html)
+- **wood-grain-shader** — [3313](./3313-wood-grain-shader/index.html)
+- **origami-folding-physics** — [3314](./3314-origami-folding-physics/index.html)
+- **traffic-intersection-sim** — [3315](./3315-traffic-intersection-sim/index.html)
+- **circuit-trace-viz** — [3316](./3316-circuit-trace-viz/index.html)
+
 - **quantum-walk-2d** — [3309](./3309-quantum-walk-2d/index.html)
 
 - **sph-fluid-sim** — [3303](./3303-sph-fluid-sim/index.html)
