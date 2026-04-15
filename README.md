@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **cochlear-frequency-mapping** — [3224](./3224-cochlear-frequency-mapping/index.html)
+- **jet-stream-atmospheric-circulation** — [3225](./3225-jet-stream-atmospheric-circulation/index.html)
+- **cortical-folding-gyri-sulci** — [3226](./3226-cortical-folding-gyri-sulci/index.html)
+- **buckling-instability-structural** — [3227](./3227-buckling-instability-structural/index.html)
+- **grain-boundary-migration-material** — [3228](./3228-grain-boundary-migration-material/index.html)
+- **karplus-strong-acoustic-physics** — [3229](./3229-karplus-strong-acoustic-physics/index.html)
+
 - **klein-bottle** — [3216](./3216-klein-bottle/index.html)
 - **pid-controller-3d** — [3217](./3217-pid-controller-3d/index.html)
 - **fourier-series-3d** — [3218](./3218-fourier-series-3d/index.html)
