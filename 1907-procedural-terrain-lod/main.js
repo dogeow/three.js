@@ -1,30 +1,30 @@
-// 1907. Procedural Terrain LOD
-// 程序化地形多级细节
+// 增强：程序化地形
 import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,1000)
-camera.position.z = 5
-const renderer = new THREE.WebGLRenderer()
-renderer.setSize(innerWidth,innerHeight)
+scene.background = new THREE.Color(0x87ceeb)
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000)
+camera.position.set(0, 40, 80)
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.shadowMap.enabled = true
 document.body.appendChild(renderer.domElement)
-
-const geo = new THREE.BoxGeometry()
-const mat = new THREE.MeshPhongMaterial({color:0x00ffff})
-const mesh = new THREE.Mesh(geo,mat)
-scene.add(mesh)
-
-const light = new THREE.DirectionalLight(0xffffff,1)
-scene.add(light)
-
-function animate() {
-  requestAnimationFrame(animate)
-  mesh.rotation.x += 0.01
-  mesh.rotation.y += 0.01
-  renderer.render(scene,camera)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+const geo = new THREE.PlaneGeometry(100, 100, 64, 64)
+const pos = geo.attributes.position
+for (let i = 0; i < pos.count; i++) {
+  const x = pos.getX(i), y = pos.getY(i)
+  pos.setZ(i, Math.sin(x * 0.1) * Math.cos(y * 0.1) * 8 + (Math.random() - 0.5) * 2)
 }
+geo.computeVertexNormals()
+const mat = new THREE.MeshStandardMaterial({ color: 0x3a7d44, wireframe: false, flatShading: true })
+scene.add(new THREE.Mesh(geo, mat))
+scene.add(new THREE.AmbientLight(0xffffff, 0.6))
+const sun = new THREE.DirectionalLight(0xffffcc, 1)
+sun.position.set(50, 80, 50)
+sun.castShadow = true
+scene.add(sun)
+function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera) }
 animate()
-window.addEventListener('resize',()=>{
-  camera.aspect=innerWidth/innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth,innerHeight)
-})
+window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
