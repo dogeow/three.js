@@ -745,6 +745,16 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **--analyze** — [3162](./3162---analyze/index.html)
+- **superformula-3d-morphing** — [3163](./3163-superformula-3d-morphing/index.html)
+- **caustic-water-light** — [3164](./3164-caustic-water-light/index.html)
+- **lennard-jones-cluster** — [3165](./3165-lennard-jones-cluster/index.html)
+- **erosion-thermal-geomorphology** — [3166](./3166-erosion-thermal-geomorphology/index.html)
+- **crack-propagation-fracture** — [3167](./3167-crack-propagation-fracture/index.html)
+- **phase-diagram-material-sim** — [3168](./3168-phase-diagram-material-sim/index.html)
+- **superstring-membrane-vibration** — [3169](./3169-superstring-membrane-vibration/index.html)
+- **weaving-pattern-textile** — [3170](./3170-weaving-pattern-textile/index.html)
+
 - **shader-canvas-paint** — [3151](./3151-shader-canvas-paint/index.html)
 - **monte-carlo-path-tracer** — [3152](./3152-monte-carlo-path-tracer/index.html)
 - **navier-stokes-cfd** — [3153](./3153-navier-stokes-cfd/index.html)
