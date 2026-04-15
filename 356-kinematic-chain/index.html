@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>356 - 机械连杆运动链</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1a1a; color: #c0c0c0; font-family: 'Courier New', monospace; overflow: hidden; }
+    canvas { display: block; }
+    #ui {
+      position: fixed; top: 16px; left: 16px; z-index: 10;
+      background: rgba(20,20,20,0.92); border: 1px solid #3a3a3a;
+      padding: 14px 18px; min-width: 260px;
+    }
+    #ui h2 { font-size: 13px; color: #e8a020; letter-spacing: 2px; margin-bottom: 10px; text-transform: uppercase; }
+    .ctrl { margin: 8px 0; }
+    .ctrl label { font-size: 11px; color: #888; display: flex; justify-content: space-between; }
+    .ctrl label span { color: #e8a020; }
+    input[type=range] {
+      width: 100%; height: 4px; -webkit-appearance: none; background: #333; outline: none; margin-top: 4px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 12px; height: 12px; background: #e8a020; cursor: pointer;
+    }
+    .btn-row { display: flex; gap: 6px; margin-top: 10px; }
+    button {
+      flex: 1; padding: 6px 0; font-size: 11px; font-family: 'Courier New', monospace;
+      background: #2a2a2a; color: #c0c0c0; border: 1px solid #444; cursor: pointer; letter-spacing: 1px;
+    }
+    button:hover { background: #3a3a3a; border-color: #e8a020; color: #e8a020; }
+    button.active { background: #e8a020; color: #1a1a1a; border-color: #e8a020; }
+    #info { margin-top: 10px; font-size: 10px; color: #555; line-height: 1.6; }
+    #tip { position: fixed; bottom: 16px; right: 16px; font-size: 10px; color: #444; }
+  </style>
+</head>
+<body>
+<div id="ui">
+  <h2>⚙ 机械连杆运动链</h2>
+  <div class="ctrl">
+    <label>关节1 <span id="v0">0°</span></label>
+    <input type="range" id="s0" min="-170" max="170" value="30">
+  </div>
+  <div class="ctrl">
+    <label>关节2 <span id="v1">0°</span></label>
+    <input type="range" id="s1" min="-130" max="130" value="-20">
+  </div>
+  <div class="ctrl">
+    <label>关节3 <span id="v2">0°</span></label>
+    <input type="range" id="s2" min="-120" max="120" value="10">
+  </div>
+  <div class="ctrl">
+    <label>关节4 <span id="v3">0°</span></label>
+    <input type="range" id="s3" min="-90" max="90" value="0">
+  </div>
+  <div class="btn-row">
+    <button id="btnFK" class="active">FK 模式</button>
+    <button id="btnIK">IK 模式</button>
+  </div>
+  <div id="info">
+    FK: 关节角度 → 连杆姿态<br>
+    IK: 拖动末端 → 求逆解
+  </div>
+</div>
+<div id="tip">拖动旋转 | 滚轮缩放</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// ─── Scene ───────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a1a);
+scene.fog = new THREE.Fog(0x1a1a1a, 40, 80);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(12, 10, 18);
+camera.lookAt(0, 0, 0);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 2, 0);
+
+// ─── Lights ─────────────────────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0x303030, 1.5);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.5);
+sun.position.set(10, 20, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 60;
+sun.shadow.camera.left = -20;
+sun.shadow.camera.right = 20;
+sun.shadow.camera.top = 20;
+sun.shadow.camera.bottom = -20;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0x4060ff, 0.4);
+fill.position.set(-10, 5, -10);
+scene.add(fill);
+
+// ─── Materials ───────────────────────────────────────────────────────────────
+function metalMat(color, roughness = 0.35) {
+  return new THREE.MeshStandardMaterial({
+    color, metalness: 0.85, roughness,
+    envMapIntensity: 1.0
+  });
+}
+
+const matBase  = metalMat(0x3a3a3a, 0.5);
+const matLink1 = metalMat(0x8a8a8a, 0.3);
+const matLink2 = metalMat(0xe8a020, 0.25);
+const matLink3 = metalMat(0x8a8a8a, 0.3);
+const matLink4 = metalMat(0xe8a020, 0.25);
+const matJoint = metalMat(0xccccaa, 0.2);
+const matEnd   = metalMat(0xff6020, 0.2);
+const matFloor = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9, metalness: 0.1 });
+
+// ─── Floor / Grid ────────────────────────────────────────────────────────────
+const grid = new THREE.GridHelper(40, 40, 0x333333, 0x282828);
+scene.add(grid);
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), matFloor);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.02;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ─── Base ────────────────────────────────────────────────────────────────────
+const baseGroup = new THREE.Group();
+scene.add(baseGroup);
+
+const basePlate = new THREE.Mesh(new THREE.BoxGeometry(3, 0.4, 3), matBase);
+basePlate.position.y = 0.2;
+basePlate.castShadow = true;
+basePlate.receiveShadow = true;
+baseGroup.add(basePlate);
+
+// pedestal
+const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 1.0, 16), matBase);
+pedestal.position.y = 0.9;
+pedestal.castShadow = true;
+baseGroup.add(pedestal);
+
+// ─── Kinematic Chain ─────────────────────────────────────────────────────────
+// Link lengths
+const L = [3.0, 2.5, 2.0, 1.5];
+const linkMats = [matLink1, matLink2, matLink3, matLink4];
+
+// Joint angles (degrees)
+const angles = [30, -20, 10, 0]; // FK angles
+// IK target
+let ikTarget = new THREE.Vector3(5, 4, 2);
+
+// Root of the chain (top of pedestal)
+const rootPos = new THREE.Vector3(0, 1.4, 0);
+
+// Groups for each link
+const linkGroups = [];
+const jointMeshes = [];
+const endEffector = new THREE.Group();
+scene.add(endEffector);
+
+// End effector sphere
+const endSphere = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 20), matEnd);
+endSphere.castShadow = true;
+endEffector.add(endSphere);
+
+// Target ghost sphere (IK)
+const targetGhost = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16),
+  new THREE.MeshStandardMaterial({ color: 0xff6020, transparent: true, opacity: 0.35, roughness: 0.4 }));
+targetGhost.position.copy(ikTarget);
+scene.add(targetGhost);
+
+// Build visual links using Box + Cylinder combos
+for (let i = 0; i < 4; i++) {
+  const lg = new THREE.Group();
+  scene.add(lg);
+  linkGroups.push(lg);
+}
+
+// ─── Link Builder ─────────────────────────────────────────────────────────────
+function makeLinkMesh(length, mat) {
+  const g = new THREE.Group();
+
+  // Main body: box
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, length), mat);
+  box.position.z = -length / 2;
+  box.castShadow = true;
+  g.add(box);
+
+  // Two end caps: cylinders
+  const capGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.16, 16);
+  capGeo.rotateX(Math.PI / 2);
+  const capA = new THREE.Mesh(capGeo, matJoint);
+  capA.position.z = 0;
+  capA.castShadow = true;
+  g.add(capA);
+
+  const capB = new THREE.Mesh(capGeo, matJoint);
+  capB.position.z = -length;
+  capB.castShadow = true;
+  g.add(capB);
+
+  return g;
+}
+
+const linkVisuals = L.map((len, i) => {
+  const m = makeLinkMesh(len, linkMats[i]);
+  linkGroups[i].add(m);
+  return m;
+});
+
+// Joint spheres at pivots
+for (let i = 0; i < 4; i++) {
+  const js = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), matJoint);
+  js.castShadow = true;
+  scene.add(js);
+  jointMeshes.push(js);
+}
+
+// ─── Forward Kinematics ───────────────────────────────────────────────────────
+function computeFK(joints) {
+  const positions = [rootPos.clone()];
+  const rotations = [];
+  let pos = rootPos.clone();
+  let angle = 0;
+
+  for (let i = 0; i < joints.length; i++) {
+    angle += THREE.MathUtils.degToRad(joints[i]);
+    rotations.push(angle);
+    pos = pos.clone().add(new THREE.Vector3(0, 0, -L[i]).applyEuler(new THREE.Euler(0, angle, 0)));
+    positions.push(pos.clone());
+  }
+  return { positions, rotations };
+}
+
+function updateChain(joints) {
+  const { positions, rotations } = computeFK(joints);
+
+  for (let i = 0; i < 4; i++) {
+    linkGroups[i].position.copy(positions[i]);
+    linkGroups[i].rotation.y = rotations[i];
+  }
+
+  jointMeshes.forEach((js, i) => js.position.copy(positions[i]));
+  endEffector.position.copy(positions[4]);
+
+  // orient end effector
+  if (positions.length >= 5) {
+    const dir = positions[4].clone().sub(positions[3]);
+    endEffector.lookAt(positions[4].clone().add(dir));
+  }
+}
+
+// ─── Inverse Kinematics (CCD) ─────────────────────────────────────────────────
+function solveIK(target, maxIter = 30) {
+  const joints = angles.slice();
+  const tolerances = [positions => positions[positions.length - 1].distanceTo(target) < 0.15];
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    const { positions } = computeFK(joints);
+    const endPos = positions[positions.length - 1];
+    if (endPos.distanceTo(target) < 0.15) break;
+
+    // CCD: iterate from last joint to first
+    for (let i = joints.length - 1; i >= 0; i--) {
+      const { positions: pos2 } = computeFK(joints);
+      const pivot = pos2[i];
+      const end = pos2[pos2.length - 1];
+
+      // vectors from pivot to end and pivot to target
+      const toEnd = end.clone().sub(pivot);
+      const toTgt = target.clone().sub(pivot);
+
+      // current link direction
+      const curAngle = Math.atan2(toEnd.x, -toEnd.z);
+      const tgtAngle = Math.atan2(toTgt.x, -toTgt.z);
+      let delta = THREE.MathUtils.radToDeg(tgtAngle - curAngle);
+
+      // clamp delta
+      const maxDelta = 15;
+      delta = Math.max(-maxDelta, Math.min(maxDelta, delta));
+      joints[i] += delta;
+
+      // joint limits
+      const limits = [170, 130, 120, 90];
+      joints[i] = Math.max(-limits[i], Math.min(limits[i], joints[i]));
+    }
+  }
+  return joints;
+}
+
+// ─── IK Drag ─────────────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let draggingIK = false;
+
+renderer.domElement.addEventListener('mousedown', e => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(targetGhost);
+  if (hits.length > 0) {
+    draggingIK = true;
+    controls.enabled = false;
+  }
+});
+
+renderer.domElement.addEventListener('mousemove', e => {
+  if (!draggingIK) return;
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -2);
+  const pt = new THREE.Vector3();
+  raycaster.ray.intersectPlane(plane, pt);
+
+  if (pt) {
+    // clamp to reachable range
+    const maxReach = L.reduce((a, b) => a + b, 0) * 0.9;
+    const clamped = pt.clone();
+    if (clamped.length() > maxReach) clamped.setLength(maxReach);
+    clamped.y = Math.max(0.5, clamped.y);
+    ikTarget.copy(clamped);
+    targetGhost.position.copy(ikTarget);
+
+    const solved = solveIK(ikTarget);
+    solved.forEach((a, i) => {
+      angles[i] = a;
+      document.getElementById('s' + i).value = a;
+      document.getElementById('v' + i).textContent = a.toFixed(0) + '°';
+    });
+    updateChain(angles);
+  }
+});
+
+renderer.domElement.addEventListener('mouseup', () => {
+  draggingIK = false;
+  controls.enabled = true;
+});
+
+// ─── UI Controls ────────────────────────────────────────────────────────────
+let ikMode = false;
+
+function syncSliders() {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('v' + i).textContent = angles[i].toFixed(0) + '°';
+  }
+}
+
+document.querySelectorAll('input[type=range]').forEach((sl, i) => {
+  sl.addEventListener('input', () => {
+    if (ikMode) return;
+    angles[i] = parseFloat(sl.value);
+    document.getElementById('v' + i).textContent = angles[i].toFixed(0) + '°';
+    updateChain(angles);
+  });
+});
+
+document.getElementById('btnFK').addEventListener('click', () => {
+  ikMode = false;
+  document.getElementById('btnFK').classList.add('active');
+  document.getElementById('btnIK').classList.remove('active');
+  targetGhost.material.opacity = 0.35;
+});
+
+document.getElementById('btnIK').addEventListener('click', () => {
+  ikMode = true;
+  document.getElementById('btnIK').classList.add('active');
+  document.getElementById('btnFK').classList.remove('active');
+  targetGhost.material.opacity = 0.6;
+
+  // solve current
+  const solved = solveIK(ikTarget);
+  solved.forEach((a, i) => {
+    angles[i] = a;
+    document.getElementById('s' + i).value = a;
+    document.getElementById('v' + i).textContent = a.toFixed(0) + '°';
+  });
+  updateChain(angles);
+});
+
+// ─── Animate motor spin (idle) ────────────────────────────────────────────────
+let motorAngle = 0;
+let autoDrive = true;
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (autoDrive && !draggingIK) {
+    motorAngle += 0.008;
+    // gentle oscillation
+    if (!ikMode) {
+      // breathe motion when idle
+      const t = motorAngle;
+      const baseAngles = [30, -20, 10, 0];
+      for (let i = 0; i < 4; i++) {
+        angles[i] = baseAngles[i] + Math.sin(t * (0.4 + i * 0.15)) * 8;
+        document.getElementById('s' + i).value = angles[i];
+        document.getElementById('v' + i).textContent = angles[i].toFixed(0) + '°';
+      }
+      updateChain(angles);
+    }
+  }
+
+  // joint pulse
+  jointMeshes.forEach((js, i) => {
+    js.scale.setScalar(1 + Math.sin(Date.now() * 0.003 + i) * 0.06);
+  });
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+updateChain(angles);
+syncSliders();
+animate();
+</script>
+</body>
+</html>

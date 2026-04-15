@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>354 粒子沉降模拟</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a12; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #info {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(160,200,255,0.85);
+    font-size: 13px;
+    text-align: center;
+    pointer-events: none;
+    text-shadow: 0 0 12px rgba(80,160,255,0.6);
+    letter-spacing: 0.5px;
+  }
+  #stats {
+    position: absolute;
+    bottom: 18px;
+    left: 18px;
+    color: rgba(120,180,255,0.7);
+    font-size: 12px;
+    line-height: 1.7;
+    pointer-events: none;
+  }
+  #repulse {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .btn {
+    padding: 7px 14px;
+    background: rgba(40,80,160,0.4);
+    border: 1px solid rgba(80,140,255,0.35);
+    color: rgba(160,210,255,0.9);
+    cursor: pointer;
+    font-size: 12px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+  }
+  .btn:hover {
+    background: rgba(60,120,220,0.5);
+    border-color: rgba(100,180,255,0.6);
+    box-shadow: 0 0 10px rgba(80,150,255,0.3);
+  }
+</style>
+</head>
+<body>
+<div id="info">点击任意位置 · 倾倒粒子 &nbsp;|&nbsp; 粒子沉降、安息角堆积</div>
+<div id="repulse">
+  <button class="btn" id="btnClear">清空场地</button>
+</div>
+<div id="stats">粒子数: <span id="pcount">0</span></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+const MAX_PARTICLES = 12000;
+const PARTICLE_RADIUS = 0.12;
+const GRAVITY = -18;
+const DAMPING = 0.35;
+const FRICTION = 0.72;
+const REPOSE_ANGLE = Math.tan(0.65); // ~33 degrees
+const GRID_W = 80;
+const GRID_D = 80;
+const CELL = PARTICLE_RADIUS * 2.1;
+const VIEW_X = (GRID_W * CELL) / 2;
+const VIEW_Z = (GRID_D * CELL) / 2;
+const PARTICLES_PER_DROP = 40;
+const DROP_INTERVAL_MS = 40;
+
+// ─── Scene Setup ─────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x08080f);
+scene.fog = new THREE.FogExp2(0x08080f, 0.018);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 22, 32);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 2, 0);
+controls.minDistance = 8;
+controls.maxDistance = 80;
+controls.maxPolarAngle = Math.PI * 0.48;
+
+// ─── Lights ─────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x1a2040, 1.8);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0x6080ff, 2.2);
+dirLight.position.set(10, 25, 15);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x3366ff, 3, 50);
+pointLight.position.set(0, 15, 0);
+scene.add(pointLight);
+
+// ─── Ground & Boundaries ──────────────────────────────────────────────────────
+const groundGeo = new THREE.PlaneGeometry(GRID_W * CELL + 4, GRID_D * CELL + 4, 1, 1);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x0d0d1a,
+  metalness: 0.1,
+  roughness: 0.85,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -PARTICLE_RADIUS * 1.5;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Grid lines on ground
+const gridHelper = new THREE.GridHelper(Math.max(GRID_W, GRID_D) * CELL, 40, 0x1a2040, 0x0f1428);
+gridHelper.position.y = -PARTICLE_RADIUS * 1.49;
+scene.add(gridHelper);
+
+// Boundary walls (invisible-ish)
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x1a2040, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
+function makeWall(w, h, d, x, y, z, ry = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+  m.position.set(x, y, z);
+  m.rotation.y = ry;
+  scene.add(m);
+}
+const wallH = 6;
+makeWall(GRID_W * CELL + 0.2, wallH, 0.2, 0, wallH / 2, VIEW_Z, 0);
+makeWall(GRID_W * CELL + 0.2, wallH, 0.2, 0, wallH / 2, -VIEW_Z, 0);
+makeWall(0.2, wallH, GRID_D * CELL + 0.2, VIEW_X, wallH / 2, 0, 0);
+makeWall(0.2, wallH, GRID_D * CELL + 0.2, -VIEW_X, wallH / 2, 0, 0);
+
+// ─── Heightmap ───────────────────────────────────────────────────────────────
+const heightMap = new Float32Array(GRID_W * GRID_D);
+
+function worldToGrid(wx, wz) {
+  const gx = Math.floor(wx / CELL + GRID_W / 2);
+  const gz = Math.floor(wz / CELL + GRID_D / 2);
+  return { gx, gz };
+}
+
+function getHeight(gx, gz) {
+  if (gx < 0 || gx >= GRID_W || gz < 0 || gz >= GRID_D) return 999;
+  return heightMap[gx * GRID_D + gz];
+}
+
+function setHeight(gx, gz, h) {
+  if (gx < 0 || gx >= GRID_W || gz < 0 || gz >= GRID_D) return;
+  heightMap[gx * GRID_D + gz] = Math.max(heightMap[gx * GRID_D + gz], h);
+}
+
+function addHeightAt(gx, gz, delta) {
+  if (gx < 0 || gx >= GRID_W || gz < 0 || gz >= GRID_D) return;
+  heightMap[gx * GRID_D + gz] += delta;
+}
+
+// ─── Particle Data ────────────────────────────────────────────────────────────
+const positions = new Float32Array(MAX_PARTICLES * 3);
+const velocities = new Float32Array(MAX_PARTICLES * 3);
+const alive = new Uint8Array(MAX_PARTICLES);
+let particleCount = 0;
+
+function initParticleData() {
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    alive[i] = 0;
+  }
+  particleCount = 0;
+  heightMap.fill(0);
+}
+
+// ─── InstancedMesh ────────────────────────────────────────────────────────────
+const sphereGeo = new THREE.SphereGeometry(PARTICLE_RADIUS, 8, 6);
+const sphereMat = new THREE.MeshStandardMaterial({
+  color: 0x88aaff,
+  emissive: 0x2244cc,
+  emissiveIntensity: 0.6,
+  metalness: 0.3,
+  roughness: 0.4,
+});
+const instancedMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, MAX_PARTICLES);
+instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+instancedMesh.castShadow = true;
+scene.add(instancedMesh);
+
+const _dummy = new THREE.Object3D();
+const _color = new THREE.Color();
+
+function updateInstanceMesh() {
+  let visible = 0;
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    if (!alive[i]) {
+      _dummy.scale.setScalar(0);
+      _dummy.updateMatrix();
+      instancedMesh.setMatrixAt(i, _dummy.matrix);
+      continue;
+    }
+    visible++;
+    const ix = i * 3, iy = ix + 1, iz = ix + 2;
+    _dummy.position.set(positions[ix], positions[iy], positions[iz]);
+    _dummy.scale.setScalar(1);
+    _dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, _dummy.matrix);
+
+    // Velocity-based color
+    const spd = Math.sqrt(
+      velocities[ix] ** 2 + velocities[iy] ** 2 + velocities[iz] ** 2
+    );
+    const t = Math.min(spd / 12, 1);
+    _color.setHSL(0.6 - t * 0.3, 0.9, 0.5 + t * 0.3);
+    instancedMesh.setColorAt(i, _color);
+  }
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+  document.getElementById('pcount').textContent = visible;
+  particleCount = visible;
+}
+
+// ─── Spawn Particles ─────────────────────────────────────────────────────────
+function spawnParticles(wx, wz, count) {
+  let spawned = 0;
+  for (let n = 0; n < count && spawned < 200; n++) {
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      if (alive[i]) continue;
+      alive[i] = 1;
+      const spread = 0.8;
+      const ix = i * 3;
+      positions[ix] = wx + (Math.random() - 0.5) * spread;
+      positions[ix + 1] = 16 + Math.random() * 3;
+      positions[ix + 2] = wz + (Math.random() - 0.5) * spread;
+      velocities[ix] = (Math.random() - 0.5) * 0.5;
+      velocities[ix + 1] = -1 - Math.random() * 2;
+      velocities[ix + 2] = (Math.random() - 0.5) * 0.5;
+      spawned++;
+      break;
+    }
+  }
+}
+
+// ─── Physics Update ───────────────────────────────────────────────────────────
+const BOUND_X = VIEW_X - PARTICLE_RADIUS;
+const BOUND_Z = VIEW_Z - PARTICLE_RADIUS;
+
+function updatePhysics(dt) {
+  dt = Math.min(dt, 0.025);
+
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    if (!alive[i]) continue;
+    const ix = i * 3, iy = ix + 1, iz = ix + 2;
+
+    // Gravity
+    velocities[iy] += GRAVITY * dt;
+
+    // Move
+    positions[ix] += velocities[ix] * dt;
+    positions[iy] += velocities[iy] * dt;
+    positions[iz] += velocities[iz] * dt;
+
+    // Boundary walls
+    if (positions[ix] < -BOUND_X) { positions[ix] = -BOUND_X; velocities[ix] *= -DAMPING; }
+    if (positions[ix] > BOUND_X)  { positions[ix] = BOUND_X;  velocities[ix] *= -DAMPING; }
+    if (positions[iz] < -BOUND_Z) { positions[iz] = -BOUND_Z; velocities[iz] *= -DAMPING; }
+    if (positions[iz] > BOUND_Z)  { positions[iz] = BOUND_Z;  velocities[iz] *= -DAMPING; }
+
+    // Ground collision
+    const groundY = -PARTICLE_RADIUS * 1.5;
+    if (positions[iy] < groundY + PARTICLE_RADIUS) {
+      positions[iy] = groundY + PARTICLE_RADIUS;
+      velocities[iy] *= -DAMPING;
+      velocities[ix] *= FRICTION;
+      velocities[iz] *= FRICTION;
+
+      // Settle into heightmap
+      const { gx, gz } = worldToGrid(positions[ix], positions[iz]);
+      const topH = getHeight(gx, gz);
+      if (topH < positions[iy] + PARTICLE_RADIUS * 0.5) {
+        setHeight(gx, gz, positions[iy] + PARTICLE_RADIUS * 1.1);
+      }
+      if (Math.abs(velocities[iy]) < 0.3) velocities[iy] = 0;
+    }
+
+    // Neighbor collision with heightmap (angle of repose)
+    if (positions[iy] < 12) {
+      const { gx, gz } = worldToGrid(positions[ix], positions[iz]);
+      for (let ddx = -1; ddx <= 1; ddx++) {
+        for (let ddz = -1; ddz <= 1; ddz++) {
+          if (ddx === 0 && ddz === 0) continue;
+          const nx = gx + ddx, nz = gz + ddz;
+          if (nx < 0 || nx >= GRID_W || nz < 0 || nz >= GRID_D) continue;
+          const nh = getHeight(nx, nz);
+          const dx = positions[ix] - (nx * CELL - VIEW_X + CELL * 0.5);
+          const dz = positions[iz] - (nz * CELL - VIEW_Z + CELL * 0.5);
+          const dist2 = dx * dx + dz * dz;
+          const minDist = PARTICLE_RADIUS * 2;
+          if (dist2 < minDist * minDist && dist2 > 0.0001) {
+            const dist = Math.sqrt(dist2);
+            const overlap = minDist - dist;
+            const nx2 = dx / dist, nz2 = dz / dist;
+            positions[ix] += nx2 * overlap * 0.5;
+            positions[iz] += nz2 * overlap * 0.5;
+            // Check angle of repose - if slope too steep, flow
+            const heightDiff = nh - getHeight(gx, gz);
+            if (heightDiff > PARTICLE_RADIUS * 1.5) {
+              // Slide down
+              velocities[ix] += nx2 * 3;
+              velocities[iz] += nz2 * 3;
+            }
+          }
+        }
+      }
+    }
+
+    // Settle velocity-based height
+    const speed = Math.abs(velocities[iy]);
+    if (positions[iy] < groundY + PARTICLE_RADIUS * 2 && speed < 0.5) {
+      const { gx, gz } = worldToGrid(positions[ix], positions[iz]);
+      if (positions[iy] > getHeight(gx, gz) - PARTICLE_RADIUS * 2) {
+        setHeight(gx, gz, Math.min(positions[iy] + PARTICLE_RADIUS * 0.5, getHeight(gx, gz) + PARTICLE_RADIUS * 0.1));
+      }
+    }
+  }
+}
+
+// ─── Heightmap Visualization ─────────────────────────────────────────────────
+const heightVisGeo = new THREE.PlaneGeometry(CELL, CELL);
+const heightVisMat = new THREE.MeshBasicMaterial({
+  color: 0x2244aa,
+  transparent: true,
+  opacity: 0.0,
+  wireframe: false,
+});
+const heightMarkers = [];
+for (let i = 0; i < 200; i++) {
+  const m = new THREE.Mesh(heightVisGeo, heightVisMat.clone());
+  m.rotation.x = -Math.PI / 2;
+  m.visible = false;
+  scene.add(m);
+  heightMarkers.push(m);
+}
+
+// ─── Post-processing ─────────────────────────────────────────────────────────
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.9, 0.4, 0.72
+);
+composer.addPass(bloomPass);
+
+// ─── Drop system ──────────────────────────────────────────────────────────────
+let pendingDrops = [];
+let lastDropTime = 0;
+
+function queueDrop(wx, wz) {
+  for (let i = 0; i < 6; i++) {
+    pendingDrops.push({ wx: wx + (Math.random() - 0.5) * 1.5, wz: wz + (Math.random() - 0.5) * 1.5 });
+  }
+}
+
+// ─── Raycasting for click ─────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const dropPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -12);
+const _pt = new THREE.Vector3();
+
+function onPointerDown(e) {
+  if (e.target !== renderer.domElement) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  if (raycaster.ray.intersectPlane(dropPlane, _pt)) {
+    const wx = Math.max(-BOUND_X, Math.min(BOUND_X, _pt.x));
+    const wz = Math.max(-BOUND_Z, Math.min(BOUND_Z, _pt.z));
+    queueDrop(wx, wz);
+  }
+}
+
+renderer.domElement.addEventListener('pointerdown', onPointerDown);
+
+// ─── Clear button ─────────────────────────────────────────────────────────────
+document.getElementById('btnClear').addEventListener('click', () => {
+  for (let i = 0; i < MAX_PARTICLES; i++) alive[i] = 0;
+  heightMap.fill(0);
+  pendingDrops = [];
+  updateInstanceMesh();
+});
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+let lastTime = 0;
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
+
+  controls.update();
+
+  // Process drop queue
+  if (pendingDrops.length > 0 && time - lastDropTime > DROP_INTERVAL_MS) {
+    const d = pendingDrops.shift();
+    spawnParticles(d.wx, d.wz, PARTICLES_PER_DROP);
+    lastDropTime = time;
+  }
+
+  updatePhysics(dt);
+  updateInstanceMesh();
+
+  // Animate bloom glow over settled particles
+  const settled = particleCount;
+  bloomPass.strength = 0.7 + Math.sin(time * 0.002) * 0.1 + Math.min(settled / 3000, 0.3);
+
+  composer.render();
+}
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+initParticleData();
+animate(0);
+
+// Give a little initial drop
+setTimeout(() => queueDrop(0, 0), 500);
+setTimeout(() => queueDrop(-2, 1), 1200);
+setTimeout(() => queueDrop(2, -1), 1900);
+</script>
+</body>
+</html>

@@ -731,3 +731,4 @@ animate()
 | [350](./350-3d-graph-visualization/index.html) | **3D图形可视化 ★** | 力导向图布局、Verlet物理、节点-边可视化、CSS2DRenderer标签 |
 | [351](./351-sdf-raymarching-scene/index.html) | **SDF光线步进场景 ★** | SDF场景构建、光线步进、距离场渲染 |
 | [352](./352-soft-body-cloth/index.html) | **软体布料模拟 ★** | 布料物理、弹簧质点、碰撞检测 |
+| [354](./354-particle-settling/index.html) | **粒子沉降模拟 ★** | GPU InstancedMesh引力沉降、安息角堆积、点击倾倒、InstancedMesh |
