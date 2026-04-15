@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **{typ}** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **diffraction-grating-optics** — [3083](./3083-diffraction-grating-optics/index.html)
+- **plate-tectonics-continental-drift** — [3084](./3084-plate-tectonics-continental-drift/index.html)
+- **epidemic-spread-sir-model** — [3085](./3085-epidemic-spread-sir-model/index.html)
+- **lattice-boltzmann-fluid-sim** — [3086](./3086-lattice-boltzmann-fluid-sim/index.html)
+- **holographic-interference-pattern** — [3087](./3087-holographic-interference-pattern/index.html)
+- **tsunami-shallow-water-wave** — [3088](./3088-tsunami-shallow-water-wave/index.html)
+
 - **abel-flux-divergence** — [3075](./3075-abel-flux-divergence/index.html)
 - **spinodal-decomposition** — [3076](./3076-spinodal-decomposition/index.html)
 - **eulerian-fluid-smoke** — [3077](./3077-eulerian-fluid-smoke/index.html)

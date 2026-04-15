@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3083 - Diffraction Grating Optics</title>
+<style>
+*{margin:0;padding:0;overflow:hidden}
+body{background:#000}
+canvas{display:block}
+#info{position:absolute;top:12px;left:12px;color:#aaa;font:14px/1.4 monospace;pointer-events:none;opacity:.8}
+#controls{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#ccc;padding:6px 14px;border-radius:4px;cursor:pointer;font:13px monospace}
+button:hover{background:rgba(255,255,255,.16);color:#fff}
+</style>
+</head>
+<body>
+<div id="info"><b>3083 - Diffraction Grating Optics</b><br>Three.js simulation demo</div>
+<div id="controls"></div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
