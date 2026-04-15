@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **organic-fluid-simulation** — [3245](./3245-organic-fluid-simulation/index.html)
+- **generative-art-noise** — [3246](./3246-generative-art-noise/index.html)
+- **particle-starfield** — [3247](./3247-particle-starfield/index.html)
+- **data-visualization-3d** — [3248](./3248-data-visualization-3d/index.html)
+- **audio-reactive-visuals** — [3251](./3251-audio-reactive-visuals/index.html)
+
 - **chladni-plate-cymatics** — [3237](./3237-chladni-plate-cymatics/index.html)
 - **gravity-slingshot-orbit** — [3238](./3238-gravity-slingshot-orbit/index.html)
 - **black-scholes-options-surface** — [3239](./3239-black-scholes-options-surface/index.html)
