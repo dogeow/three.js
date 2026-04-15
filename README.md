@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 
+- **procedural-rock-garden-sandbox** — [3028](./3028-procedural-rock-garden-sandbox/index.html)
+- **nbody-gravitational-galaxy-form** — [3029](./3029-nbody-gravitational-galaxy-form/index.html)
+- **volumetric-cloud-formation** — [3030](./3030-volumetric-cloud-formation/index.html)
+- **structural-stress-visualization** — [3031](./3031-structural-stress-visualization/index.html)
+- **snow-avalanche-particle-sim** — [3032](./3032-snow-avalanche-particle-sim/index.html)
+- **circuit-board-signal-propagation** — [3033](./3033-circuit-board-signal-propagation/index.html)
+- **fluid-funnel-chaos-sim** — [3034](./3034-fluid-funnel-chaos-sim/index.html)
+- **holographic-memory-hologram** — [3035](./3035-holographic-memory-hologram/index.html)
+
 - **game-octree-spatial** — [3020](./3020-game-octree-spatial/index.html)
 - **volume-rendering-medical** — [3021](./3021-volume-rendering-medical/index.html)
 - **fft-spectral-waterfall** — [3022](./3022-fft-spectral-waterfall/index.html)
