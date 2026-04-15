@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **frustrated-magnetism-skyrmion** — [3471](./3471-frustrated-magnetism-skyrmion/index.html)
+- **kuramoto-oscillator-sync** — [3472](./3472-kuramoto-oscillator-sync/index.html)
+- **epigenetic-landscape-stem-cell** — [3473](./3473-epigenetic-landscape-stem-cell/index.html)
+- **granular-acoustic-standing-wave** — [3474](./3474-granular-acoustic-standing-wave/index.html)
+- **syntactic-foam-material** — [3475](./3475-syntactic-foam-material/index.html)
+- **dna-helix-oscillator** — [3476](./3476-dna-helix-oscillator/index.html)
+
 - **reaction-diffusion-turing-pattern** — [3459](./3459-reaction-diffusion-turing-pattern/index.html)
 - **vortex-shedding-fluid** — [3460](./3460-vortex-shedding-fluid/index.html)
 - **schlieren-imaging-fluid** — [3461](./3461-schlieren-imaging-fluid/index.html)
