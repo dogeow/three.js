@@ -735,3 +735,14 @@ animate()
 | [354](./354-particle-settling/index.html) | **粒子沉降模拟 ★** | GPU InstancedMesh引力沉降、安息角堆积、点击倾倒、InstancedMesh |
 | [355](./355-steinberg-guitar/index.html) | **吉他弦振动 ★** | 驻波傅里叶分解、谐波叠加、点击拨弦、频谱可视化 |
 | [356](./356-kinematic-chain/index.html) | **机械连杆运动链 ★** | 正逆运动学、多段连杆、旋转关节约束、点击控制 |
+
+## 三十二、新示例（353~360）
+
+| # | 章节 | 技术点 |
+|---|------|-------|
+| [353](./353-wind-erosion-terrain/index.html) | **风力侵蚀地形 ★** | FBM噪声地形、风力侵蚀模拟、沙粒粒子漂流、点击阵风 |
+| [354](./354-particle-settling/index.html) | **粒子沉降模拟 ★** | GPU InstancedMesh引力沉降、安息角堆积、点击倾倒、碰撞物理 |
+| [357](./357-reaction-diffusion-turing/index.html) | **反应扩散图灵斑图 ★** | Gray-Scott反应扩散、GPU FBO迭代、图灵生物图案、点击注入催化剂 |
+| [358](./358-abel-inversion/index.html) | **Abel逆变换可视化 ★** | 轴对称投影、Abel反演重建、3D密度场可视化、等离子体诊断 |
+| [359](./359-electromagnetic-wave/index.html) | **电磁波传播可视化 ★** | Maxwell平面波、偏振态可视化、E/B场箭头、线/圆/椭圆偏振切换 |
+| [360](./360-voxel-extrusion-font/index.html) | **体素字体挤压 ★** | InstancedMesh体素动画、入场逐字弹出、赛博朋克霓虹风格 |
