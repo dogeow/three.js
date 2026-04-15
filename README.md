@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **volcanic-eruption** — [3258](./3258-volcanic-eruption/index.html)
+- **telescope-optics** — [3259](./3259-telescope-optics/index.html)
+- **drone-swarm-sim** — [3260](./3260-drone-swarm-sim/index.html)
+- **wing-aerodynamics** — [3261](./3261-wing-aerodynamics/index.html)
+- **cable-stayed-bridge** — [3262](./3262-cable-stayed-bridge/index.html)
+- **lidar-scanning-visual** — [3263](./3263-lidar-scanning-visual/index.html)
+- **wave-energy-converter** — [3264](./3264-wave-energy-converter/index.html)
+- **speaker-acoustics** — [3265](./3265-speaker-acoustics/index.html)
+
 - **benard-convection-cells** — [3252](./3252-benard-convection-cells/index.html)
 - **kelvin-helmholtz-instability** — [3253](./3253-kelvin-helmholtz-instability/index.html)
 - **liquid-crystal-nematic-phase** — [3254](./3254-liquid-crystal-nematic-phase/index.html)
