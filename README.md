@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **game-of-life-3d** — [3402](./3402-game-of-life-3d/index.html)
+- **geographic-globe** — [3404](./3404-geographic-globe/index.html)
+- **artifact-museum** — [3405](./3405-artifact-museum/index.html)
+- **particle-swarm** — [3406](./3406-particle-swarm/index.html)
+- **procedural-bamboo-forest** — [3407](./3407-procedural-bamboo-forest/index.html)
+
 - **soft-robotics-sim** — [3394](./3394-soft-robotics-sim/index.html)
 - **black-scholes-3d-surface** — [3395](./3395-black-scholes-3d-surface/index.html)
 - **reinforcement-learning-maze** — [3396](./3396-reinforcement-learning-maze/index.html)
