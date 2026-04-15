@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 
+- **ink-wash-painting** — [3012](./3012-ink-wash-painting/index.html)
+- **hex-grid-strategy** — [3013](./3013-hex-grid-strategy/index.html)
+- **procedural-coral-reef** — [3014](./3014-procedural-coral-reef/index.html)
+- **mechanical-clockwork** — [3015](./3015-mechanical-clockwork/index.html)
+- **shader-particles-gpu** — [3016](./3016-shader-particles-gpu/index.html)
+- **terrain-editing-tools** — [3017](./3017-terrain-editing-tools/index.html)
+- **data-stream-network** — [3018](./3018-data-stream-network/index.html)
+
 - **robot-arm-ik** — [3004](./3004-robot-arm-ik/index.html)
 - **3d-breakout-game** — [3005](./3005-3d-breakout-game/index.html)
 - **procedural-art-shader-gallery** — [3006](./3006-procedural-art-shader-gallery/index.html)
