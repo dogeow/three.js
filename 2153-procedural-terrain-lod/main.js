@@ -9,11 +9,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a1628)
 scene.fog = new THREE.FogExp2(0x0a1628, 0.006)
 
-const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 3000)
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 3000)
 camera.position.set(60, 40, 80)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -23,7 +23,7 @@ document.body.appendChild(renderer.domElement)
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.4, 0.85))
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.6, 0.4, 0.85))
 
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
@@ -37,10 +37,15 @@ const sunLight = new THREE.DirectionalLight(0xfff4d6, 2.5)
 sunLight.position.set(120, 180, 80)
 sunLight.castShadow = true
 sunLight.shadow.mapSize.set(2048, 2048)
-Object.assign(sunLight.shadow.camera, { near: 10, far: 500, left: -120, right: 120, top: 120, bottom: -120 })
+sunLight.shadow.camera.near = 10;
+sunLight.shadow.camera.far = 500;
+sunLight.shadow.camera.left = -120;
+sunLight.shadow.camera.right = 120;
+sunLight.shadow.camera.top = 120;
+sunLight.shadow.camera.bottom = -120;
 sunLight.shadow.bias = -0.0003
 scene.add(sunLight)
-scene.add(Object.assign(new THREE.DirectionalLight(0x4488ff, 0.8), { position: new THREE.Vector3(-80, 60, -120) }))
+const _dl=new THREE.DirectionalLight(0x4488ff, 0.8);_dl.position.set(-80, 60, -120);scene.add(_dl)
 
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(1400, 24, 24), new THREE.ShaderMaterial({
   uniforms: { topColor: { value: new THREE.Color(0x0a1628) }, bottomColor: { value: new THREE.Color(0x1a3a6a) }, offset: { value: 200 }, exponent: { value: 0.4 } },
@@ -97,7 +102,7 @@ hoverRing.rotation.x = -Math.PI / 2
 hoverRing.visible = false
 scene.add(hoverRing)
 
-window.addEventListener('mousemove', e => { mouse.x = (e.clientX / innerWidth) * 2 - 1; mouse.y = -(e.clientY / innerHeight) * 2 + 1 })
+window.addEventListener('mousemove', e => { mouse.x = (e.clientX / window.innerWidth) * 2 - 1; mouse.y = -(e.clientY / window.innerHeight) * 2 + 1 })
 
 const clock = new THREE.Clock()
 const LOD_DIST = [0, 60, 100, 160, 220]
@@ -122,4 +127,4 @@ function animate() {
 }
 
 animate()
-window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight) })
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight) })

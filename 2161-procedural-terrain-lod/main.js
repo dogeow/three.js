@@ -9,11 +9,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a1628)
 scene.fog = new THREE.FogExp2(0x0a1628, 0.006)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 3000)
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 3000)
 camera.position.set(0, 40, 90)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -115,8 +115,8 @@ marker.visible = false; scene.add(marker)
 const ripples = []
 
 window.addEventListener('mousemove', e => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 window.addEventListener('click', e => {
   raycaster.setFromCamera(mouse, camera)
@@ -172,7 +172,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

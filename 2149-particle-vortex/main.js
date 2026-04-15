@@ -7,11 +7,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x030308)
 scene.fog = new THREE.FogExp2(0x030308, 0.012)
 
-const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.set(0, 25, 55)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -122,8 +122,8 @@ const mouse = new THREE.Vector2()
 const targetVortexStrength = { value: 1.0 }
 
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 window.addEventListener('mousedown', () => {
@@ -207,7 +207,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

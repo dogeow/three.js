@@ -7,10 +7,10 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 
 const scene = new THREE.Scene()
 scene.fog = new THREE.FogExp2(0x001133, 0.012)
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000)
 camera.position.set(0, 12, 20)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 document.body.appendChild(renderer.domElement)
@@ -23,7 +23,7 @@ controls.autoRotateSpeed = 0.5
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.8, 0.4, 0.85))
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.8, 0.4, 0.85))
 
 scene.add(new THREE.AmbientLight(0x404060, 0.5))
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.5)
@@ -108,9 +108,9 @@ scene.add(pts)
 
 const mouse = new THREE.Vector2(), targetMouse = new THREE.Vector2()
 let mouseInfl = 0
-window.addEventListener('mousemove',e=>{targetMouse.x=e.clientX/innerWidth*2-1;targetMouse.y=-(e.clientY/innerHeight)*2+1;mouseInfl=1.0})
-window.addEventListener('touchmove',e=>{if(e.touches.length>0){targetMouse.x=e.touches[0].clientX/innerWidth*2-1;targetMouse.y=-(e.touches[0].clientY/innerHeight)*2+1;mouseInfl=1.0}})
-window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight)})
+window.addEventListener('mousemove',e=>{targetMouse.x=e.clientX/window.innerWidth*2-1;targetMouse.y=-(e.clientY/window.innerHeight)*2+1;mouseInfl=1.0})
+window.addEventListener('touchmove',e=>{if(e.touches.length>0){targetMouse.x=e.touches[0].clientX/window.innerWidth*2-1;targetMouse.y=-(e.touches[0].clientY/window.innerHeight)*2+1;mouseInfl=1.0}})
+window.addEventListener('resize',()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);composer.setSize(window.innerWidth,window.innerHeight)})
 
 const clock = new THREE.Clock()
 function animate(){requestAnimationFrame(animate)

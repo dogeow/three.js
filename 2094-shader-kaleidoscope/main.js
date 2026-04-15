@@ -7,11 +7,11 @@ import * as THREE from 'three'
 // 场景初始化
 // ============================================================
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
 camera.position.z = 5
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) // 限制像素比，防止性能问题
 document.body.appendChild(renderer.domElement)
 
@@ -21,7 +21,7 @@ document.body.appendChild(renderer.domElement)
 const kaleidoMaterial = new THREE.ShaderMaterial({
   uniforms: {
     uTime: { value: 0 },                          // 动画时间
-    uResolution: { value: new THREE.Vector2(innerWidth, innerHeight) },
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     uKaleidoSegments: { value: 8.0 },             // 万花筒对称轴数量（6-8）
     uColorShift: { value: 0.0 },                  // 色彩偏移量
     uIntensity: { value: 1.0 },                   // 整体亮度
@@ -231,15 +231,15 @@ animate()
 // ============================================================
 window.addEventListener('resize', () => {
   // 更新相机宽高比
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
 
   // 更新渲染器尺寸
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
   // 更新着色器分辨率uniform
-  kaleidoMaterial.uniforms.uResolution.value.set(innerWidth, innerHeight)
+  kaleidoMaterial.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight)
 })
 
 // ============================================================

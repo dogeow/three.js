@@ -6,11 +6,11 @@ import * as THREE from 'three'
 // 场景初始化
 // ============================================================
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000)
 camera.position.z = 60
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 document.body.appendChild(renderer.domElement)
 
@@ -237,8 +237,8 @@ animate()
 // 响应式窗口调整
 // ============================================================
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 })

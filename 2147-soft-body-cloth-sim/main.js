@@ -7,11 +7,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a0a14)
 scene.fog = new THREE.FogExp2(0x0a0a14, 0.025)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 500)
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 500)
 camera.position.set(0, 8, 28)
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -159,8 +159,8 @@ const mouseWorld = new THREE.Vector3()
 let mouseActive = false
 
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 window.addEventListener('mousedown', () => { mouseActive = true })
@@ -286,7 +286,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

@@ -12,11 +12,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a0a1a)
 scene.fog = new THREE.FogExp2(0x0a0a1a, 0.008)
 
-const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 3000)
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 3000)
 camera.position.set(70, 100, 70)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 // 柔和阴影贴图：柔和阴影边缘
 renderer.shadowMap.enabled = true
@@ -246,7 +246,7 @@ animate()
 
 // ── 响应窗口 resize ─────────────────────────────────────────
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

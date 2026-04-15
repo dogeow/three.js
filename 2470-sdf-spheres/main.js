@@ -3,10 +3,10 @@
 import * as THREE from 'three'
 
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.z = 20
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
 const geo = new THREE.PlaneGeometry(2, 2)
@@ -35,7 +35,7 @@ const mat = new THREE.ShaderMaterial({
     }
     void main() {
       vec2 uv = vUv * 2.0 - 1.0;
-      uv.x *= innerWidth / innerHeight;
+      uv.x *= window.innerWidth / window.innerHeight;
       vec3 ro = uCamPos, rd = normalize(vec3(uv, -1.5));
       float t = 0.0;
       for (int i = 0; i < 100; i++) { float d = scene(ro + rd * t); if (d < 0.001 || t > 100.0) break; t += d; }
@@ -54,7 +54,7 @@ function animate() {
 }
 animate()
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

@@ -7,10 +7,10 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a0a15)
 scene.fog = new THREE.FogExp2(0x0a0a15, 0.03)
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.set(0, 8, 25)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 document.body.appendChild(renderer.domElement)
@@ -224,8 +224,8 @@ const mouse = new THREE.Vector2()
 let mouseInfluence = 0
 
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
   
   raycaster.setFromCamera(mouse, camera)
   const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
@@ -233,8 +233,8 @@ window.addEventListener('mousemove', (e) => {
 })
 
 window.addEventListener('mousedown', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
   
   raycaster.setFromCamera(mouse, camera)
   
@@ -419,9 +419,9 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })
 
 console.log('Cloth Sim initialized - Drag particles with mouse, press R to reset')

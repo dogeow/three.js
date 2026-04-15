@@ -5,14 +5,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x000005)
 scene.fog = new THREE.FogExp2(0x000005, 0.012)
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
 camera.position.set(0, 30, 60)
 camera.lookAt(0, 0, 0)
 
@@ -166,8 +166,8 @@ const mouseWorld = new THREE.Vector3()
 let gravityActive = false
 
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 window.addEventListener('mousedown', () => { gravityActive = true })
@@ -234,7 +234,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

@@ -8,11 +8,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010a1a)
 scene.fog = new THREE.FogExp2(0x010a1a, 0.016)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500)
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500)
 camera.position.set(0, 12, 22)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.1
@@ -20,13 +20,13 @@ document.body.appendChild(renderer.domElement)
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.35, 0.72))
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.9, 0.35, 0.72))
 
 scene.add(new THREE.AmbientLight(0x0a1f3c, 1.8))
 const sun = new THREE.DirectionalLight(0x8ec8ff, 2.5)
 sun.position.set(8, 18, 10)
 scene.add(sun)
-scene.add(Object.assign(new THREE.DirectionalLight(0xff4d9a, 0.6), { position: new THREE.Vector3(-15, 5, -20) }))
+const _dl=new THREE.DirectionalLight(0xff4d9a, 0.6);_dl.position.set(-15, 5, -20);scene.add(_dl)
 
 const waterMat = new THREE.ShaderMaterial({
   uniforms: {
@@ -134,7 +134,7 @@ scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0x8ec8ff, size:
 
 const mouse = new THREE.Vector2()
 window.addEventListener('mousemove', e => {
-  mouse.x = e.clientX/innerWidth; mouse.y = e.clientY/innerHeight
+  mouse.x = e.clientX/window.innerWidth; mouse.y = e.clientY/window.innerHeight
   waterMat.uniforms.uMouse.value.set(mouse.x, mouse.y)
 })
 window.addEventListener('mousedown', () => {
@@ -159,8 +159,8 @@ let camAngle = 0
 })()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-  composer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  composer.setSize(window.innerWidth, window.innerHeight)
 })

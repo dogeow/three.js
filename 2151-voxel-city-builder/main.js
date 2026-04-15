@@ -9,18 +9,18 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a0a1a)
 scene.fog = new THREE.FogExp2(0x0a0a1a, 0.006)
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000)
 camera.position.set(50, 80, 50)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 document.body.appendChild(renderer.domElement)
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.7, 0.4, 0.85))
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.4, 0.85))
 
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
@@ -83,7 +83,7 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0xaac
 scene.add(particles)
 
 // 鼠标交互
-window.addEventListener('mousemove', e => { mouse.x = (e.clientX / innerWidth) * 2 - 1; mouse.y = -(e.clientY / innerHeight) * 2 + 1 })
+window.addEventListener('mousemove', e => { mouse.x = (e.clientX / window.innerWidth) * 2 - 1; mouse.y = -(e.clientY / window.innerHeight) * 2 + 1 })
 
 const clock = new THREE.Clock()
 function animate() {
@@ -116,5 +116,5 @@ function animate() {
   composer.render()
 }
 
-window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight) })
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight) })
 animate()

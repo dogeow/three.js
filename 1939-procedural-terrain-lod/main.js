@@ -3,10 +3,10 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x87ceeb)
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 2000)
 camera.position.set(0, 40, 80)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 document.body.appendChild(renderer.domElement)
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -27,4 +27,4 @@ sun.castShadow = true
 scene.add(sun)
 function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera) }
 animate()
-window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight) })

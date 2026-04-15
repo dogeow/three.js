@@ -13,12 +13,12 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x050d1a)
 scene.fog = new THREE.FogExp2(0x071525, 0.012)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500)
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500)
 camera.position.set(0, 18, 32)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 0.9
 renderer.shadowMap.enabled = true
@@ -29,7 +29,7 @@ document.body.appendChild(renderer.domElement)
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
 const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.4, 0.82
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.55, 0.4, 0.82
 )
 composer.addPass(bloomPass)
 
@@ -372,18 +372,18 @@ let mouseDown = false
 let force = 0
 
 window.addEventListener('mousemove', e => {
-  mouse.x = e.clientX / innerWidth
-  mouse.y = 1.0 - e.clientY / innerHeight
+  mouse.x = e.clientX / window.innerWidth
+  mouse.y = 1.0 - e.clientY / window.innerHeight
 })
 window.addEventListener('mousedown', () => { mouseDown = true })
 window.addEventListener('mouseup', () => { mouseDown = false })
 
 // ── Resize ─────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-  composer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  composer.setSize(window.innerWidth, window.innerHeight)
 })
 
 // ── Animation Loop ──────────────────────────────────────────────────────────

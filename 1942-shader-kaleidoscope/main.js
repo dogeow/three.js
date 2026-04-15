@@ -1,14 +1,14 @@
 // 增强：万花筒着色器
 import * as THREE from 'three'
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.z = 5
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 const geo = new THREE.PlaneGeometry(10, 10)
 const mat = new THREE.ShaderMaterial({
-  uniforms: { uTime: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) } },
+  uniforms: { uTime: { value: 0 }, uRes: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `uniform float uTime; uniform vec2 uRes; varying vec2 vUv;
     vec2 kaleido(vec2 p, float seg) { float a=atan(p.y,p.x),r=length(p); a=mod(a,6.28318/seg); a=abs(a-3.14159/seg); return vec2(cos(a),sin(a))*r; }
@@ -25,4 +25,4 @@ scene.add(new THREE.Mesh(geo, mat))
 const clock = new THREE.Clock()
 function animate() { requestAnimationFrame(animate); mat.uniforms.uTime.value = clock.getElapsedTime(); renderer.render(scene, camera) }
 animate()
-window.addEventListener('resize', () => { mat.uniforms.uRes.value.set(innerWidth, innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight) })
+window.addEventListener('resize', () => { mat.uniforms.uRes.value.set(window.innerWidth, window.innerHeight); camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight) })

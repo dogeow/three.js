@@ -2,10 +2,10 @@
 import * as THREE from 'three'
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x001133)
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.set(0, 8, 15)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 const geo = new THREE.PlaneGeometry(30, 30, 128, 128)
 const mat = new THREE.ShaderMaterial({
@@ -31,4 +31,4 @@ scene.add(new THREE.DirectionalLight(0xffffff, 1))
 const clock = new THREE.Clock()
 function animate() { requestAnimationFrame(animate); mat.uniforms.uTime.value = clock.getElapsedTime(); renderer.render(scene, camera) }
 animate()
-window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight) })

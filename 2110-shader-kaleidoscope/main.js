@@ -3,10 +3,10 @@
 import * as THREE from 'three'
 
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.z = 5
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 document.body.appendChild(renderer.domElement)
 
@@ -18,7 +18,7 @@ let symmetryOffset = 0
 const mainMat = new THREE.ShaderMaterial({
   uniforms: { 
     uTime: { value: 0 }, 
-    uResolution: { value: new THREE.Vector2(innerWidth, innerHeight) },
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     uSegments: { value: segments },
     uSymOffset: { value: symmetryOffset }
   },

@@ -7,7 +7,7 @@ import { Sky } from 'three/addons/objects/Sky.js'
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 0.85
 document.body.appendChild(renderer.domElement)
@@ -15,7 +15,7 @@ document.body.appendChild(renderer.domElement)
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x001122)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 20000)
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 20000)
 camera.position.set(0, 30, 60)
 
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -154,8 +154,8 @@ const raycaster = new THREE.Raycaster()
 let mouseWorld = new THREE.Vector3()
 
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
   raycaster.setFromCamera(mouse, camera)
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   raycaster.ray.intersectPlane(plane, mouseWorld)
@@ -215,7 +215,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

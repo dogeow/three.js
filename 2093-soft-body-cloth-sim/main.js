@@ -13,12 +13,12 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x111111)
 
 // 相机设置
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000)
 camera.position.set(0, 5, 22)
 
 // 渲染器
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
 // 轨道控制器
@@ -238,7 +238,7 @@ animate()
 // 响应窗口尺寸变化
 // ------------------------------------------------------------
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

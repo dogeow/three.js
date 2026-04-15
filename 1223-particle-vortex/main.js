@@ -3,10 +3,10 @@ import * as THREE from 'three'
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x050510)
 scene.fog = new THREE.FogExp2(0x050510, 0.015)
-const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 2000)
 camera.position.set(0, 30, 60)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 const COUNT = 8000
 const pos = new Float32Array(COUNT * 3)
@@ -30,4 +30,4 @@ const _pl=new THREE.PointLight(0x4488ff, 2, 200);_pl.position.set(30, 30, 30);sc
 const clock = new THREE.Clock()
 function animate() { requestAnimationFrame(animate); scene.children.forEach(c => { if (c instanceof THREE.Points) c.rotation.y += 0.001 }); renderer.render(scene, camera) }
 animate()
-window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight) })

@@ -5,10 +5,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x111111)
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.set(0, 5, 20)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
@@ -47,7 +47,7 @@ scene.add(cloth)
 scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true })))
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.5))
-scene.add(Object.assign(new THREE.DirectionalLight(0xffffff, 1), { position: new THREE.Vector3(10,20,10) }))
+const _dl=new THREE.DirectionalLight(0xffffff, 1);_dl.position.set(10,20,10);scene.add(_dl)
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(2, 32, 32), new THREE.MeshPhongMaterial({ color: 0x4488ff })))
 
 const gravity = -0.001
@@ -85,7 +85,7 @@ function animate() {
 }
 animate()
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

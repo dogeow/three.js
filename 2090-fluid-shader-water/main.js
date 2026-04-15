@@ -13,14 +13,14 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x001826)
 
 // 透视相机，视角60度
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000)
 // 相机位于水面上方俯视
 camera.position.set(0, 12, 18)
 camera.lookAt(0, 0, 0)
 
 // WebGL渲染器，启用抗锯齿
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 document.body.appendChild(renderer.domElement)
 
@@ -200,8 +200,8 @@ animate()
 // 窗口大小响应式
 // ----------------------------------------------------------------
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 })

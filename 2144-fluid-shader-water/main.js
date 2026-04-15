@@ -6,11 +6,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a1525)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.set(0, 18, 35)
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.1
 document.body.appendChild(renderer.domElement)
@@ -26,15 +26,15 @@ controls.maxPolarAngle = Math.PI / 2.1
 const mouse = new THREE.Vector2()
 const targetMouse = new THREE.Vector2()
 window.addEventListener('mousemove', (e) => {
-  targetMouse.x = (e.clientX / innerWidth) * 2 - 1
-  targetMouse.y = -(e.clientY / innerHeight) * 2 + 1
+  targetMouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  targetMouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 // 水面着色器
 const waterShader = {
   uniforms: {
     uTime: { value: 0 },
-    uResolution: { value: new THREE.Vector2(innerWidth, innerHeight) },
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     uMouse: { value: new THREE.Vector2(0, 0) },
     uCameraPos: { value: camera.position.clone() }
   },
@@ -271,8 +271,8 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-  waterMat.uniforms.uResolution.value.set(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  waterMat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight)
 })

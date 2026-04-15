@@ -6,11 +6,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x020208)
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.set(0, 5, 25)
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -22,8 +22,8 @@ controls.maxDistance = 80
 // 鼠标
 const mouse = new THREE.Vector2()
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 // 全屏着色器平面
@@ -34,7 +34,7 @@ const quadMat = new THREE.ShaderMaterial({
     uCamMatrix: { value: camera.matrixWorld.clone() },
     uCamProjInv: { value: camera.projectionMatrixInverse.clone() },
     uTime: { value: 0 },
-    uResolution: { value: new THREE.Vector2(innerWidth, innerHeight) },
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     uMouse: { value: new THREE.Vector2(0, 0) }
   },
   vertexShader: `
@@ -270,8 +270,8 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-  quadMat.uniforms.uResolution.value.set(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  quadMat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight)
 })

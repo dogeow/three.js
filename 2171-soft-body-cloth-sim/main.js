@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 document.body.appendChild(renderer.domElement)
 
@@ -13,7 +13,7 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a0a1a)
 scene.fog = new THREE.FogExp2(0x0a0a1a, 0.025)
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500)
 camera.position.set(0, 8, 30)
 
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -177,8 +177,8 @@ const raycaster = new THREE.Raycaster()
 let mouseForce = { x: 0, y: 0, z: 0 }
 
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 window.addEventListener('mousedown', () => {
@@ -291,7 +291,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

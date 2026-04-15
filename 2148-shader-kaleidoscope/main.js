@@ -3,11 +3,11 @@
 import * as THREE from 'three'
 
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.z = 5
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
 // 鼠标跟踪
@@ -15,15 +15,15 @@ const mouse = new THREE.Vector2()
 const targetMouse = new THREE.Vector2()
 
 window.addEventListener('mousemove', (e) => {
-  targetMouse.x = (e.clientX / innerWidth) * 2 - 1
-  targetMouse.y = -(e.clientY / innerHeight) * 2 + 1
+  targetMouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  targetMouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 // 万花筒着色器
 const kaleidoscopeShader = {
   uniforms: {
     uTime: { value: 0 },
-    uResolution: { value: new THREE.Vector2(innerWidth, innerHeight) },
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     uMouse: { value: new THREE.Vector2(0, 0) },
     uSegments: { value: 6.0 },
     uColorShift: { value: 0.0 }
@@ -181,8 +181,8 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-  mat.uniforms.uResolution.value.set(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight)
 })

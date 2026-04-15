@@ -7,10 +7,10 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x050510)
 scene.fog = new THREE.FogExp2(0x050510, 0.015)
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000)
 camera.position.set(0, 0, 50)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 document.body.appendChild(renderer.domElement)
 
@@ -173,8 +173,8 @@ const mouseSphere = new THREE.Mesh(
 scene.add(mouseSphere)
 
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
   
   // 更新鼠标球位置
   const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5)
@@ -288,8 +288,8 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
   particleMat.uniforms.uPixelRatio.value = renderer.getPixelRatio()
 })

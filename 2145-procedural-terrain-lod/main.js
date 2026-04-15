@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a1628)
 scene.fog = new THREE.FogExp2(0x0a1628, 0.008)
-const camera = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.1, 2000)
 camera.position.set(80, 50, 80)
 camera.lookAt(0, 0, 0)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -130,8 +130,8 @@ hoverMarker.visible = false
 scene.add(hoverMarker)
 
 window.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 const clock = new THREE.Clock()
@@ -185,7 +185,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

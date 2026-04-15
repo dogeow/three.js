@@ -19,13 +19,13 @@ scene.background = new THREE.Color(0x87ceeb) // 天空蓝背景
 scene.fog = new THREE.Fog(0x87ceeb, 80, 300) // 远距离雾效，增加层次感
 
 // 透视相机：视野60°，近裁剪0.1，远裁剪2000
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000)
 camera.position.set(80, 60, 100) // 斜上方俯瞰角度
 camera.lookAt(0, 0, 0)
 
 // WebGL 渲染器，开启抗锯齿和阴影贴图
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2)) // 限制像素比，防止性能问题
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap // 柔和阴影
@@ -229,9 +229,9 @@ scene.add(fillLight)
 // 窗口自适应
 // ─────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 })
 

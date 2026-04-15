@@ -7,11 +7,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x050510)
 scene.fog = new THREE.FogExp2(0x050510, 0.015)
 
-const camera = new THREE.PerspectiveCamera(80, innerWidth/innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(80, window.innerWidth/window.innerHeight, 0.1, 2000)
 camera.position.set(0, 15, 50)
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -108,8 +108,8 @@ const targetMouse = new THREE.Vector2()
 const raycaster = new THREE.Raycaster()
 
 window.addEventListener('mousemove', (e) => {
-  targetMouse.x = (e.clientX / innerWidth) * 2 - 1
-  targetMouse.y = -(e.clientY / innerHeight) * 2 + 1
+  targetMouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  targetMouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 // 模拟音频数据
@@ -194,7 +194,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

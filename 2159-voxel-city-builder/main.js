@@ -13,12 +13,12 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x060d1a)
 scene.fog = new THREE.FogExp2(0x071525, 0.007)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1200)
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1200)
 camera.position.set(55, 90, 90)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -27,7 +27,7 @@ document.body.appendChild(renderer.domElement)
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.35, 0.82)
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.45, 0.35, 0.82)
 composer.addPass(bloomPass)
 
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -56,7 +56,12 @@ const sun = new THREE.DirectionalLight(0xfff4e0, 1.2)
 sun.position.set(60, 120, 60)
 sun.castShadow = true
 sun.shadow.mapSize.set(2048, 2048)
-Object.assign(sun.shadow.camera, { near: 1, far: 500, left: -150, right: 150, top: 150, bottom: -150 })
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 500;
+sun.shadow.camera.left = -150;
+sun.shadow.camera.right = 150;
+sun.shadow.camera.top = 150;
+sun.shadow.camera.bottom = -150;
 scene.add(sun)
 
 const moon = new THREE.DirectionalLight(0x4466aa, 0.3)
@@ -204,8 +209,8 @@ const mouse2 = new THREE.Vector2()
 let hovered = null
 
 window.addEventListener('mousemove', e => {
-  mouse2.x = e.clientX / innerWidth * 2 - 1
-  mouse2.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse2.x = e.clientX / window.innerWidth * 2 - 1
+  mouse2.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 window.addEventListener('click', () => {
@@ -230,10 +235,10 @@ gui.add(P, 'autoRotate').name('自动旋转').onChange(v => { controls.autoRotat
 
 // ─── Resize ──────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-  composer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  composer.setSize(window.innerWidth, window.innerHeight)
 })
 
 // ─── Animation Loop ───────────────────────────────────────────────

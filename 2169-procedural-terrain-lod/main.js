@@ -6,7 +6,7 @@ import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js'
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -16,7 +16,7 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x87CEEB)
 scene.fog = new THREE.FogExp2(0x87CEEB, 0.004)
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000)
 camera.position.set(0, 40, 80)
 
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -141,8 +141,8 @@ const raycaster = new THREE.Raycaster()
 const stampMeshes = []
 
 window.addEventListener('click', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
   raycaster.setFromCamera(mouse, camera)
   const hits = raycaster.intersectObjects([terrainHigh])
   if (hits.length > 0) {
@@ -223,7 +223,7 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })

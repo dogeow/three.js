@@ -10,11 +10,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x060c18)
 scene.fog = new THREE.FogExp2(0x060c18, 0.008)
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000)
 camera.position.set(50, 65, 50)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.shadowMap.enabled = true
 renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -23,7 +23,7 @@ document.body.appendChild(renderer.domElement)
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.3, 0.8))
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.9, 0.3, 0.8))
 
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
@@ -116,7 +116,7 @@ const highlight = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1, 2.2),
 highlight.visible = false; scene.add(highlight)
 
 window.addEventListener('mousemove', e => {
-  m.x = (e.clientX / innerWidth) * 2 - 1; m.y = -(e.clientY / innerHeight) * 2 + 1
+  m.x = (e.clientX / window.innerWidth) * 2 - 1; m.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 window.addEventListener('click', () => {
   ray.setFromCamera(m, camera)
@@ -174,6 +174,6 @@ function anim() {
 anim()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight)
+  camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix()
+  renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight)
 })

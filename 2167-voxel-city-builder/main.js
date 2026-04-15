@@ -12,11 +12,11 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0a0a1a)
 scene.fog = new THREE.FogExp2(0x0a0a1a, 0.012)
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2000)
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000)
 camera.position.set(55, 85, 55)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-renderer.setSize(innerWidth, innerHeight)
+renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -28,7 +28,7 @@ document.body.appendChild(renderer.domElement)
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
 const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(innerWidth, innerHeight), 0.8, 0.4, 0.85)
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.8, 0.4, 0.85)
 composer.addPass(bloomPass)
 composer.addPass(new OutputPass())
 
@@ -166,8 +166,8 @@ const highlightMat = new THREE.MeshStandardMaterial({
 })
 
 renderer.domElement.addEventListener('mousemove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1
 })
 
 renderer.domElement.addEventListener('click', (e) => {
@@ -254,9 +254,9 @@ function animate() {
 animate()
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
+  camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-  composer.setSize(innerWidth, innerHeight)
-  bloomPass.setSize(innerWidth, innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
+  composer.setSize(window.innerWidth, window.innerHeight)
+  bloomPass.setSize(window.innerWidth, window.innerHeight)
 })
