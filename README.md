@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 
+- **neural-network-training-3d** — [2965](./2965-neural-network-training-3d/index.html)
+- **structural-stress-analysis** — [2966](./2966-structural-stress-analysis/index.html)
+- **blood-cell-flow-sim** — [2967](./2967-blood-cell-flow-sim/index.html)
+- **origami-folding-sim** — [2968](./2968-origami-folding-sim/index.html)
+- **fluid-structure-vortex** — [2970](./2970-fluid-structure-vortex/index.html)
+- **urban-growth-modeling** — [2971](./2971-urban-growth-modeling/index.html)
+- **game-ai-pathfinding-spatial** — [2972](./2972-game-ai-pathfinding-spatial/index.html)
+
 - **粒子系统-星云模拟** — [2961](./2961-粒子系统-星云模拟/index.html)
 - **波动方程可视化** — [2962](./2962-波动方程可视化/index.html)
 - **拓扑学曲面** — [2963](./2963-拓扑学曲面/index.html)
