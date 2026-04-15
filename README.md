@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **chaos-double-pendulum** — [3441](./3441-chaos-double-pendulum/index.html)
+- **wave-interference-ripple** — [3442](./3442-wave-interference-ripple/index.html)
+- **magnetic-field-lines** — [3443](./3443-magnetic-field-lines/index.html)
+- **ferrofluid-surface** — [3444](./3444-ferrofluid-surface/index.html)
+- **granular-material-sim** — [3445](./3445-granular-material-sim/index.html)
+- **combustion-flame-sim** — [3446](./3446-combustion-flame-sim/index.html)
+
 - **light-field-display** — [3435](./3435-light-field-display/index.html)
 - **virtual-production-led-volume** — [3436](./3436-virtual-production-led-volume/index.html)
 - **neural-style-transfer-3d** — [3437](./3437-neural-style-transfer-3d/index.html)
