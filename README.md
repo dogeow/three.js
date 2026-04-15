@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 
+- **magnet-field-lines** — [2834](./2834-magnet-field-lines/index.html)
+- **conway-life** — [2835](./2835-conway-life/index.html)
+- **fractal-tree-gen** — [2836](./2836-fractal-tree-gen/index.html)
+- **cloth-drape-sim** — [2837](./2837-cloth-drape-sim/index.html)
+- **sand-particle-sim** — [2838](./2838-sand-particle-sim/index.html)
+- **bubble-physics** — [2839](./2839-bubble-physics/index.html)
+- **soap-film-sim** — [2840](./2840-soap-film-sim/index.html)
+- **laser-reflection** — [2841](./2841-laser-reflection/index.html)
+
 - **voxel-farm-builder** — [2803](./2803-voxel-farm-builder/index.html)
 - **galaxy-cluster-sim** — [2804](./2804-galaxy-cluster-sim/index.html)
 - **crystal-lattice-sim** — [2805](./2805-crystal-lattice-sim/index.html)
