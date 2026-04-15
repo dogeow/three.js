@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **gravitational-lensing-gr** — [3123](./3123-gravitational-lensing-gr/index.html)
+- **ocean-wave-spectrum-sim** — [3124](./3124-ocean-wave-spectrum-sim/index.html)
+- **quantum-circuit-3d** — [3125](./3125-quantum-circuit-3d/index.html)
+- **smoke-ink-diffusion-fo** — [3126](./3126-smoke-ink-diffusion-fo/index.html)
+- **parametric-nurbs-architecture** — [3127](./3127-parametric-nurbs-architecture/index.html)
+- **cinematic-depth-of-field** — [3128](./3128-cinematic-depth-of-field/index.html)
+- **magnetic-monopole-fields** — [3129](./3129-magnetic-monopole-fields/index.html)
+
 - **mpm-material-point-granular** — [3112](./3112-mpm-material-point-granular/index.html)
 - **traffic-lane-change-sim** — [3113](./3113-traffic-lane-change-sim/index.html)
 - **ising-spin-glass** — [3114](./3114-ising-spin-glass/index.html)
