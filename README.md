@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **path-integral-quantum-mechanics** — [3285](./3285-path-integral-quantum-mechanics/index.html)
+- **protein-ligand-docking-sim** — [3286](./3286-protein-ligand-docking-sim/index.html)
+- **topological-quantum-anyons** — [3287](./3287-topological-quantum-anyons/index.html)
+- **cellular-potts-tissue-growth** — [3288](./3288-cellular-potts-tissue-growth/index.html)
+- **granular-rayleigh-benard-convection** — [3289](./3289-granular-rayleigh-benard-convection/index.html)
+
 - **delaunay-triangulation** — [3278](./3278-delaunay-triangulation/index.html)
 - **concert-hall-acoustics** — [3279](./3279-concert-hall-acoustics/index.html)
 - **gait-cycle-biomechanics** — [3280](./3280-gait-cycle-biomechanics/index.html)
