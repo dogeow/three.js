@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **mpm-material-point-granular** — [3112](./3112-mpm-material-point-granular/index.html)
+- **traffic-lane-change-sim** — [3113](./3113-traffic-lane-change-sim/index.html)
+- **ising-spin-glass** — [3114](./3114-ising-spin-glass/index.html)
+- **evacuation-crowd-sim** — [3115](./3115-evacuation-crowd-sim/index.html)
+- **semiconductor-device-sim** — [3116](./3116-semiconductor-device-sim/index.html)
+
 - **physics-simulation** — [3106](./3106-physics-simulation/index.html)
 - **organic-shapes** — [3107](./3107-organic-shapes/index.html)
 - **particle-system** — [3108](./3108-particle-system/index.html)
