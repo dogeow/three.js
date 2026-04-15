@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 
+- **粒子系统-星云模拟** — [2961](./2961-粒子系统-星云模拟/index.html)
+- **波动方程可视化** — [2962](./2962-波动方程可视化/index.html)
+- **拓扑学曲面** — [2963](./2963-拓扑学曲面/index.html)
+- **噪声地形生成** — [2964](./2964-噪声地形生成/index.html)
+
 - **karplus-strong-string** — [2955](./2955-karplus-strong-string/index.html)
 - **cloth-particle-sim** — [2956](./2956-cloth-particle-sim/index.html)
 - **a-star-pathfinding** — [2957](./2957-a-star-pathfinding/index.html)

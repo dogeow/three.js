@@ -26,7 +26,7 @@ geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
 geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
 scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.3, vertexColors: true, transparent: true, opacity: 0.9 })))
 scene.add(new THREE.AmbientLight(0xffffff, 0.4))
-const _pl=new THREE.PointLight(0x4488ff, 2, 200);_pl.position.set(30, 30, 30);scene.add(_pl)
+scene.add(Object.assign(new THREE.PointLight(0x4488ff, 2, 200), { position: new THREE.Vector3(30, 30, 30) }))
 const clock = new THREE.Clock()
 function animate() { requestAnimationFrame(animate); scene.children.forEach(c => { if (c instanceof THREE.Points) c.rotation.y += 0.001 }); renderer.render(scene, camera) }
 animate()

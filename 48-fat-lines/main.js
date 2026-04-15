@@ -117,4 +117,4 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight)
   // ⚠️ LineMaterial 的 resolution 也要跟着改，否则粗细会失真
   fatMat.resolution.set(innerWidth, innerHeight)
-})
+}
