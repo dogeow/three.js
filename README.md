@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **liquid-crystal-nematic-defects** — [3496](./3496-liquid-crystal-nematic-defects/index.html)
+- **visual-cryptography-steganography** — [3497](./3497-visual-cryptography-steganography/index.html)
+- **causal-diamond-spacetime-diagram** — [3498](./3498-causal-diamond-spacetime-diagram/index.html)
+- **spherical-voronoi-geodesic-cells** — [3499](./3499-spherical-voronoi-geodesic-cells/index.html)
+- **bernoulli-fluid-airfoil** — [3500](./3500-bernoulli-fluid-airfoil/index.html)
+
 - **solar-system-kepler-orbits** — [3490](./3490-solar-system-kepler-orbits/index.html)
 - **eulerian-fluid-naviers-stokes** — [3491](./3491-eulerian-fluid-naviers-stokes/index.html)
 - **wave-function-collapse-dungeon** — [3492](./3492-wave-function-collapse-dungeon/index.html)
