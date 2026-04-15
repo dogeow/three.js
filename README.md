@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **{typ}** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **sph-fluid-water** — [3057](./3057-sph-fluid-water/index.html)
+- **fourier-transform-visualizer** — [3058](./3058-fourier-transform-visualizer/index.html)
+- **voxel-chunk-engine** — [3059](./3059-voxel-chunk-engine/index.html)
+- **structural-stress-fem** — [3060](./3060-structural-stress-fem/index.html)
+- **boolean-logic-circuit** — [3061](./3061-boolean-logic-circuit/index.html)
+- **spirograph-lissajous** — [3062](./3062-spirograph-lissajous/index.html)
+
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
 - **granular-segregation-sim** — [3042](./3042-granular-segregation-sim/index.html)
 - **kelp-forest-underwater** — [3043](./3043-kelp-forest-underwater/index.html)
