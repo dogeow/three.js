@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 
+- **physics-platformer-sideview** — [2998](./2998-physics-platformer-sideview/index.html)
+- **crowd-emergent-behaviors** — [2999](./2999-crowd-emergent-behaviors/index.html)
+- **heat-transfer-thermodynamics** — [3000](./3000-heat-transfer-thermodynamics/index.html)
+- **stained-glass-artistic** — [3001](./3001-stained-glass-artistic/index.html)
+- **autonomous-vehicle-topdown** — [3002](./3002-autonomous-vehicle-topdown/index.html)
+- **turnbased-tactics-grid** — [3003](./3003-turnbased-tactics-grid/index.html)
+
 - **elastic-wave-propagation** — [2991](./2991-elastic-wave-propagation/index.html)
 - **beat-synced-particle-explosion** — [2992](./2992-beat-synced-particle-explosion/index.html)
 - **subsurface-scattering-gemstones** — [2993](./2993-subsurface-scattering-gemstones/index.html)
