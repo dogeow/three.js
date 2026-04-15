@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **cellular-potts-tissue** — [3186](./3186-cellular-potts-tissue/index.html)
+- **agent-based-market** — [3187](./3187-agent-based-market/index.html)
+- **procedural-gothic-architecture** — [3188](./3188-procedural-gothic-architecture/index.html)
+- **voice-mesh-deformation** — [3189](./3189-voice-mesh-deformation/index.html)
+
 - **meander-river-erosion** — [3179](./3179-meander-river-erosion/index.html)
 - **transformer-attention-3d** — [3180](./3180-transformer-attention-3d/index.html)
 - **bonsai-procedural-growth** — [3181](./3181-bonsai-procedural-growth/index.html)
