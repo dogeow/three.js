@@ -639,7 +639,6 @@ animate()
 | [250](./240-spline-interpolation/index.html) | **样条插值动画 ★** | CatmullRom插值、路径动画、摄像机运动、粒子轨迹 |
 | [250](./250-audio-dsp-equalizer/index.html) | **音频DSP均衡器 ★** | 频谱可视化、音频DSP、实时均衡、FFT音频处理 |
 | [251](./251-particle-sandstorm/index.html) | **粒子沙尘暴 ★** | GPU粒子风暴、粒子扩散、摩擦力场、沙漠效果 |
-| [252](./252-shader-kaleidoscope/index.html) | **着色器万花筒 ★** | GLSL着色器、对称变换、颜色混合、程序化图案 |
 | [253](./253-physics-rigid-stack/index.html) | **刚体堆叠物理 ★** | cannon-es物理引擎、刚体堆叠、碰撞检测、堆塔物理 |
 | [254](./254-geographic-heatmap/index.html) | **地理热力图 ★** | 地理数据可视化、热力图叠加、GIS数据映射 |
 | [255](./255-molecular-dynamics/index.html) | **分子动力学 ★** | 原子弹簧系统、Verlet积分、Lennard-Jones势、UnrealBloom发光 |
