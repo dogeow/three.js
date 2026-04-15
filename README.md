@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **economic-supply-demand-sim** — [3098](./3098-economic-supply-demand-sim/index.html)
+- **archaeological-stratigraphy-layer** — [3099](./3099-archaeological-stratigraphy-layer/index.html)
+- **morphogenetic-turing-pattern** — [3100](./3100-morphogenetic-turing-pattern/index.html)
+- **3d-music-step-sequencer** — [3101](./3101-3d-music-step-sequencer/index.html)
+- **spacecraft-orbital-rendezvous** — [3102](./3102-spacecraft-orbital-rendezvous/index.html)
+- **biomechanical-tissue-sim** — [3103](./3103-biomechanical-tissue-sim/index.html)
+- **microstructure-evolution-sim** — [3104](./3104-microstructure-evolution-sim/index.html)
+- **fracture-mechanics-propagation** — [3105](./3105-fracture-mechanics-propagation/index.html)
+
 - **electromagnetic-wave-propagation** — [3090](./3090-electromagnetic-wave-propagation/index.html)
 - **phase-field-soldering-solidification** — [3091](./3091-phase-field-soldering-solidification/index.html)
 - **voronoi-fracture-shattering** — [3092](./3092-voronoi-fracture-shattering/index.html)
