@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Procedural Terrain Biomes — Three.js</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #0b0e14; }
+    canvas { display: block; }
+
+    #tip {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #e0e6f0;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      padding: 7px 18px;
+      border-radius: 20px;
+      pointer-events: none;
+      z-index: 10;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="tip">Three.js r160 &nbsp;|&nbsp; lil-gui 0.19 &nbsp;|&nbsp; Perlin FBM Noise &nbsp;|&nbsp; MeshStandardMaterial + Vertex Colors</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+    // ─── Perlin Noise ───────────────────────────────────────────────────────────
+    class PerlinNoise {
+      constructor(seed = 42) {
+        this.p = [];
+        const arr = [];
+        for (let i = 0; i < 256; i++) arr[i] = i;
+        // Seeded shuffle
+        let s = seed;
+        for (let i = 255; i > 0; i--) {
+          s = (s * 16807) % 2147483647;
+          const j = s % (i + 1);
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        for (let i = 0; i < 512; i++) this.p[i] = arr[i & 255];
+      }
+
+      fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+      lerp(a, b, t) { return a + t * (b - a); }
+      grad(hash, x, y) {
+        const h = hash & 3;
+        const u = h < 2 ? x : y;
+        const v = h < 2 ? y : x;
+        return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+      }
+
+      noise2D(x, y) {
+        const X = Math.floor(x) & 255;
+        const Y = Math.floor(y) & 255;
+        x -= Math.floor(x);
+        y -= Math.floor(y);
+        const u = this.fade(x);
+        const v = this.fade(y);
+        const A = this.p[X] + Y;
+        const B = this.p[X + 1] + Y;
+        return this.lerp(
+          this.lerp(this.grad(this.p[A], x, y), this.grad(this.p[B], x - 1, y), u),
+          this.lerp(this.grad(this.p[A + 1], x, y - 1), this.grad(this.p[B + 1], x - 1, y - 1), u),
+          v
+        );
+      }
+
+      // Fractional Brownian Motion
+      fbm(x, y, octaves) {
+        let value = 0, amplitude = 1, frequency = 1, max = 0;
+        for (let i = 0; i < octaves; i++) {
+          value += amplitude * this.noise2D(x * frequency, y * frequency);
+          max += amplitude;
+          amplitude *= 0.5;
+          frequency *= 2.0;
+        }
+        return value / max;
+      }
+    }
+
+    // ─── Scene Setup ────────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0e14);
+    scene.fog = new THREE.FogExp2(0x0b0e14, 0.012);
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 2000);
+    camera.position.set(0, 40, 80);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.maxPolarAngle = Math.PI / 2.1;
+    controls.target.set(0, 0, 0);
+
+    // ─── Lighting ───────────────────────────────────────────────────────────────
+    const ambient = new THREE.AmbientLight(0x4a5a7a, 0.6);
+    scene.add(ambient);
+
+    const sun = new THREE.DirectionalLight(0xffe8c0, 1.4);
+    sun.position.set(60, 100, 40);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 400;
+    sun.shadow.camera.left = -80;
+    sun.shadow.camera.right = 80;
+    sun.shadow.camera.top = 80;
+    sun.shadow.camera.bottom = -80;
+    scene.add(sun);
+
+    const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3a5a3a, 0.4);
+    scene.add(hemi);
+
+    // ─── Biome Colors ───────────────────────────────────────────────────────────
+    const WATER_COLOR   = new THREE.Color(0x1a5fa8);
+    const BEACH_COLOR   = new THREE.Color(0xc2b280);
+    const GRASS_COLOR   = new THREE.Color(0x3d7a2a);
+    const FOREST_COLOR  = new THREE.Color(0x1e4d1a);
+    const DESERT_COLOR  = new THREE.Color(0xb5854a);
+    const MOUNTAIN_COLOR= new THREE.Color(0x6b6b7a);
+    const SNOW_COLOR    = new THREE.Color(0xe8f0f8);
+
+    // ─── Terrain Params ─────────────────────────────────────────────────────────
+    const TERRAIN_SIZE = 120;
+    const SEGMENTS = 200;
+
+    const params = {
+      noiseScale:  0.038,
+      octaves:     6,
+      elevation:   22.0,
+      waterLevel:  0.28,
+      thresholdBeach: 0.03,
+      thresholdDesert: 0.55,
+      thresholdSnow:   0.72,
+      wireframe: false,
+    };
+
+    // ─── Build Terrain ──────────────────────────────────────────────────────────
+    const perlin = new PerlinNoise(137);
+
+    function buildTerrain() {
+      const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, SEGMENTS, SEGMENTS);
+      geometry.rotateX(-Math.PI / 2);
+
+      const positions = geometry.attributes.position;
+      const colors = new Float32Array(positions.count * 3);
+      const color = new THREE.Color();
+
+      for (let i = 0; i < positions.count; i++) {
+        const wx = positions.getX(i);
+        const wz = positions.getZ(i);
+
+        const elevation = perlin.fbm(wx * params.noiseScale, wz * params.noiseScale, params.octaves);
+        // Normalise from [-1,1] → [0,1]
+        const t = (elevation + 1) * 0.5;
+
+        positions.setY(i, t * params.elevation);
+
+        // Biome colouring
+        let biomeColor;
+        if (t < params.waterLevel) {
+          // Deep water → shallow water
+          biomeColor = WATER_COLOR.clone().lerp(new THREE.Color(0x2470b8), (params.waterLevel - t) / params.waterLevel * 0.5);
+        } else if (t < params.waterLevel + params.thresholdBeach) {
+          biomeColor = BEACH_COLOR;
+        } else if (t < params.thresholdDesert) {
+          biomeColor = GRASS_COLOR.clone().lerp(FOREST_COLOR, (t - params.waterLevel - params.thresholdBeach) / (params.thresholdDesert - params.waterLevel - params.thresholdBeach) * 0.6);
+        } else if (t < params.thresholdSnow) {
+          biomeColor = DESERT_COLOR.clone().lerp(MOUNTAIN_COLOR, (t - params.thresholdDesert) / (params.thresholdSnow - params.thresholdDesert));
+        } else {
+          biomeColor = SNOW_COLOR;
+        }
+
+        color.copy(biomeColor);
+        colors[i * 3]     = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
+      }
+
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geometry.computeVertexNormals();
+
+      const material = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.85,
+        metalness: 0.05,
+        flatShading: false,
+        wireframe: params.wireframe,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.receiveShadow = true;
+      mesh.castShadow = true;
+      return mesh;
+    }
+
+    let terrain = buildTerrain();
+    scene.add(terrain);
+
+    // ─── Water Plane ─────────────────────────────────────────────────────────────
+    const waterGeo = new THREE.PlaneGeometry(TERRAIN_SIZE * 3, TERRAIN_SIZE * 3);
+    waterGeo.rotateX(-Math.PI / 2);
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x1a5fa8,
+      roughness: 0.1,
+      metalness: 0.3,
+      transparent: true,
+      opacity: 0.82,
+    });
+    const water = new THREE.Mesh(waterGeo, waterMat);
+    water.position.y = params.waterLevel * params.elevation;
+    water.receiveShadow = false;
+    scene.add(water);
+
+    // ─── GUI ─────────────────────────────────────────────────────────────────────
+    const gui = new GUI({ title: 'Terrain Controls' });
+
+    const noiseFolder = gui.addFolder('Noise');
+    noiseFolder.add(params, 'noiseScale', 0.005, 0.12, 0.001).name('Noise Scale').onChange(rebuild);
+    noiseFolder.add(params, 'octaves', 1, 8, 1).name('Octaves').onChange(rebuild);
+    noiseFolder.open();
+
+    const terrainFolder = gui.addFolder('Terrain');
+    terrainFolder.add(params, 'elevation', 5, 45, 0.5).name('Elevation Scale').onChange(rebuild);
+    terrainFolder.add(params, 'waterLevel', 0.1, 0.5, 0.005).name('Water Level').onChange(() => {
+      water.position.y = params.waterLevel * params.elevation;
+      rebuild();
+    });
+    terrainFolder.add(params, 'wireframe').name('Wireframe').onChange(rebuild);
+    terrainFolder.open();
+
+    const biomeFolder = gui.addFolder('Biome Thresholds');
+    biomeFolder.add(params, 'thresholdBeach', 0.01, 0.15, 0.005).name('Beach').onChange(rebuild);
+    biomeFolder.add(params, 'thresholdDesert', 0.3, 0.8, 0.005).name('Desert').onChange(rebuild);
+    biomeFolder.add(params, 'thresholdSnow', 0.5, 0.95, 0.005).name('Snow').onChange(rebuild);
+    biomeFolder.open();
+
+    function rebuild() {
+      scene.remove(terrain);
+      terrain.geometry.dispose();
+      terrain.material.dispose();
+      terrain = buildTerrain();
+      scene.add(terrain);
+      water.position.y = params.waterLevel * params.elevation;
+    }
+
+    // ─── Resize ──────────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // ─── Animation Loop ──────────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      water.position.y = params.waterLevel * params.elevation + Math.sin(t * 0.6) * 0.08;
+      waterMat.opacity = 0.78 + Math.sin(t * 0.6) * 0.04;
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

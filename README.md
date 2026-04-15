@@ -619,7 +619,7 @@ animate()
 | [08-raycasting.html](./examples/08-raycasting.html) | 射线检测、悬停高亮、点击脉冲效果 |
 | [animation.html](./examples/animation.html) | 骨骼动画混合、关键帧插值 |
 
-## 三十一、高级视觉与物理（237~347）
+## 三十一、高级视觉与物理（237~352）
 
 | # | 章节 | 技术点 |
 |---|------|-------|
@@ -726,3 +726,8 @@ animate()
 | [345](./345-wave-pendulum/index.html) | **波动摆模拟 ★** | 耦合摆、拍频现象、混沌物理 |
 | [346](./346-shader-confetti/index.html) | **着色器彩屑 ★** | GLSL彩屑、粒子洒落、彩虹配色 |
 | [347](./347-rorschach-inkblot/index.html) | **罗夏墨迹 ★** | 对称墨迹、随机图形、心理投影 |
+| [348](./348-audio-visualizer-3d/index.html) | **3D音频频谱可视化 ★** | Web Audio API、FFT驱动3D频谱柱、环形布局、音频文件加载 |
+| [349](./349-procedural-terrain-biomes/index.html) | **程序化地形生物群系 ★** | FBM噪声地形、生物群落生成、气候带模拟 |
+| [350](./350-3d-graph-visualization/index.html) | **3D图形可视化 ★** | 力导向图布局、Verlet物理、节点-边可视化、CSS2DRenderer标签 |
+| [351](./351-sdf-raymarching-scene/index.html) | **SDF光线步进场景 ★** | SDF场景构建、光线步进、距离场渲染 |
+| [352](./352-soft-body-cloth/index.html) | **软体布料模拟 ★** | 布料物理、弹簧质点、碰撞检测 |
