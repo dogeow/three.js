@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **coupled-oscillators-kuramoto** — [4076](./4076-coupled-oscillators-kuramoto/index.html)
+- **crystal-growth-diffusion-limited-aggregation** — [4077](./4077-crystal-growth-diffusion-limited-aggregation/index.html)
+- **magnetic-field-3d-flux-lines** — [4078](./4078-magnetic-field-3d-flux-lines/index.html)
+- **stress-tensor-structural-analysis** — [4079](./4079-stress-tensor-structural-analysis/index.html)
+- **holographic-interference-optical-element** — [4080](./4080-holographic-interference-optical-element/index.html)
+- **polymer-bead-spring-chain** — [4081](./4081-polymer-bead-spring-chain/index.html)
+
 - **climate-simulation** — [4070](./4070-climate-simulation/index.html)
 - **n-body-gravity** — [4071](./4071-n-body-gravity/index.html)
 - **relativistic-visualization** — [4072](./4072-relativistic-visualization/index.html)
