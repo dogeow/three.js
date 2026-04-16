@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **topological-data-analysis-morse-complex-3d** — [3986](./3986-topological-data-analysis-morse-complex-3d/index.html)
+- **isostatic-tensegrity-structure** — [3987](./3987-isostatic-tensegrity-structure/index.html)
+- **metamaterial-negative-poisson-ratio** — [3987](./3987-metamaterial-negative-poisson-ratio/index.html)
+- **nurbs-surface-global-illumination** — [3987](./3987-nurbs-surface-global-illumination/index.html)
+- **reaction-diffusion-belousov-zhabotinsky** — [3987](./3987-reaction-diffusion-belousov-zhabotinsky/index.html)
+- **fiber-bundle-connection-3d** — [3988](./3988-fiber-bundle-connection-3d/index.html)
+
 - **spiral-vortex-dynamics** — [3979](./3979-spiral-vortex-dynamics/index.html)
 - **optical-diffraction-tomography** — [3980](./3980-optical-diffraction-tomography/index.html)
 - **turing-machine-universal** — [3981](./3981-turing-machine-universal/index.html)
