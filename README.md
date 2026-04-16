@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **knot-theory-3d-visualization** — [3836](./3836-knot-theory-3d-visualization/index.html)
+- **marching-squares-isoline-terrain** — [3837](./3837-marching-squares-isoline-terrain/index.html)
+- **tangram-puzzle-simulation** — [3838](./3838-tangram-puzzle-simulation/index.html)
+- **ice-crystal-hexagonal-growth** — [3839](./3839-ice-crystal-hexagonal-growth/index.html)
+- **liquid-crystal-nematic-display** — [3840](./3840-liquid-crystal-nematic-display/index.html)
+- **solar-corona-plasma-loop-sim** — [3841](./3841-solar-corona-plasma-loop-sim/index.html)
+
 - **quantum-entanglement-network** — [3829](./3829-quantum-entanglement-network/index.html)
 - **holographic-data-storage** — [3830](./3830-holographic-data-storage/index.html)
 - **magnetic-particle-separator** — [3831](./3831-magnetic-particle-separator/index.html)
