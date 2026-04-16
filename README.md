@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **tornado-vortex-vorticity-simulation** — [4293](./4293-tornado-vortex-vorticity-simulation/index.html)
+- **volcanic-eruption-pyroclastic-flow** — [4294](./4294-volcanic-eruption-pyroclastic-flow/index.html)
+- **enzyme-substrate-lock-key-dynamics** — [4295](./4295-enzyme-substrate-lock-key-dynamics/index.html)
+- **brownian-motion-levy-flight** — [4296](./4296-brownian-motion-levy-flight/index.html)
+- **voronoi-relaxation-lloyd-algorithm** — [4297](./4297-voronoi-relaxation-lloyd-algorithm/index.html)
+- **l-systems-botanical-tree-fractal** — [4298](./4298-l-systems-botanical-tree-fractal/index.html)
+
 - **n-body-gravitation-sim** — [4289](./4289-n-body-gravitation-sim/index.html)
 - **cloth-simulation-verlet** — [4291](./4291-cloth-simulation-verlet/index.html)
 - **audio-reactive-3d-visualizer** — [4292](./4292-audio-reactive-3d-visualizer/index.html)
