@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **magnetic-field-biotsavart** — [3523](./3523-magnetic-field-biotsavart/index.html)
+- **sintering-grain-growth** — [3524](./3524-sintering-grain-growth/index.html)
+- **binary-star-orbit** — [3525](./3525-binary-star-orbit/index.html)
+- **langevin-dynamics** — [3527](./3527-langevin-dynamics/index.html)
+- **rayleigh-inglis-rainbow** — [3528](./3528-rayleigh-inglis-rainbow/index.html)
+
 - **tidal-force-moon-earth-sim** — [3515](./3515-tidal-force-moon-earth-sim/index.html)
 - **epigenetic-cell-differentiation** — [3516](./3516-epigenetic-cell-differentiation/index.html)
 - **fire-particle-sim** — [3517](./3517-fire-particle-sim/index.html)
