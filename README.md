@@ -745,6 +745,21 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **phyllotaxis-spiral-fibonacci-nature** — [4244](./4244-phyllotaxis-spiral-fibonacci-nature/index.html)
+- **diffusion-limited-aggregation-dla-crystal** — [4245](./4245-diffusion-limited-aggregation-dla-crystal/index.html)
+- **sand-dune-aeolian-erosion-simulation** — [4246](./4246-sand-dune-aeolian-erosion-simulation/index.html)
+- **electromagnetic-wave-maxwell-equations** — [4247](./4247-electromagnetic-wave-maxwell-equations/index.html)
+- **spherical-double-pendulum-chaos** — [4248](./4248-spherical-double-pendulum-chaos/index.html)
+- **turbulence-kolmogorov-energy-cascade** — [4249](./4249-turbulence-kolmogorov-energy-cascade/index.html)
+- **lattice-boltzmann-fluid-d2q9** — [4250](./4250-lattice-boltzmann-fluid-d2q9/index.html)
+
+- **dendrite-crystal-growth-simulation** — [4238](./4238-dendrite-crystal-growth-simulation/index.html)
+- **cymatics-chladni-pattern-visualization** — [4239](./4239-cymatics-chladni-pattern-visualization/index.html)
+- **lightning-electrical-discharge-simulation** — [4240](./4240-lightning-electrical-discharge-simulation/index.html)
+- **snow-accumulation-ice-crystal-sim** — [4241](./4241-snow-accumulation-ice-crystal-sim/index.html)
+- **molecular-dynamics-visualization** — [4242](./4242-molecular-dynamics-visualization/index.html)
+- **origami-kirigami-fold-kinematics** — [4243](./4243-origami-kirigami-fold-kinematics/index.html)
+
 - **dendroidal-arboreal-structure** — [4232](./4232-dendroidal-arboreal-structure/index.html)
 - **shader-art-cellular-automata** — [4233](./4233-shader-art-cellular-automata/index.html)
 - **procedural-erosion-hydraulic** — [4234](./4234-procedural-erosion-hydraulic/index.html)
