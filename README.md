@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **diffusion-model-particle-flow** — [4252](./4252-diffusion-model-particle-flow/index.html)
+- **liquid-crystal-nematic-display-sim** — [4253](./4253-liquid-crystal-nematic-display-sim/index.html)
+- **polymer-chain-rouse-dynamics** — [4254](./4254-polymer-chain-rouse-dynamics/index.html)
+- **evolutionary-art-genome-selection-3d** — [4255](./4255-evolutionary-art-genome-selection-3d/index.html)
+- **pendulum-wave-interference-pattern** — [4256](./4256-pendulum-wave-interference-pattern/index.html)
+- **acoustic-hologram-3d-sound-field** — [4257](./4257-acoustic-hologram-3d-sound-field/index.html)
+- **stress-optics-birefringence-visualization** — [4258](./4258-stress-optics-birefringence-visualization/index.html)
+- **optical-flow-block-matching-motion** — [4259](./4259-optical-flow-block-matching-motion/index.html)
+
 - **phyllotaxis-spiral-fibonacci-nature** — [4244](./4244-phyllotaxis-spiral-fibonacci-nature/index.html)
 - **diffusion-limited-aggregation-dla-crystal** — [4245](./4245-diffusion-limited-aggregation-dla-crystal/index.html)
 - **sand-dune-aeolian-erosion-simulation** — [4246](./4246-sand-dune-aeolian-erosion-simulation/index.html)
