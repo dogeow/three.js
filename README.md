@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **zpunch-fusion-plasma-confinement** — [4088](./4088-zpunch-fusion-plasma-confinement/index.html)
+- **electrostatic-lens-electron-optics** — [4089](./4089-electrostatic-lens-electron-optics/index.html)
+- **biomechanical-cell-membrane-deformation** — [4090](./4090-biomechanical-cell-membrane-deformation/index.html)
+- **optical-coherence-tomography-oct** — [4091](./4091-optical-coherence-tomography-oct/index.html)
+- **superfluid-helium-quasiparticle** — [4092](./4092-superfluid-helium-quasiparticle/index.html)
+- **ferroelectric-domain-switching** — [4093](./4093-ferroelectric-domain-switching/index.html)
+- **granular-synthesis-physics-audio** — [4094](./4094-granular-synthesis-physics-audio/index.html)
+- **magnetron-sputtering-deposition** — [4095](./4095-magnetron-sputtering-deposition/index.html)
+
 - **sonoluminescence-bubble-collapse** — [4082](./4082-sonoluminescence-bubble-collapse/index.html)
 - **dielectric-elastomer-actuator** — [4083](./4083-dielectric-elastomer-actuator/index.html)
 - **microfluidics-droplet-dynamics** — [4084](./4084-microfluidics-droplet-dynamics/index.html)
