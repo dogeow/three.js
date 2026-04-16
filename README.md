@@ -745,6 +745,9 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **acoustic-levitation-sim** — [4102](./4102-acoustic-levitation-sim/index.html)
+- **soliton-wave-collision** — [4103](./4103-soliton-wave-collision/index.html)
+
 - **cardiac-electrophysiology** — [4096](./4096-cardiac-electrophysiology/index.html)
 - **wind-turbine-aerodynamics** — [4097](./4097-wind-turbine-aerodynamics/index.html)
 - **urban-dla-growth** — [4098](./4098-urban-dla-growth/index.html)
