@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **hurricane-spiral-baroclinic-ocean-simulation** — [4028](./4028-hurricane-spiral-baroclinic-ocean-simulation/index.html)
+- **finite-element-stress-analysis-3d** — [4029](./4029-finite-element-stress-analysis-3d/index.html)
+- **traffic-flow-lwr-car-following-model** — [4030](./4030-traffic-flow-lwr-car-following-model/index.html)
+- **dla-diffusion-limited-aggregation-fractal** — [4031](./4031-dla-diffusion-limited-aggregation-fractal/index.html)
+- **quantum-harmonic-oscillator-wavefunction** — [4032](./4032-quantum-harmonic-oscillator-wavefunction/index.html)
+- **fourier-series-square-wave-convergence** — [4033](./4033-fourier-series-square-wave-convergence/index.html)
+- **population-dynamical-predator-prey-lotka-volterra** — [4034](./4034-population-dynamical-predator-prey-lotka-volterra/index.html)
+- **optical-ray-tracing-lens-system** — [4035](./4035-optical-ray-tracing-lens-system/index.html)
+
 - **ant-colony-optimization-3d-terrain** — [4022](./4022-ant-colony-optimization-3d-terrain/index.html)
 - **shader-graph-visual-editor** — [4023](./4023-shader-graph-visual-editor/index.html)
 - **flag-fluid-structure-interaction** — [4024](./4024-flag-fluid-structure-interaction/index.html)
