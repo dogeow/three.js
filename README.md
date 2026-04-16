@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **audio-visualizer-reactive-music-3d** — [3874](./3874-audio-visualizer-reactive-music-3d/index.html)
+- **gaussian-splat-3d-point-cloud-viewer** — [3875](./3875-gaussian-splat-3d-point-cloud-viewer/index.html)
+- **superconductor-magnetic-levitation-meissner-effect** — [3876](./3876-superconductor-magnetic-levitation-meissner-effect/index.html)
+- **rope-physics-catenary-cable-simulation** — [3877](./3877-rope-physics-catenary-cable-simulation/index.html)
+- **pathtracing-realistic-global-illumination** — [3878](./3878-pathtracing-realistic-global-illumination/index.html)
+- **boiling-heat-transfer-phase-change-simulation** — [3879](./3879-boiling-heat-transfer-phase-change-simulation/index.html)
+
 - **granular-sand-pile-physics** — [3867](./3867-granular-sand-pile-physics/index.html)
 - **origami-fold-crease-pattern** — [3868](./3868-origami-fold-crease-pattern/index.html)
 - **l-system-procedural-plant** — [3869](./3869-l-system-procedural-plant/index.html)
