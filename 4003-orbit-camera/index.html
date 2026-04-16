@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>4003 - OrbitControls 相机轨道控制</title>
+  <style>body { margin: 0; overflow: hidden; background: #000; }</style>
+</head>
+<body>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+// ── 场景基础设置 ─────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0f172a)
+scene.fog = new THREE.Fog(0x0f172a, 15, 40)
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200)
+camera.position.set(8, 6, 10)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+document.body.appendChild(renderer.domElement)
+
+// ── OrbitControls：带缩放/旋转限制 ─────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.05
+
+// 缩放范围：最近 3，最远 30
+controls.minDistance = 3
+controls.maxDistance = 30
+
+// 上下旋转角度限制（防止穿越地面或翻转）
+controls.minPolarAngle = 0.1        // 最小仰角（不能看到地面以下）
+controls.maxPolarAngle = Math.PI / 2 - 0.05  // 最大仰角
+
+// 水平旋转范围（可选）
+// controls.minAzimuthAngle = -Math.PI / 4
+// controls.maxAzimuthAngle = Math.PI / 4
+
+// 自动旋转（关闭后可手动拖动）
+controls.autoRotate = false
+controls.autoRotateSpeed = 1.0
+
+// ── 光照 ─────────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0xffffff, 0.4)
+scene.add(ambient)
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5)
+dirLight.position.set(5, 10, 5)
+dirLight.castShadow = true
+dirLight.shadow.mapSize.set(2048, 2048)
+dirLight.shadow.camera.near = 0.5
+dirLight.shadow.camera.far = 40
+dirLight.shadow.camera.left = -15
+dirLight.shadow.camera.right = 15
+dirLight.shadow.camera.top = 15
+dirLight.shadow.camera.bottom = -15
+scene.add(dirLight)
+
+// ── 地面 ─────────────────────────────────────────────────────
+const groundGeo = new THREE.PlaneGeometry(30, 30)
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 })
+const ground = new THREE.Mesh(groundGeo, groundMat)
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+// 网格
+const grid = new THREE.GridHelper(30, 30, 0x334155, 0x1e293b)
+grid.position.y = 0.01
+scene.add(grid)
+
+// ── 多个彩色几何体 ────────────────────────────────────────────
+const geometries = [
+  { geo: new THREE.BoxGeometry(1.5, 1.5, 1.5), color: 0x3b82f6, pos: [-4, 0.75, -2] },
+  { geo: new THREE.SphereGeometry(0.9, 32, 32), color: 0x10b981, pos: [0, 0.9, -3] },
+  { geo: new THREE.ConeGeometry(0.8, 1.6, 32), color: 0xf59e0b, pos: [4, 0.8, -1] },
+  { geo: new THREE.TorusGeometry(0.7, 0.25, 16, 48), color: 0xef4444, pos: [-2, 1.2, 2] },
+  { geo: new THREE.OctahedronGeometry(0.9), color: 0x8b5cf6, pos: [3, 1.0, 3] },
+  { geo: new THREE.CylinderGeometry(0.5, 0.5, 2, 32), color: 0xec4899, pos: [-3, 1.0, 3] },
+  { geo: new THREE.IcosahedronGeometry(0.8), color: 0x06b6d4, pos: [0, 2.5, 0] },
+]
+
+const meshes = geometries.map(({ geo, color, pos }) => {
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.3 })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(...pos)
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  scene.add(mesh)
+  return mesh
+})
+
+// ── 渲染循环 ─────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  // 所有物体轻微上下浮动
+  meshes.forEach((m, i) => {
+    m.position.y += Math.sin(t + i) * 0.002
+    m.rotation.y = t * (0.3 + i * 0.1)
+    m.rotation.x = Math.sin(t * 0.5 + i) * 0.2
+  })
+
+  // 中间十二面体特殊动画
+  meshes[6].rotation.y = t
+  meshes[6].rotation.z = Math.sin(t * 0.7) * 0.3
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+// ── 窗口响应 ─────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

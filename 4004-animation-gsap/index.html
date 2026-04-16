@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>4004 - GSAP 补间动画 + 关键帧动画</title>
+  <style>body { margin: 0; overflow: hidden; background: #000; }</style>
+</head>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+
+// ── 基础设置 ─────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0a0a1a)
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 4, 10)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+renderer.shadowMap.enabled = true
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// ── 光照 ─────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.5))
+const dirLight = new THREE.DirectionalLight(0xffffff, 2)
+dirLight.position.set(5, 10, 5)
+dirLight.castShadow = true
+scene.add(dirLight)
+const blueLight = new THREE.PointLight(0x3b82f6, 20, 20)
+blueLight.position.set(-5, 3, 2)
+scene.add(blueLight)
+
+// ── 地面 ─────────────────────────────────────────────────────
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(30, 30),
+  new THREE.MeshStandardMaterial({ color: 0x1a1a2e })
+)
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+// ══════════════════════════════════════════════════════════════
+// 物体 A：使用 GSAP 补间动画
+// ══════════════════════════════════════════════════════════════
+const cubeGeo = new THREE.BoxGeometry(1.5, 1.5, 1.5)
+const cubeMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.3, metalness: 0.7 })
+const cube = new THREE.Mesh(cubeGeo, cubeMat)
+cube.position.set(-3, 2, 0)
+cube.castShadow = true
+scene.add(cube)
+
+// GSAP 循环动画序列
+function runCubeGSAP() {
+  gsap.timeline({ repeat: -1, repeatDelay: 0.5 })
+    // 1. 旋转并上升到空中
+    .to(cube.position, { y: 5, duration: 1.5, ease: 'power2.out' })
+    .to(cube.rotation, { y: Math.PI * 2, duration: 1.5, ease: 'none' }, '<')
+    // 2. 水平飞行
+    .to(cube.position, { x: 3, duration: 1.2, ease: 'power1.inOut' })
+    .to(cube.rotation, { x: Math.PI * 2, duration: 1.2, ease: 'none' }, '<')
+    // 3. 落下
+    .to(cube.position, { y: 2, duration: 1.0, ease: 'bounce.out' })
+    // 4. 弹回原位
+    .to(cube.position, { x: -3, duration: 1.0, ease: 'power2.inOut' })
+    // 5. 颜色渐变
+    .to(cubeMat.color, { r: 0.9, g: 0.3, b: 0.2, duration: 0.5 }, '-=0.5')
+    .to(cubeMat.color, { r: 0.23, g: 0.51, b: 0.96, duration: 0.5 }, '+=0.2')
+}
+runCubeGSAP()
+
+// ══════════════════════════════════════════════════════════════
+// 物体 B：使用 Three.js AnimationMixer 关键帧动画
+// ══════════════════════════════════════════════════════════════
+const sphereGeo = new THREE.SphereGeometry(0.8, 32, 32)
+const sphereMat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.2, metalness: 0.8 })
+const sphere = new THREE.Mesh(sphereGeo, sphereMat)
+sphere.position.set(3, 0.8, 0)
+sphere.castShadow = true
+scene.add(sphere)
+
+// 创建关键帧轨道 (KeyframeTrack)
+// 位置轨道：从原地上升→绕圈→回落
+const positionTimes = [0, 1, 2, 3, 4, 5, 6]
+const positionValues = [
+  3, 0.8, 0,     // 起始
+  3, 3.0, 0,     // 上升
+  6, 2.0, 3,     // 空中
+  3, 4.0, 5,     // 高点
+  0, 2.0, 3,     // 环绕
+  -3, 3.0, 0,    // 落点
+  3, 0.8, 0,     // 回原点
+]
+const positionTrack = new THREE.VectorKeyframeTrack(
+  '.position',
+  positionTimes,
+  positionValues
+)
+
+// 旋转轨道
+const rotationTimes = [0, 2, 4, 6]
+const rotationValues = [
+  0, 0, 0, 1,
+  0, 1, 0, 0,   // 90°
+  0, 2, 0, 0,   // 180°
+  0, 3, 0, 0,   // 270°
+]
+const rotationTrack = new THREE.QuaternionKeyframeTrack(
+  '.quaternion',
+  rotationTimes,
+  rotationValues
+)
+
+// 颜色轨道（材质颜色）
+const colorTimes = [0, 3, 6]
+const colorValues = [
+  0.06, 0.73, 0.51,  // 绿色
+  0.06, 0.51, 0.73,  // 蓝绿色
+  0.06, 0.73, 0.51,  // 回绿色
+]
+const colorTrack = new THREE.ColorKeyframeTrack(
+  '.material.color',
+  colorTimes,
+  colorValues
+)
+
+// 组合剪辑
+const clip = new THREE.AnimationClip('SphereMotion', 6, [
+  positionTrack,
+  rotationTrack,
+  colorTrack
+])
+
+// 使用 AnimationMixer 播放
+const mixer = new THREE.AnimationMixer(sphere)
+const action = mixer.clipAction(clip)
+action.setLoop(THREE.LoopRepeat, Infinity)
+action.play()
+
+// ══════════════════════════════════════════════════════════════
+// 物体 C：GSAP + Three.js 同步动画（协同运动演示）
+// ══════════════════════════════════════════════════════════════
+const torusGeo = new THREE.TorusGeometry(0.6, 0.2, 16, 48)
+const torusMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3 })
+const torus = new THREE.Mesh(torusGeo, torusMat)
+torus.position.set(0, 1.0, 3)
+torus.castShadow = true
+scene.add(torus)
+
+// 环形轨道运动
+gsap.to(torus.position, {
+  keyframes: [
+    { x: 3, z: 3, duration: 1.5, ease: 'power1.inOut' },
+    { x: -3, z: 3, duration: 1.5, ease: 'power1.inOut' },

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>4001 - 球体 + 法线贴图 + 凹凸贴图</title>
+  <style>body { margin: 0; overflow: hidden; background: #000; }</style>
+</head>
+<body>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three'
+
+// ── 场景基础设置 ─────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0a0a0a)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 1, 4)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+renderer.shadowMap.enabled = true
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+document.body.appendChild(renderer.domElement)
+
+// ── 程序化生成法线贴图（不使用外部图片） ─────────────────────
+// 用 Canvas 程序化生成一张带凹凸的法线贴图
+function createNormalMap(size = 256) {
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+
+  // 基础法线色 (128, 128, 255) = 朝上的法线
+  ctx.fillStyle = 'rgb(128,128,255)'
+  ctx.fillRect(0, 0, size, size)
+
+  // 绘制圆形凹陷，模拟陨石坑/凹凸
+  for (let i = 0; i < 15; i++) {
+    const x = Math.random() * size
+    const y = Math.random() * size
+    const r = 10 + Math.random() * 20
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, r)
+    gradient.addColorStop(0, 'rgb(100,100,255)')
+    gradient.addColorStop(0.5, 'rgb(128,128,255)')
+    gradient.addColorStop(1, 'rgb(160,160,255)')
+    ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // 添加一些凸起纹理
+  for (let i = 0; i < 30; i++) {
+    const x = Math.random() * size
+    const y = Math.random() * size
+    const r = 3 + Math.random() * 8
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, r)
+    gradient.addColorStop(0, 'rgb(180,180,255)')
+    gradient.addColorStop(1, 'rgb(128,128,255)')
+    ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+  return texture
+}
+
+function createRoughnessMap(size = 256) {
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = 'rgb(80,80,80)'
+  ctx.fillRect(0, 0, size, size)
+
+  for (let i = 0; i < 60; i++) {
+    const x = Math.random() * size
+    const y = Math.random() * size
+    const r = Math.random() * 15
+    const v = Math.floor(50 + Math.random() * 150)
+    ctx.fillStyle = `rgb(${v},${v},${v})`
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+  return texture
+}
+
+// ── 球体材质（带法线贴图和粗糙度贴图） ───────────────────────
+const normalMap = createNormalMap(512)
+const roughnessMap = createRoughnessMap(512)
+
+const sphereMaterial = new THREE.MeshStandardMaterial({
+  color: 0x9ca3af,
+  normalMap: normalMap,
+  normalScale: new THREE.Vector2(1.5, 1.5), // 法线强度
+  roughnessMap: roughnessMap,
+  roughness: 0.7,
+  metalness: 0.1,
+})
+
+const sphereGeometry = new THREE.SphereGeometry(1.2, 128, 128)
+const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial)
+sphere.position.set(0, 1.2, 0)
+sphere.castShadow = true
+scene.add(sphere)
+
+// ── 地面 ────────────────────────────────────────────────────
+const groundGeo = new THREE.PlaneGeometry(20, 20)
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.9 })
+const ground = new THREE.Mesh(groundGeo, groundMat)
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+// ── 光照 ────────────────────────────────────────────────────
+const dirLight = new THREE.DirectionalLight(0xffffff, 2)
+dirLight.position.set(3, 5, 3)
+dirLight.castShadow = true
+scene.add(dirLight)
+
+const ambient = new THREE.AmbientLight(0x404040, 0.5)
+scene.add(ambient)
+
+const pointLight = new THREE.PointLight(0x87ceeb, 1.5, 20)
+pointLight.position.set(-3, 3, -2)
+scene.add(pointLight)
+
+// ── 轨道控制器 ─────────────────────────────────────────────
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.05
+
+// ── 渲染循环 ────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  // 球体缓慢旋转，展示法线贴图在不同角度下的效果
+  sphere.rotation.y = t * 0.3
+  sphere.rotation.x = Math.sin(t * 0.15) * 0.2
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

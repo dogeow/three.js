@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>4002 - 多光源 + 实时阴影</title>
+  <style>body { margin: 0; overflow: hidden; background: #000; }</style>
+</head>
+<body>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three'
+
+// ── 基础设置 ─────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x1a1a2e)
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(8, 6, 8)
+camera.lookAt(0, 0, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap  // 柔和阴影
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+document.body.appendChild(renderer.domElement)
+
+// ── 光源 1：方向光 (DirectionalLight) —— 模拟太阳 ────────────
+const dirLight = new THREE.DirectionalLight(0xfff4e6, 3)
+dirLight.position.set(5, 10, 5)
+dirLight.castShadow = true
+// 阴影映射分辨率
+dirLight.shadow.mapSize.set(2048, 2048)
+dirLight.shadow.camera.near = 0.1
+dirLight.shadow.camera.far = 30
+dirLight.shadow.camera.left = -10
+dirLight.shadow.camera.right = 10
+dirLight.shadow.camera.top = 10
+dirLight.shadow.camera.bottom = -10
+dirLight.shadow.bias = -0.001
+scene.add(dirLight)
+
+// 可视化方向光辅助
+const dirLightHelper = new THREE.DirectionalLightHelper(dirLight, 1, 0xffff00)
+scene.add(dirLightHelper)
+
+// ── 光源 2：点光源 (PointLight) —— 彩色氛围光 ────────────────
+const pointLight = new THREE.PointLight(0x00bfff, 50, 30)
+pointLight.position.set(-4, 3, 2)
+pointLight.castShadow = true
+pointLight.shadow.mapSize.set(512, 512)
+scene.add(pointLight)
+
+// 点光源辅助球
+const pointHelper = new THREE.Mesh(
+  new THREE.SphereGeometry(0.15),
+  new THREE.MeshBasicMaterial({ color: 0x00bfff })
+)
+pointHelper.position.copy(pointLight.position)
+scene.add(pointHelper)
+
+// ── 光源 3：聚光灯 (SpotLight) —— 舞台追光效果 ────────────────
+const spotLight = new THREE.SpotLight(0xff4500, 80, 20, Math.PI / 8, 0.5, 2)
+spotLight.position.set(3, 8, -3)
+spotLight.target.position.set(0, 0, 0)
+spotLight.castShadow = true
+spotLight.shadow.mapSize.set(1024, 1024)
+spotLight.shadow.bias = -0.001
+scene.add(spotLight)
+scene.add(spotLight.target)
+
+// 聚光灯辅助
+const spotHelper = new THREE.SpotLightHelper(spotLight, 0xff0000)
+scene.add(spotHelper)
+
+// ── 环境光 ─────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0x404060, 0.4)
+scene.add(ambient)
+
+// ── 场景物体 ─────────────────────────────────────────────────
+// 地面（接收所有阴影）
+const groundGeo = new THREE.PlaneGeometry(20, 20)
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x2d2d44, roughness: 0.9 })
+const ground = new THREE.Mesh(groundGeo, groundMat)
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+// 网格辅助
+const grid = new THREE.GridHelper(20, 20, 0x444466, 0x333355)
+grid.position.y = 0.01
+scene.add(grid)
+
+// 立方体（有投射和接收阴影）
+const cubeGeo = new THREE.BoxGeometry(1.5, 1.5, 1.5)
+const cubeMat = new THREE.MeshStandardMaterial({ color: 0x4f46e5, roughness: 0.3, metalness: 0.7 })
+const cube = new THREE.Mesh(cubeGeo, cubeMat)
+cube.position.set(0, 0.75, 0)
+cube.castShadow = true
+cube.receiveShadow = true
+scene.add(cube)
+
+// 球体
+const sphereGeo = new THREE.SphereGeometry(0.8, 32, 32)
+const sphereMat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.4, metalness: 0.5 })
+const sphere = new THREE.Mesh(sphereGeo, sphereMat)
+sphere.position.set(-2.5, 0.8, 1)
+sphere.castShadow = true
+sphere.receiveShadow = true
+scene.add(sphere)
+
+// 圆柱体
+const cylGeo = new THREE.CylinderGeometry(0.5, 0.5, 2, 32)
+const cylMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 })
+const cylinder = new THREE.Mesh(cylGeo, cylMat)
+cylinder.position.set(2.5, 1, -1)
+cylinder.castShadow = true
+cylinder.receiveShadow = true
+scene.add(cylinder)
+
+// ── 轨道控制器 ─────────────────────────────────────────────
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.05
+controls.shadowCameraNear = 0.1
+controls.shadowCameraFar = 50
+
+// ── 渲染循环 ────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  // 球体上下弹跳
+  sphere.position.y = 0.8 + Math.abs(Math.sin(t * 1.5)) * 2
+
+  // 立方体旋转
+  cube.rotation.y = t * 0.8
+  cube.rotation.x = t * 0.3
+
+  // 点光源绕场景移动（彩色光效果）
+  pointLight.position.x = Math.sin(t * 0.5) * 5
+  pointLight.position.z = Math.cos(t * 0.5) * 5
+  pointHelper.position.copy(pointLight.position)
+
+  // 聚光灯缓慢旋转
+  spotLight.position.x = Math.sin(t * 0.3) * 6
+  spotLight.position.z = Math.cos(t * 0.3) * 6
+  spotLight.target.position.set(Math.sin(t * 0.5) * 1.5, 0, Math.cos(t * 0.5) * 1.5)
+  spotHelper.update()
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

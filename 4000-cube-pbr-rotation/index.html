@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>4000 - 立方体旋转 + PBR材质</title>
+  <style>body { margin: 0; overflow: hidden; background: #000; }</style>
+</head>
+<body>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three'
+
+// ── 1. 场景 & 相机 & 渲染器 ─────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x111827)
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(3, 2, 4)
+camera.lookAt(0, 0, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.2
+document.body.appendChild(renderer.domElement)
+
+// ── 2. 环境光 & 半球光 ───────────────────────────────────────
+const ambient = new THREE.AmbientLight(0xffffff, 0.3)
+scene.add(ambient)
+
+const hemi = new THREE.HemisphereLight(0x87ceeb, 0x333333, 0.6)
+scene.add(hemi)
+
+// ── 3. PBR 材质立方体 ────────────────────────────────────────
+const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5)
+
+// PBR 材质：metalness + roughness 控制金属感和粗糙度
+const material = new THREE.MeshStandardMaterial({
+  color: 0x3b82f6,          // 基础颜色
+  metalness: 0.7,            // 0=绝缘体 1=纯金属
+  roughness: 0.2,            // 0=镜面 1=完全漫反射
+  envMapIntensity: 1.0
+})
+
+const cube = new THREE.Mesh(geometry, material)
+cube.position.set(0, 0.75, 0)
+cube.castShadow = true
+cube.receiveShadow = true
+scene.add(cube)
+
+// ── 4. 地面（接收阴影） ──────────────────────────────────────
+const groundGeo = new THREE.PlaneGeometry(20, 20)
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8 })
+const ground = new THREE.Mesh(groundGeo, groundMat)
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+// ── 5. 点光源（带阴影） ─────────────────────────────────────
+const pointLight = new THREE.PointLight(0xffffff, 30, 20)
+pointLight.position.set(3, 5, 2)
+pointLight.castShadow = true
+pointLight.shadow.mapSize.set(1024, 1024)
+scene.add(pointLight)
+
+// 辅助：可视化点光源位置
+const helper = new THREE.Mesh(
+  new THREE.SphereGeometry(0.1),
+  new THREE.MeshBasicMaterial({ color: 0xffffff })
+)
+helper.position.copy(pointLight.position)
+scene.add(helper)
+
+// ── 6. 轨道控制器 ───────────────────────────────────────────
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.05
+
+// ── 7. 渲染循环 + 动画 ──────────────────────────────────────
+// 立方体绕 Y 轴旋转，金属球绕 X 轴旋转
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  // 立方体自转
+  cube.rotation.y = t * 0.6
+  cube.rotation.x = Math.sin(t * 0.3) * 0.3
+
+  // 动态调整光源位置，形成光照动画效果
+  pointLight.position.x = Math.sin(t * 0.7) * 4
+  pointLight.position.z = Math.cos(t * 0.7) * 4
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+// ── 8. 响应窗口大小变化 ──────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+</script>
+</body>
+</html>

@@ -2746,3 +2746,18 @@ animate()
 - **magnus-effect-ballistics** — [3795](./3795-magnus-effect-ballistics/index.html)
 - **bose-einstein-condensate-matter-wave** — [3796](./3796-bose-einstein-condensate-matter-wave/index.html)
 - **coanda-effect-fluid-attachment** — [3797](./3797-coanda-effect-fluid-attachment/index.html)
+
+---
+
+## public/examples 知识点进度
+
+| # | 文件 | 知识点 | 状态 |
+|---|------|--------|------|
+| 01 | [01-cube.html](./public/examples/01-cube.html) | 立方体旋转 + OrbitControls | ✅ |
+| 02 | [02-sphere.html](./public/examples/02-sphere.html) | 球体 + 环境映射 + 金属材质 | ✅ |
+| 03 | [03-materials.html](./public/examples/03-materials.html) | 三种材质对比 Standard/Phong/Lambert | ✅ |
+| 04 | [04-lighting.html](./public/examples/04-lighting.html) | 四种光源 Ambient/Point/Directional/Spot | ✅ |
+| 05 | [05-camera.html](./public/examples/05-camera.html) | 透视相机 vs 正交相机切换 | ✅ |
+| 06 | [06-animation.html](./public/examples/06-animation.html) | 复合动画：缩放+弹跳+轨道公转 | ✅ |
+| 07 | [07-particles.html](./public/examples/07-particles.html) | 星空粒子系统 Points + AdditiveBlending | ✅ |
+| 08 | [08-physics.html](./public/examples/08-physics.html) | Cannon.js 物理碰撞 + 自由落体弹跳 | ✅ |
