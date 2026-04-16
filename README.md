@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **granular-sand-pile-physics** — [3867](./3867-granular-sand-pile-physics/index.html)
+- **origami-fold-crease-pattern** — [3868](./3868-origami-fold-crease-pattern/index.html)
+- **l-system-procedural-plant** — [3869](./3869-l-system-procedural-plant/index.html)
+- **soft-body-fruit-squish** — [3870](./3870-soft-body-fruit-squish/index.html)
+- **smoke-volumetric-light** — [3871](./3871-smoke-volumetric-light/index.html)
+- **pendulum-sync-harmonograph** — [3872](./3872-pendulum-sync-harmonograph/index.html)
+- **dendritic-snowflake-solidification** — [3873](./3873-dendritic-snowflake-solidification/index.html)
+
 - **magnetic-field-line-visualization** — [3861](./3861-magnetic-field-line-visualization/index.html)
 - **flame-front-combustion-simulation** — [3862](./3862-flame-front-combustion-simulation/index.html)
 - **soap-bubble-foam-physics** — [3863](./3863-soap-bubble-foam-physics/index.html)
