@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **brians-brain-cellular-automata** — [3599](./3599-brians-brain-cellular-automata/index.html)
+- **hyperbolic-geometry-poincare-disc** — [3600](./3600-hyperbolic-geometry-poincare-disc/index.html)
+- **coupled-map-lattice-wave-sim** — [3601](./3601-coupled-map-lattice-wave-sim/index.html)
+- **elastic-scattering-particle-collision** — [3602](./3602-elastic-scattering-particle-collision/index.html)
+- **3d-pong-game** — [3603](./3603-3d-pong-game/index.html)
+- **parametric-curve-surface-gallery** — [3604](./3604-parametric-curve-surface-gallery/index.html)
+
 - **cloth-simulation-physics** — [3593](./3593-cloth-simulation-physics/index.html)
 - **sound-wave-3d-propagation** — [3594](./3594-sound-wave-3d-propagation/index.html)
 - **boids-flocking-simulation** — [3595](./3595-boids-flocking-simulation/index.html)
