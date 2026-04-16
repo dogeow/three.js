@@ -745,6 +745,8 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **particle-life-system** — [3607](./3607-particle-life-system/index.html)
+
 - **brians-brain-cellular-automata** — [3599](./3599-brians-brain-cellular-automata/index.html)
 - **hyperbolic-geometry-poincare-disc** — [3600](./3600-hyperbolic-geometry-poincare-disc/index.html)
 - **coupled-map-lattice-wave-sim** — [3601](./3601-coupled-map-lattice-wave-sim/index.html)
