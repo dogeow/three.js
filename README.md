@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **quantum-entanglement-network** — [3829](./3829-quantum-entanglement-network/index.html)
+- **holographic-data-storage** — [3830](./3830-holographic-data-storage/index.html)
+- **magnetic-particle-separator** — [3831](./3831-magnetic-particle-separator/index.html)
+- **wfc-dungeon-generator** — [3832](./3832-wfc-dungeon-generator/index.html)
+- **protein-molecular-surface** — [3833](./3833-protein-molecular-surface/index.html)
+- **vehicle-crash-particle-sim** — [3834](./3834-vehicle-crash-particle-sim/index.html)
+- **solar-panel-photovoltaic** — [3835](./3835-solar-panel-photovoltaic/index.html)
+
 - **shepard-tone-infinite-ascent-psychacoustic** — [3821](./3821-shepard-tone-infinite-ascent-psychacoustic/index.html)
 - **voronoi-site-motion-animated-tesselation** — [3822](./3822-voronoi-site-motion-animated-tesselation/index.html)
 - **elastic-pendulum-chaos-bifurcation** — [3823](./3823-elastic-pendulum-chaos-bifurcation/index.html)
