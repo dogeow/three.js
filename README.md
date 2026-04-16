@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **virus-particle-diffusion-3d** — [3759](./3759-virus-particle-diffusion-3d/index.html)
+- **hurricane-eye-wall-simulation** — [3760](./3760-hurricane-eye-wall-simulation/index.html)
+- **double-gyre-ocean-circulation** — [3761](./3761-double-gyre-ocean-circulation/index.html)
+- **ifs-fractal-explorer** — [3762](./3762-ifs-fractal-explorer/index.html)
+- **turbulent-kolmogorov-flow** — [3763](./3763-turbulent-kolmogorov-flow/index.html)
+- **traffic-intersection-signal-sync** — [3764](./3764-traffic-intersection-signal-sync/index.html)
+
 - **quantum-error-correction-surface-code** — [3752](./3752-quantum-error-correction-surface-code/index.html)
 - **molecular-docking-shape-complementarity** — [3753](./3753-molecular-docking-shape-complementarity/index.html)
 - **fluid-structure-vortex-induced-vibration** — [3754](./3754-fluid-structure-vortex-induced-vibration/index.html)
