@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **quantum-tunneling-wave-packet** — [3805](./3805-quantum-tunneling-wave-packet/index.html)
+- **stochastic-resonance-physical-signal** — [3806](./3806-stochastic-resonance-physical-signal/index.html)
+- **hebbian-associative-memory-network** — [3807](./3807-hebbian-associative-memory-network/index.html)
+- **ricci-flow-geometry-uniformization** — [3808](./3808-ricci-flow-geometry-uniformization/index.html)
+- **hailstone-collatz-3d-attractor** — [3809](./3809-hailstone-collatz-3d-attractor/index.html)
+- **tesla-coil-discharge-plasma-art** — [3810](./3810-tesla-coil-discharge-plasma-art/index.html)
+
 - **planetary-gearbox-sim** — [3799](./3799-planetary-gearbox-sim/index.html)
 - **infinity-mirror-room** — [3800](./3800-infinity-mirror-room/index.html)
 - **npr-hatching-shader** — [3801](./3801-npr-hatching-shader/index.html)
