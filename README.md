@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **soft-tissue-cutting-surgery-sim** — [4050](./4050-soft-tissue-cutting-surgery-sim/index.html)
+- **plasma-wakefield-acceleration-physics** — [4051](./4051-plasma-wakefield-acceleration-physics/index.html)
+- **speckle-optical-metrology-3d** — [4052](./4052-speckle-optical-metrology-3d/index.html)
+- **dendrimer-branched-molecule-growth** — [4053](./4053-dendrimer-branched-molecule-growth/index.html)
+- **turbulent-combustion-flame-sim** — [4054](./4054-turbulent-combustion-flame-sim/index.html)
+- **glacier-calving-ice-fracture** — [4055](./4055-glacier-calving-ice-fracture/index.html)
+
 - **turing-pattern-3d** — [4044](./4044-turing-pattern-3d/index.html)
 - **benard-convection-cell** — [4045](./4045-benard-convection-cell/index.html)
 - **rayleigh-taylor-instability** — [4046](./4046-rayleigh-taylor-instability/index.html)
