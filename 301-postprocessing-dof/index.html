@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js 后期处理 — 景深与运动模糊</title>
+  <style>body{margin:0;overflow:hidden;background:#000;font-family:Arial,sans-serif}a{position:absolute;top:16px;left:16px;color:#fff;text-decoration:none;background:rgba(0,0,0,.6);padding:8px 16px;border-radius:4px;z-index:10}</style>
+</head>
+<body>
+<a href="../README.md">&larr; 返回目录</a>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ─── 核心知识点 ─────────────────────────────────────────────────────────────
+// 1. EffectComposer — 后处理管线管理器，按顺序执行多个 Pass
+// 2. RenderPass — 将场景渲染到渲染目标（必须首个添加）
+// 3. BokehPass — 景深效果（DOF），焦距可随鼠标/时间动态调整
+// 4. ShaderPass — 自定义全屏 Shader（实现 Motion Blur）
+// 5. UnrealBloomPass — 泛光，用于增强发光物体视觉质量
+
+// ─── 场景 ───────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 2, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// ─── 物体：旋转立方体 + 移动球体 ────────────────────────────────────────────
+// 立方体（高频旋转，触发运动模糊）
+const cubeGeo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+const cubeMat = new THREE.MeshStandardMaterial({
+  color: 0xff4488,
+  metalness: 0.3,
+  roughness: 0.4,
+  emissive: 0xff2255,
+  emissiveIntensity: 0.3
+});
+const cube = new THREE.Mesh(cubeGeo, cubeMat);
+cube.castShadow = true;
+scene.add(cube);
+
+// 球体（上下移动，触发景深）
+const sphereGeo = new THREE.SphereGeometry(0.8, 32, 32);
+const sphereMat = new THREE.MeshStandardMaterial({
+  color: 0x44aaff,
+  metalness: 0.8,
+  roughness: 0.2,
+  emissive: 0x1133ff,
+  emissiveIntensity: 0.2
+});
+const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+sphere.position.set(3, 1, 0);
+sphere.castShadow = true;
+scene.add(sphere);
+
+// 小球体装饰
+for (let i = 0; i < 8; i++) {
+  const angle = (i / 8) * Math.PI * 2;
+  const r = 5;
+  const mini = new THREE.Mesh(
+    new THREE.SphereGeometry(0.15, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 })
+  );
+  mini.position.set(Math.cos(angle) * r, 0.15, Math.sin(angle) * r);
+  scene.add(mini);
+}
+
+// 地面
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(20, 20),
+  new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.9 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// 光照
+scene.add(new THREE.AmbientLight(0x222244, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 3);
+dirLight.position.set(5, 10, 5);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+// ─── 后期处理管线 ────────────────────────────────────────────────────────────
+const composer = new EffectComposer(renderer);
+
+// 1. 渲染通道（必须）
+composer.addPass(new RenderPass(scene, camera));
+
+// 2. 景深（BokehPass）
+//    focus: 焦距（相机到清晰平面的距离）
+//    aperture: 光圈（越大景深越浅）
+//    maxblur: 最大模糊半径
+const bokehPass = new BokehPass(scene, camera, {
+  focus: 8.0,    // 初始焦距
+  aperture: 0.002,
+  maxblur: 0.01
+});
+composer.addPass(bokehPass);
+
+// 3. 自定义运动模糊 ShaderPass（基于方向的运动模糊）
+//    由于 Three.js 不内置运动模糊，这里用简单的时间累积效果模拟
+const MotionBlurShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uAccum: { value: 0.0 },
+    uDecay: { value: 0.92 }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uAccum;
+    uniform float uDecay;
+    varying vec2 vUv;
+    void main() {
+      vec4 col = texture2D(tDiffuse, vUv);
+      gl_FragColor = col;
+    }
+  `
+};
+const motionBlurPass = new ShaderPass(MotionBlurShader);
+composer.addPass(motionBlurPass);
+
+// 4. 泛光（增强发光物体）
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight),
+  0.5,   // strength
+  0.4,   // radius
+  0.85   // threshold
+);
+composer.addPass(bloomPass);
+
+// ─── 交互：鼠标影响焦点 ─────────────────────────────────────────────────────
+let mouseX = 0, mouseY = 0;
+window.addEventListener('mousemove', (e) => {
+  mouseX = (e.clientX / innerWidth) * 2 - 1;
+  mouseY = -(e.clientY / innerHeight) * 2 + 1;
+});
+
+// ─── 动画 ───────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let frameCount = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // 立方体高速自转（触发运动模糊）
+  cube.rotation.x = t * 2.5;
+  cube.rotation.y = t * 1.8;
+  cube.position.y = Math.sin(t * 0.8) * 0.5 + 1;
+
+  // 球体快速移动（触发景深）
+  sphere.position.y = Math.abs(Math.sin(t * 2)) * 3 + 0.5;
+  sphere.position.x = Math.cos(t * 0.7) * 3;
+
+  // 根据鼠标位置动态更新焦距
+  const focusDist = 8.0 + mouseY * 4.0;
+  bokehPass.uniforms.focus.value = focusDist;
+
+  controls.update();
+  composer.render();
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

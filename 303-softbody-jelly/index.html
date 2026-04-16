@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js 软体物理 — Jelly Soft Body</title>
+  <style>body{margin:0;overflow:hidden;background:#111;font-family:Arial,sans-serif}a{position:absolute;top:16px;left:16px;color:#fff;text-decoration:none;background:rgba(0,0,0,.6);padding:8px 16px;border-radius:4px;z-index:10}</style>
+</head>
+<body>
+<a href="../README.md">&larr; 返回目录</a>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── 核心知识点 ─────────────────────────────────────────────────────────────
+// 1. Verlet 积分 — 位置迭代：pos = pos + (pos - oldPos) * damping + acc * dt²
+// 2. 弹簧-阻尼系统 (Spring-Damper) — F = -k*x - c*v 用于连接质点
+// 3. BufferGeometry + position 更新 — 每帧修改顶点位置实现软体形变
+// 4. 地面碰撞检测 — 检测 y < groundY 时反弹并衰减速度
+
+// ─── 场景 ───────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0a);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 4, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// 光照
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(5, 10, 5);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+// ─── 地面 ───────────────────────────────────────────────────────────────────
+const groundGeo = new THREE.PlaneGeometry(20, 20);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x222233, roughness: 0.8 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ─── 软体系统（简化 Jelly Cube）──────────────────────────────────────────────
+// 使用 3x3x3 弹簧质点网格构成一个立方体 jelly
+const N = 3; // 每边粒子数
+const SPACING = 0.4;
+const STIFFNESS = 80.0;   // 弹簧刚度
+const DAMPING = 0.92;     // 阻尼系数
+const GRAVITY = -9.8;
+
+// 初始化粒子位置
+function initParticles() {
+  const particles = [];
+  for (let x = 0; x < N; x++) {
+    for (let y = 0; y < N; y++) {
+      for (let z = 0; z < N; z++) {
+        const px = (x - 1) * SPACING;
+        const py = (y - 1) * SPACING + 3; // 从空中掉落
+        const pz = (z - 1) * SPACING;
+        particles.push({
+          pos: new THREE.Vector3(px, py, pz),
+          oldPos: new THREE.Vector3(px, py, pz),
+          acc: new THREE.Vector3(),
+          pinned: false
+        });
+      }
+    }
+  }
+  return particles;
+}
+
+// 弹簧连接
+function initSprings(particles) {
+  const springs = [];
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const dist = particles[i].pos.distanceTo(particles[j].pos);
+      if (dist < SPACING * 1.5) {
+        springs.push({ a: i, b: j, restLength: dist });
+      }
+    }
+  }
+  return springs;
+}
+
+// 构建顶面和侧面三角面索引（用于更新 BufferGeometry）
+function buildFaces() {
+  const faces = [];
+  // 每个最小立方体格子 -> 5个面 x 2个三角 = 10个三角（除去底面）
+  for (let x = 0; x < N - 1; x++) {
+    for (let y = 0; y < N - 1; y++) {
+      for (let z = 0; z < N - 1; z++) {
+        const idx = (x * N + y) * N + z;
+        const a = idx;
+        const b = idx + 1;
+        const c = idx + N;
+        const d = idx + N + 1;
+        const e = idx + N * N;
+        const f = idx + N * N + 1;
+        const g = idx + N * N + N;
+        const h = idx + N * N + N + 1;
+        // 6个面，每个面2个三角
+        // 顶面
+        faces.push([a,b,c],[b,d,c]);
+        // 前面(z-)
+        faces.push([a,c,e],[c,g,e]);
+        // 右面(x+)
+        faces.push([b,d,f],[d,h,f]);
+        // 左面(x-)
+        faces.push([a,e,b],[e,f,b]);
+        // 后边(z+)
+        faces.push([c,d,g],[d,h,g]);
+      }
+    }
+  }
+  return new Uint16Array(faces.flat());
+}
+
+const particles = initParticles();
+const springs = initSprings(particles);
+const faces = buildFaces();
+
+// 计算初始顶点位置数组
+const positions = new Float32Array(particles.length * 3);
+particles.forEach((p, i) => {
+  positions[i * 3] = p.pos.x;
+  positions[i * 3 + 1] = p.pos.y;
+  positions[i * 3 + 2] = p.pos.z;
+});
+
+// BufferGeometry
+const jellyGeo = new THREE.BufferGeometry();
+jellyGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+jellyGeo.setIndex(new THREE.BufferAttribute(faces, 1));
+jellyGeo.computeVertexNormals();
+
+const jellyMat = new THREE.MeshStandardMaterial({
+  color: 0x44aaff,
+  metalness: 0.3,
+  roughness: 0.4,
+  side: THREE.DoubleSide
+});
+const jellyMesh = new THREE.Mesh(jellyGeo, jellyMat);
+jellyMesh.castShadow = true;
+scene.add(jellyMesh);
+
+// ─── 软体模拟更新 ────────────────────────────────────────────────────────────
+let prevTime = performance.now() / 1000;
+let dropped = false;
+
+function updatePhysics(dt) {
+  dt = Math.min(dt, 0.02); // 限制最大时间步
+
+  // 1. Verlet 积分
+  for (const p of particles) {
+    if (p.pinned) continue;
+    const vel = p.pos.clone().sub(p.oldPos).multiplyScalar(DAMPING);
+    p.oldPos.copy(p.pos);
+    p.pos.add(vel);
+    p.pos.y += GRAVITY * dt * dt;
+  }
+
+  // 2. 弹簧约束（多次迭代提高稳定性）
+  for (let iter = 0; iter < 5; iter++) {
+    for (const sp of springs) {
+      const pa = particles[sp.a];
+      const pb = particles[sp.b];
+      const diff = pb.pos.clone().sub(pa.pos);
+      const dist = diff.length();
+      if (dist < 1e-6) continue;
+      const correction = diff.multiplyScalar((dist - sp.restLength) / dist * 0.5);
+      const k = STIFFNESS / 1000.0;
+      if (!pa.pinned) pa.pos.add(correction.clone().multiplyScalar(k));
+      if (!pb.pinned) pb.pos.sub(correction.clone().multiplyScalar(k));
+    }
+  }
+
+  // 3. 地面碰撞
+  const GROUND_Y = 0.0;
+  for (const p of particles) {
+    if (p.pos.y < GROUND_Y) {
+      p.pos.y = GROUND_Y;
+      // 反弹衰减
+      const vel = p.pos.clone().sub(p.oldPos);
+      p.oldPos.y = p.pos.y + vel.y * 0.3;
+      p.oldPos.x = p.pos.x - vel.x * 0.1;
+      p.oldPos.z = p.pos.z - vel.z * 0.1;
+    }
+  }
+
+  // 4. 同步到 BufferGeometry
+  for (let i = 0; i < particles.length; i++) {
+    positions[i * 3] = particles[i].pos.x;
+    positions[i * 3 + 1] = particles[i].pos.y;
+    positions[i * 3 + 2] = particles[i].pos.z;
+  }
+  jellyGeo.attributes.position.array = positions;
+  jellyGeo.attributes.position.needsUpdate = true;
+  jellyGeo.computeVertexNormals();
+}
+
+// ─── 掉落触发 ───────────────────────────────────────────────────────────────
+window.addEventListener('click', () => {
+  // 重新随机初始化粒子位置，重新掉落
+  particles.forEach((p, i) => {
+    const ix = i % N;
+    const iy = Math.floor((i / N) % N);
+    const iz = Math.floor(i / (N * N));
+    p.pos.set(
+      (ix - 1) * SPACING + (Math.random() - .5) * .2,
+      (iy - 1) * SPACING + 3 + (Math.random() - .5) * .2,
+      (iz - 1) * SPACING + (Math.random() - .5) * .2
+    );
+    p.oldPos.copy(p.pos);
+  });
+});
+
+// ─── 动画循环 ────────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now() / 1000;
+  const dt = now - prevTime;
+  prevTime = now;
+
+  updatePhysics(dt);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

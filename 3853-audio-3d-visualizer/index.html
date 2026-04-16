@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D 音频可视化</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: sans-serif; }
+    canvas { display: block; }
+    #info {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.6;
+      pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+    #info span { color: #7df; }
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    #controls button {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      padding: 8px 20px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s;
+    }
+    #controls button:hover { background: rgba(255,255,255,0.25); }
+    #fileInput { display: none; }
+    label.button {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      padding: 8px 20px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s;
+      display: inline-block;
+    }
+    label.button:hover { background: rgba(255,255,255,0.25); }
+    #status {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      color: #aaa;
+      font-size: 12px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <span>3D 音频可视化</span><br/>
+    拖拽旋转 · 滚轮缩放<br/>
+    使用 Web Audio API + Points 粒子系统
+  </div>
+  <div id="status">点击「打开音频」选择音频文件</div>
+  <div id="controls">
+    <input type="file" id="fileInput" accept="audio/*" />
+    <label for="fileInput" class="button">打开音频</label>
+    <button id="micBtn">🎤 麦克风</button>
+    <button id="demoBtn">▶ 演示音频</button>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ─── Scene Setup ───────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050510);
+    scene.fog = new THREE.FogExp2(0x050510, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 12, 60);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 10;
+    controls.maxDistance = 200;
+
+    // ─── Lights ───────────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0x111133, 0.5));
+    const dirLight = new THREE.DirectionalLight(0x4488ff, 0.8);
+    dirLight.position.set(20, 40, 20);
+    scene.add(dirLight);
+
+    // ─── Floor Grid ───────────────────────────────────────────────────────────
+    const gridHelper = new THREE.GridHelper(120, 60, 0x112244, 0x080820);
+    scene.add(gridHelper);
+
+    // ─── Audio Setup ──────────────────────────────────────────────────────────
+    let audioContext, analyser, dataArray, sourceNode;
+    let audioElement = null;
+
+    function initAudioContext() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.8;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.connect(audioContext.destination);
+      }
+      if (audioContext.state === 'suspended') audioContext.resume();
+    }
+
+    function connectAudioStream(stream) {
+      initAudioContext();
+      if (sourceNode) { try { sourceNode.disconnect(); } catch(e){} }
+      sourceNode = audioContext.createMediaStreamSource(stream);
+      sourceNode.connect(analyser);
+      document.getElementById('status').textContent = '🎤 麦克风工作中...';
+    }
+
+    function connectAudioElement(el) {
+      initAudioContext();
+      if (sourceNode) { try { sourceNode.disconnect(); } catch(e){} }
+      if (audioElement) { audioElement.pause(); audioElement.src = ''; }
+      audioElement = el;
+      sourceNode = audioContext.createMediaElementSource(el);
+      sourceNode.connect(analyser);
+    }
+
+    // Demo mode: use oscillator
+    function startDemo() {
+      initAudioContext();
+      if (sourceNode) { try { sourceNode.disconnect(); } catch(e){} }
+      const osc1 = audioContext.createOscillator();
+      const osc2 = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const lfo = audioContext.createOscillator();
+      const lfoGain = audioContext.createGain();
+
+      osc1.type = 'sine'; osc1.frequency.value = 220;
+      osc2.type = 'sawtooth'; osc2.frequency.value = 330;
+      lfo.type = 'sine'; lfo.frequency.value = 0.5;
+      lfoGain.gain.value = 80;
+      gain.gain.value = 0.08;
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc1.frequency);
+      lfoGain.connect(osc2.frequency);
+      osc1.connect(gain); osc2.connect(gain);
+      gain.connect(analyser);
+      gain.connect(audioContext.destination);
+
+      osc1.start(); osc2.start(); lfo.start();
+      sourceNode = gain;
+      document.getElementById('status').textContent = '▶ 演示模式运行中（合成音）';
+    }
+
+    // ─── Particles ─────────────────────────────────────────────────────────────
+    const PARTICLE_COUNT = 64 * 64; // 4096
+    const GRID_X = 64;
+    const GRID_Z = 64;
+    const SPACING = 0.85;
+
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const colors    = new Float32Array(PARTICLE_COUNT * 3);
+    const baseY     = new Float32Array(PARTICLE_COUNT); // base heights
+
+    for (let i = 0; i < GRID_X; i++) {
+      for (let k = 0; k < GRID_Z; k++) {
+        const idx = i * GRID_Z + k;
+        const x = (i - GRID_X / 2) * SPACING;
+        const z = (k - GRID_Z / 2) * SPACING;
+        positions[idx * 3]     = x;
+        positions[idx * 3 + 1] = 0;
+        positions[idx * 3 + 2] = z;
+        baseY[idx] = 0;
+        // initial color: dark blue
+        colors[idx * 3]     = 0.05;
+        colors[idx * 3 + 1] = 0.1;
+        colors[idx * 3 + 2] = 0.3;
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+
+    // Vertex shader: offset Y by frequency
+    const vertexShader = /* glsl */`
+      precision highp float;
+      attribute vec3 color;
+      varying vec3 vColor;
+      varying float vHeight;
+      uniform float uTime;
+
+      void main() {
+        vColor = color;
+        // height passed via color alpha proxy; reconstruct from position
+        vHeight = position.y;
+        gl_PointSize = 3.5;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+
+    const fragmentShader = /* glsl */`
+      precision highp float;
+      varying vec3 vColor;
+      varying float vHeight;
+
+      void main() {
+        float dist = length(gl_PointCoord - vec2(0.5));
+        if (dist > 0.5) discard;
+
+        float alpha = 1.0 - smoothstep(0.3, 0.5, dist);
+        float brightness = clamp(vHeight / 30.0, 0.0, 1.0);
+        vec3 col = vColor + vec3(brightness * 0.4, brightness * 0.6, brightness * 1.2);
+        gl_FragColor = vec4(col, alpha * 0.85);
+      }
+    `;
+
+    const particleMaterial = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      transparent: true,
+      depthWrite: false,
+      vertexColors: true,
+    });
+
+    const points = new THREE.Points(geometry, particleMaterial);
+    scene.add(points);
+
+    // ─── Frequency Bar Columns (optional visual aid) ───────────────────────────
+    // We'll map frequency bands to ring radius and height for extra depth cue
+    const ringCount = 8;
+    const rings = [];
+    for (let r = 0; r < ringCount; r++) {
+      const ringGeo = new THREE.TorusGeometry(5 + r * 6, 0.08, 8, 120);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x112244, transparent: true, opacity: 0.4 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.01;
+      scene.add(ring);
+      rings.push(ring);
+    }
+
+    // ─── Animation Loop ────────────────────────────────────────────────────────
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+
+      if (analyser && dataArray) {
+        analyser.getByteFrequencyData(dataArray);
+
+        // Map frequency data to 2D grid
+        // Use half the bins for a nice radial-ish mapping
+        const binCount = analyser.frequencyBinCount;
+        const step = Math.floor(binCount / (GRID_X * GRID_Z));
+
+        for (let i = 0; i < GRID_X; i++) {
+          for (let k = 0; k < GRID_Z; k++) {
+            const gridIdx = i * GRID_Z + k;
+            // sample frequency bin — mix x and z index for radial feel
+            const dist = Math.sqrt((i - GRID_X / 2) ** 2 + (k - GRID_Z / 2) ** 2);
+            const maxDist = Math.sqrt((GRID_X / 2) ** 2 + (GRID_Z / 2) ** 2);
+            const binIdx = Math.floor((dist / maxDist) * (binCount * 0.6)) * step;
+            const clampedBin = Math.min(binIdx, binCount - 1);
+            const freq = dataArray[clampedBin];
+
+            // Height from frequency (0–30 units)
+            const height = (freq / 255) * 30;
+            positions[gridIdx * 3 + 1] = height;
+            baseY[gridIdx] = height;
+
+            // Color: low freq = deep blue, mid = cyan/green, high = magenta/white
+            const t = freq / 255;
+            colors[gridIdx * 3]     = t * 0.9 + 0.05;
+            colors[gridIdx * 3 + 1] = t * 0.7 + 0.1;
+            colors[gridIdx * 3 + 2] = 0.3 + t * 0.7;
+          }
+        }
+
+        geometry.attributes.position.needsUpdate = true;
+        geometry.attributes.color.needsUpdate = true;
+
+        // Animate ring radii based on bass
+        let bass = 0;
+        for (let i = 0; i < 8; i++) bass += dataArray[i];
+        bass /= (8 * 255);
+        rings.forEach((ring, r) => {
+          ring.scale.setScalar(1 + bass * 0.5 * (r + 1) / ringCount);
+          const hue = (Date.now() * 0.0002 + r * 0.1) % 1;
+          ring.material.color.setHSL(0.58 + hue * 0.15, 0.8, 0.3 + bass * 0.4);
+          ring.material.opacity = 0.3 + bass * 0.4;
+        });
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ─── Event Handlers ───────────────────────────────────────────────────────
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const audio = new Audio(url);
+      audio.crossOrigin = 'anonymous';
+      audio.loop = true;
+      connectAudioElement(audio);
+      audio.play().catch(() => {
+        document.getElementById('status').textContent = '点击页面后再播放音频';
+      });
+      document.getElementById('status').textContent = '🎵 ' + file.name;
+    });
+
+    document.getElementById('micBtn').addEventListener('click', async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        connectAudioStream(stream);
+      } catch (err) {
+        document.getElementById('status').textContent = '麦克风权限被拒绝';
+      }
+    });
+
+    document.getElementById('demoBtn').addEventListener('click', startDemo);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

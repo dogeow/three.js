@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Three.js 相机示例 - 透视 vs 正交</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #111; font-family: Arial, sans-serif; color: #fff; }
+    canvas { display: block; }
+    .labels { position: absolute; top: 10px; width: 50%; text-align: center; font-size: 16px; background: rgba(0,0,0,0.5); padding: 6px; }
+    #l1 { left: 0; }
+    #l2 { right: 0; }
+  </style>
+</head>
+<body>
+  <div class="labels" id="l1">PerspectiveCamera (透视)</div>
+  <div class="labels" id="l2">OrthographicCamera (正交)</div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dir = new THREE.DirectionalLight(0xffffff, 1);
+    dir.position.set(5, 10, 5);
+    scene.add(dir);
+
+    // 透视相机
+    const perspCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    perspCamera.position.set(5, 4, 5);
+    perspCamera.lookAt(0, 0, 0);
+
+    // 正交相机
+    const aspect = window.innerWidth / 2 / window.innerHeight;
+    const orthoCamera = new THREE.OrthographicCamera(-5 * aspect, 5 * aspect, 5, -5, 0.1, 100);
+    orthoCamera.position.set(5, 4, 5);
+    orthoCamera.lookAt(0, 0, 0);
+
+    // 公共场景内容
+    const cubeGeo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+    const redMat = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x44ff44 });
+    const blueMat = new THREE.MeshStandardMaterial({ color: 0x4444ff });
+
+    const cube1 = new THREE.Mesh(cubeGeo, redMat);
+    cube1.position.set(-1.5, 0, 0);
+    scene.add(cube1);
+
+    const cube2 = new THREE.Mesh(cubeGeo, greenMat);
+    cube2.position.set(0, 0, 0);
+    scene.add(cube2);
+
+    const cube3 = new THREE.Mesh(cubeGeo, blueMat);
+    cube3.position.set(1.5, 0, 0);
+    scene.add(cube3);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(20, 20),
+      new THREE.MeshStandardMaterial({ color: 0x333333 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -1;
+    scene.add(ground);
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      cube1.rotation.y = t * 0.5;
+      cube2.rotation.y = t * 0.5;
+      cube3.rotation.y = t * 0.5;
+
+      const w = window.innerWidth / 2;
+      const h = window.innerHeight;
+
+      renderer.setScissorTest(true);
+
+      // 左：透视
+      renderer.setViewport(0, 0, w, h);
+      renderer.setScissor(0, 0, w, h);
+      renderer.render(scene, perspCamera);
+
+      // 右：正交
+      renderer.setViewport(w, 0, w, h);
+      renderer.setScissor(w, 0, w, h);
+      renderer.render(scene, orthoCamera);
+    }
+    animate();
+  </script>
+</body>
+</html>

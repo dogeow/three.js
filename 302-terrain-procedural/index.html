@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js 程序化地形生成</title>
+  <style>body{margin:0;overflow:hidden;background:#111;font-family:Arial,sans-serif}a{position:absolute;top:16px;left:16px;color:#fff;text-decoration:none;background:rgba(0,0,0,.6);padding:8px 16px;border-radius:4px;z-index:10}</style>
+</head>
+<body>
+<a href="../README.md">&larr; 返回目录</a>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── 核心知识点 ─────────────────────────────────────────────────────────────
+// 1. PlaneGeometry(width, height, segmentsX, segmentsY) — 创建细分平面
+// 2. ShaderMaterial + 自定义 vertex shader — 实现地形高度位移
+// 3. FBM (Fractal Brownian Motion) — 分形布朗运动，多倍频叠加生成自然地形
+// 4. Fragment Shader 根据高度着色 — 低地绿色，高地岩石/雪白
+// 5. simplex/perlin noise — 平滑随机地形噪声
+
+// ─── 着色器代码（内联字符串）────────────────────────────────────────────────
+const vertexShader = `
+  // 接收 JS 传递的 uniform（时间、噪声种子）
+  uniform float uTime;
+  uniform float uHeightScale;
+
+  varying float vElevation;
+  varying vec3 vNormal;
+  varying vec3 vPosition;
+
+  // 2D Simplex Noise 实现（简化版）
+  vec3 mod289(vec3 x){return x-floor(x*(1./289.))*289.;}
+  vec2 mod289(vec2 x){return x-floor(x*(1./289.))*289.;}
+  vec3 permute(vec3 x){return mod289(((x*34.)+1.)*x);}
+
+  float snoise(vec2 v){
+    const vec4 C=vec4(.211324865405187,.366025403784439,-.577350269189626,.024393845);
+    vec2 i=floor(v+dot(v,C.yy));
+    vec2 x0=v-i+dot(i,C.xx);
+    vec2 i1=(x0.x>x0.y)?vec2(1.,0.):vec2(0.,1.);
+    vec4 x12=x0.xyxy+C.xxzz;
+    x12.xy-=i1;
+    i=mod289(i);
+    vec3 p=permute(permute(i.y+vec3(0.,i1.y,1.))+i.x+vec3(0.,i1.x,1.));
+    vec3 m=max(.5-vec3(dot(x0,x0),dot(x12.xy,x12.xy),dot(x12.zw,x12.zw)),0.);
+    m=m*m;m=m*m;
+    vec3 x=2.*fract(p*C.www)-1.;
+    vec3 h=abs(x)-.5;
+    vec3 ox=floor(x+.5);
+    vec3 a0=x-ox;
+    m*=1.79284291400159-.85373472095314*(a0*a0+h*h);
+    vec3 g;
+    g.x=a0.x*x0.x+h.x*x0.y;
+    g.yz=a0.yz*x12.xz+h.yz*x12.yw;
+    return 130.*dot(m,g);
+  }
+
+  // FBM: 分形布朗运动 — 多倍频叠加生成自然地形
+  float fbm(vec2 p, int octaves){
+    float value=0.;
+    float amplitude=0.5;
+    float frequency=1.;
+    for(int i=0;i<8;i++){
+      if(i>=octaves)break;
+      value+=amplitude*snoise(p*frequency);
+      amplitude*=.5;
+      frequency*=2.;
+    }
+    return value;
+  }
+
+  void main(){
+    vec3 pos=position;
+    // 在 CPU 不修改 geometry，直接在 GPU 用噪声位移顶点
+    float elevation=fbm(pos.xz*.3,6)*uHeightScale;
+    // 加入时间动画（小幅度波动模拟风吹草地）
+    elevation+=sin(pos.x*.5+uTime)*.05*uHeightScale;
+    pos.y+=elevation;
+
+    vElevation=elevation;
+    vPosition=pos;
+
+    // 法线：计算邻域梯度获得法线
+    float delta=.1;
+    float hL=fbm((pos.xz+vec2(-delta,0.))*.3,6)*uHeightScale;
+    float hR=fbm((pos.xz+vec2(delta,0.))*.3,6)*uHeightScale;
+    float hD=fbm((pos.xz+vec2(0.,-delta))*.3,6)*uHeightScale;
+    float hU=fbm((pos.xz+vec2(0.,delta))*.3,6)*uHeightScale;
+    vNormal=normalize(vec3(hL-hR,2.*delta,hD-hU));
+
+    gl_Position=projectionMatrix*modelViewMatrix*vec4(pos,1.);
+  }
+`;
+
+const fragmentShader = `
+  uniform float uTime;
+  varying float vElevation;
+  varying vec3 vNormal;
+  varying vec3 vPosition;
+
+  void main(){
+    // 根据高度进行颜色渐变
+    // 低海拔: 深绿色  中海拔: 浅绿/黄色  高海拔: 灰白/雪白
+    float h=vElevation;
+    vec3 colorLow=vec3(.15,.35,.1);   // 低地森林绿
+    vec3 colorMid=vec3(.45,.55,.2);    // 草地黄绿
+    vec3 colorHigh=vec3(.8,.85,.8);    // 高山岩石/雪白
+
+    float t1=smoothstep(-.3,.2,h);
+    float t2=smoothstep(.2,.7,h);
+    vec3 col=mix(colorLow,colorMid,t1);
+    col=mix(col,colorHigh,t2);
+
+    // 简单光照（漫反射）
+    vec3 lightDir=normalize(vec3(1.,2.,1.));
+    float diff=max(dot(vNormal,lightDir),0.);
+    col*=(.4+diff*.6);
+
+    // 边缘雾效
+    float dist=length(vPosition.xz);
+    float fog=smoothstep(15.,30.,dist);
+    col=mix(col,vec3(.05,.07,.1),fog*.5);
+
+    gl_FragColor=vec4(col,1.);
+  }
+`;
+
+// ─── 场景 ───────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x88aabb);
+scene.fog = new THREE.FogExp2(0x88aabb, 0.02);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 18, 25);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI / 2 - 0.05; // 防止进入地下
+
+// ─── 地形平面 ───────────────────────────────────────────────────────────────
+// 200x200 单位，200x200 细分数 = 高精度地形
+const terrainGeo = new THREE.PlaneGeometry(40, 40, 200, 200);
+terrainGeo.rotateX(-Math.PI / 2); // 变为水平面
+
+const terrainMat = new THREE.ShaderMaterial({
+  vertexShader,
+  fragmentShader,
+  uniforms: {
+    uTime: { value: 0.0 },
+    uHeightScale: { value: 3.0 }
+  },
+  side: THREE.DoubleSide
+});
+
+const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+scene.add(terrain);
+
+// 光照
+scene.add(new THREE.AmbientLight(0xccddee, 0.8));
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(10, 20, 10);
+scene.add(sun);
+
+// ─── 动画 ───────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  terrainMat.uniforms.uTime.value = t;
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
