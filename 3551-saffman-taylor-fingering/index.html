@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3551. Saffman-Taylor Fingering</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
+  canvas { display: block; }
+  #info { position: absolute; top: 10px; left: 10px; color: #8f8; font-size: 13px; pointer-events: none; z-index: 10; }
+  #controls { position: absolute; top: 10px; right: 10px; color: #aaa; font-size: 12px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; }
+  .btn { background: #1a4; color: #fff; border: none; padding: 5px 12px; cursor: pointer; border-radius: 4px; margin: 2px; }
+  .btn:hover { background: #2c6; }
+</style>
+</head>
+<body>
+<div id="info">Saffman-Taylor Viscous Fingering — Hele-Shaw Cell</div>
+<div id="controls">
+  <button class="btn" id="resetBtn">Reset</button>
+  <button class="btn" id="pauseBtn">Pause</button><br>
+  Flow Rate: <span id="flowVal">5</span><br>
+  <input type="range" id="flowRate" min="1" max="20" value="5" style="width:120px">
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>

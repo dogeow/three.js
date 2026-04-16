@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3558. Phylogenetic Dendrogram</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
+  #info { position: absolute; top: 10px; left: 10px; color: #aaa; font-size: 13px; z-index: 10; }
+  .controls { position: absolute; top: 10px; right: 10px; color: #aaa; font-size: 12px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; }
+  .btn { background: #2e7d32; color: #fff; border: none; padding: 5px 12px; cursor: pointer; border-radius: 4px; margin: 2px; }
+  .btn:hover { background: #43a047; }
+</style>
+</head>
+<body>
+<div id="info">Phylogenetic Dendrogram — Hierarchical Clustering Tree<br>Drag nodes to rearrange | Scroll to zoom | Click branch to highlight</div>
+<div class="controls">
+  <button class="btn" id="resetBtn">New Tree</button>
+  <button class="btn" id="shuffleBtn">Shuffle</button>
+  <button class="btn" id="toggleRotateBtn">Auto-Rotate</button><br>
+  Depth: <span id="depthVal">4</span><br>
+  <input type="range" id="depthSlider" min="2" max="7" value="4" style="width:120px">
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>

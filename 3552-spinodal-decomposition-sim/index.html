@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3552. Spinodal Decomposition</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
+  #info { position: absolute; top: 10px; left: 10px; color: #aaa; font-size: 13px; }
+  .controls { position: absolute; top: 10px; right: 10px; color: #aaa; font-size: 12px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; }
+  .btn { background: #2196F3; color: #fff; border: none; padding: 5px 12px; cursor: pointer; border-radius: 4px; margin: 2px; }
+</style>
+</head>
+<body>
+<div id="info">Spinodal Decomposition — Cahn-Hilliard Phase Separation</div>
+<div class="controls">
+  <button class="btn" id="resetBtn">Reset</button>
+  <button class="btn" id="pauseBtn">Pause</button><br>
+  Noise ε: <span id="noiseVal">0.05</span><br>
+  <input type="range" id="noiseSlider" min="0" max="10" value="5" style="width:120px">
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
