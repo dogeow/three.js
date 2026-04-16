@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **magnetic-field-line-visualization** — [3861](./3861-magnetic-field-line-visualization/index.html)
+- **flame-front-combustion-simulation** — [3862](./3862-flame-front-combustion-simulation/index.html)
+- **soap-bubble-foam-physics** — [3863](./3863-soap-bubble-foam-physics/index.html)
+- **seismic-wave-structural-dynamics** — [3864](./3864-seismic-wave-structural-dynamics/index.html)
+- **tsunami-shallow-water-wave-sim** — [3865](./3865-tsunami-shallow-water-wave-sim/index.html)
+
 - **反应扩散系统** — [3856](./3856-反应扩散系统/index.html)
 - **双摆混沌吸引子** — [3857](./3857-双摆混沌吸引子/index.html)
 - **逆运动学机械臂** — [3858](./3858-逆运动学机械臂/index.html)
