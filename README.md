@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **vortex-shedding-fluid-turbulence** — [3643](./3643-vortex-shedding-fluid-turbulence/index.html)
+- **plasma-ball-electrode-discharge** — [3644](./3644-plasma-ball-electrode-discharge/index.html)
+- **sandpile-avalanche-cellular-automata** — [3645](./3645-sandpile-avalanche-cellular-automata/index.html)
+- **lissajous-3d-curve-visualizer** — [3646](./3646-lissajous-3d-curve-visualizer/index.html)
+
 - **sph-fluid-simulation** — [3638](./3638-sph-fluid-simulation/index.html)
 - **slime-mold-physarum-3d** — [3639](./3639-slime-mold-physarum-3d/index.html)
 - **galton-board-bean-machine** — [3640](./3640-galton-board-bean-machine/index.html)
