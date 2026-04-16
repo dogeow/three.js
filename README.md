@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **plasma-wave-z-machine** — [4364](./4364-plasma-wave-z-machine/index.html)
+- **turing-pattern-reaction-diffusion** — [4365](./4365-turing-pattern-reaction-diffusion/index.html)
+- **soft-body-jelly-physics** — [4366](./4366-soft-body-jelly-physics/index.html)
+- **crystal-lattice-phonon-vibration** — [4367](./4367-crystal-lattice-phonon-vibration/index.html)
+- **microfluidic-droplet-sorting** — [4368](./4368-microfluidic-droplet-sorting/index.html)
+- **sound-hologram-levitation** — [4369](./4369-sound-hologram-levitation/index.html)
+- **dendrite-growth-electrodeposition** — [4370](./4370-dendrite-growth-electrodeposition/index.html)
+- **chromatic-aberration-optics** — [4371](./4371-chromatic-aberration-optics/index.html)
+
 - **solar-sail-photon-propulsion** — [4351](./4351-solar-sail-photon-propulsion/index.html)
 - **vortex-street-flow-simulation** — [4355](./4355-vortex-street-flow-simulation/index.html)
 - **coulomb-scattering-rutherford-alpha** — [4356](./4356-coulomb-scattering-rutherford-alpha/index.html)
