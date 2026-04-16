@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **chaos-double-scroll-attractor** — [4110](./4110-chaos-double-scroll-attractor/index.html)
+- **non-newtonian-shear-dependent-viscosity** — [4111](./4111-non-newtonian-shear-dependent-viscosity/index.html)
+- **discrete-element-granular-mechanics** — [4112](./4112-discrete-element-granular-mechanics/index.html)
+- **mie-scattering-atmospheric-sky** — [4113](./4113-mie-scattering-atmospheric-sky/index.html)
+- **taylor-cone-electrohydrodynamics** — [4114](./4114-taylor-cone-electrohydrodynamics/index.html)
+- **electrowetting-droplet-manipulation** — [4115](./4115-electrowetting-droplet-manipulation/index.html)
+- **liesegang-ring-precipitation-pattern** — [4116](./4116-liesegang-ring-precipitation-pattern/index.html)
+- **sound-field-volumetric-acoustics** — [4117](./4117-sound-field-volumetric-acoustics/index.html)
+
 - **mpemba-effect-heat-transfer** — [4104](./4104-mpemba-effect-heat-transfer/index.html)
 - **undular-bore-solitary-wave** — [4105](./4105-undular-bore-solitary-wave/index.html)
 - **capillary-rise-porous-medium** — [4106](./4106-capillary-rise-porous-medium/index.html)
