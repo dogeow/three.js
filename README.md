@@ -745,6 +745,23 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **cpu-architecture-pipeline-visualization** — [4275](./4275-cpu-architecture-pipeline-visualization/index.html)
+- **organic-tumor-growth-sim** — [4276](./4276-organic-tumor-growth-sim/index.html)
+- **crane-tower-construction-sim** — [4277](./4277-crane-tower-construction-sim/index.html)
+- **music-synthesizer-physical-modeling** — [4278](./4278-music-synthesizer-physical-modeling/index.html)
+- **soil-contamination-plume** — [4279](./4279-soil-contamination-plume/index.html)
+- **fracture-composite-laminate** — [4280](./4280-fracture-composite-laminate/index.html)
+- **adaptive-immunity-t-cell** — [4281](./4281-adaptive-immunity-t-cell/index.html)
+- **traffic-bottleneck-queue-theory** — [4282](./4282-traffic-bottleneck-queue-theory/index.html)
+
+- **aerodynamics-wind-tunnel** — [4267](./4267-aerodynamics-wind-tunnel/index.html)
+- **vehicle-suspension** — [4268](./4268-vehicle-suspension/index.html)
+- **procedural-music-gen** — [4269](./4269-procedural-music-gen/index.html)
+- **cryptography-rsa-visualization** — [4270](./4270-cryptography-rsa-visualization/index.html)
+- **monte-carlo-pathtracing** — [4272](./4272-monte-carlo-pathtracing/index.html)
+- **npr-sketch-watercolor** — [4273](./4273-npr-sketch-watercolor/index.html)
+- **robot-rrt-planning** — [4274](./4274-robot-rrt-planning/index.html)
+
 - **fourier-transform-3d-visualization** — [4260](./4260-fourier-transform-3d-visualization/index.html)
 - **electrophorus-electrostatic-generator** — [4261](./4261-electrophorus-electrostatic-generator/index.html)
 - **kepler-orbit-mechanics** — [4262](./4262-kepler-orbit-mechanics/index.html)
