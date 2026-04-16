@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **gyroscope-tightrope-walker-balance** — [4002](./4002-gyroscope-tightrope-walker-balance/index.html)
+- **eddy-current-magnet-brake-physics** — [4003](./4003-eddy-current-magnet-brake-physics/index.html)
+- **robot-hand-inverse-kinematics-grasping** — [4004](./4004-robot-hand-inverse-kinematics-grasping/index.html)
+- **physarum-slime-mold-food-web-foraging** — [4005](./4005-physarum-slime-mold-food-web-foraging/index.html)
+- **quantum-wavepacket-gaussian-spreading** — [4006](./4006-quantum-wavepacket-gaussian-spreading/index.html)
+
 - **slot-canyon-erosion-hydraulic** — [3995](./3995-slot-canyon-erosion-hydraulic/index.html)
 - **go-board-game-3d** — [3996](./3996-go-board-game-3d/index.html)
 - **space-elevator-climber-tether** — [3997](./3997-space-elevator-climber-tether/index.html)
