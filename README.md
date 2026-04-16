@@ -745,6 +745,17 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **piano-roll-sequencer** — [3608](./3608-piano-roll-sequencer/index.html)
+- **epidemic-sir-spatial-spread** — [3609](./3609-epidemic-sir-spatial-spread/index.html)
+- **neural-network-graph-viz** — [3610](./3610-neural-network-graph-viz/index.html)
+- **soft-body-particle-physics** — [3611](./3611-soft-body-particle-physics/index.html)
+- **holographic-volumetric-display** — [3612](./3612-holographic-volumetric-display/index.html)
+- **botanical-parametric-phyllotaxis-3d** — [3613](./3613-botanical-parametric-phyllotaxis-3d/index.html)
+- **markov-chain-text-genetic-art** — [3614](./3614-markov-chain-text-genetic-art/index.html)
+- **kaleidoscope-symmetry-generator** — [3615](./3615-kaleidoscope-symmetry-generator/index.html)
+- **topological-insulator-sim** — [3616](./3616-topological-insulator-sim/index.html)
+- **pendulum-wave-3d-harmonic** — [3617](./3617-pendulum-wave-3d-harmonic/index.html)
+
 - **particle-life-system** — [3607](./3607-particle-life-system/index.html)
 
 - **brians-brain-cellular-automata** — [3599](./3599-brians-brain-cellular-automata/index.html)
