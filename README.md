@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **causal-bayesian-network-viz** — [3578](./3578-causal-bayesian-network-viz/index.html)
+- **transformer-attention-heads-3d** — [3579](./3579-transformer-attention-heads-3d/index.html)
+- **evolutionary-art-genome-selection** — [3580](./3580-evolutionary-art-genome-selection/index.html)
+- **sailing-aerodynamics-lift-drag** — [3581](./3581-sailing-aerodynamics-lift-drag/index.html)
+- **market-bubble-crash-dynamics** — [3582](./3582-market-bubble-crash-dynamics/index.html)
+- **kerf-bending-wood-fabrication** — [3583](./3583-kerf-bending-wood-fabrication/index.html)
+
 - **stellar-nucleosynthesis** — [3571](./3571-stellar-nucleosynthesis/index.html)
 - **holographic-interferometry-sim** — [3572](./3572-holographic-interferometry-sim/index.html)
 - **dripping-faucet-chaos** — [3573](./3573-dripping-faucet-chaos/index.html)
