@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **quantum-circuit-gate-visualizer-3d** — [4145](./4145-quantum-circuit-gate-visualizer-3d/index.html)
+- **medical-volume-raycasting-transfer-function** — [4146](./4146-medical-volume-raycasting-transfer-function/index.html)
+- **robot-arm-fabrik-inverse-kinematics** — [4147](./4147-robot-arm-fabrik-inverse-kinematics/index.html)
+- **incompressible-navier-stokes-cfd-3d** — [4148](./4148-incompressible-navier-stokes-cfd-3d/index.html)
+- **neural-network-backpropagation-gpu-visualization** — [4149](./4149-neural-network-backpropagation-gpu-visualization/index.html)
+- **semiconductor-pn-junction-band-structure** — [4150](./4150-semiconductor-pn-junction-band-structure/index.html)
+- **optical-waveguide-beam-propagation** — [4151](./4151-optical-waveguide-beam-propagation/index.html)
+- **particle-image-velocimetry-piv** — [4152](./4152-particle-image-velocimetry-piv/index.html)
+
 - **binary-star-gravitational-orbit** — [4139](./4139-binary-star-gravitational-orbit/index.html)
 - **blood-cell-flow-laminar-sim** — [4140](./4140-blood-cell-flow-laminar-sim/index.html)
 - **seismic-wave-propagation-2d** — [4141](./4141-seismic-wave-propagation-2d/index.html)
