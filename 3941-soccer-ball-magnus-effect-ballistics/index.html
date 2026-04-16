@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3941. Soccer Ball Magnus Effect Ballistics</title>
+<style>
+body{margin:0;overflow:hidden;background:#1a1a2e}canvas{display:block}
+#info{position:absolute;top:16px;left:16px;color:#e94560;font-family:'Courier New',monospace;font-size:13px;pointer-events:none;text-shadow:0 0 8px #e94560}
+#controls{position:absolute;bottom:16px;left:16px;color:#eee;font-family:'Courier New',monospace;font-size:12px}
+button{background:#e94560;border:none;color:#fff;padding:6px 14px;cursor:pointer;font-family:inherit;border-radius:3px;margin-right:6px}
+button:hover{background:#ff6b6b}
+</style>
+</head>
+<body>
+<div id="info">⚽ Magnus Effect Ballistics — Drag the ball or press LAUNCH</div>
+<div id="controls">
+<button id="launchBtn">LAUNCH</button>
+<button id="resetBtn">RESET</button>
+<span id="stats"></span>
+</div>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
