@@ -1,370 +1,280 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Optical Art Isometric Room</title>
-<style>
-*{margin:0;padding:0}
-body{overflow:hidden;background:#000;font-family:monospace}
-canvas{display:block}
-#panel{position:fixed;top:14px;left:14px;color:#eee;font-size:12px;background:rgba(0,0,0,0.85);padding:12px 16px;border-radius:6px;line-height:2;border:1px solid rgba(255,255,255,0.08)}
-#hint{position:fixed;bottom:14px;left:14px;color:rgba(255,255,255,0.4);font-size:12px}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Optical Art Isometric Room — Post-Processing Effects</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #loading {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #0a0a0a; color: #fff; font-family: 'Courier New', monospace; font-size: 1.1rem;
+      z-index: 10; transition: opacity 0.6s ease;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+    #info {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.55); font-family: 'Courier New', monospace; font-size: 0.75rem;
+      pointer-events: none; text-align: center;
+    }
+  </style>
 </head>
 <body>
-<div id="panel">
-  <b style="color:#fff">Optical Art Isometric Room</b><br>
-  Pattern: <select id="patSel" style="background:#222;color:#fff;border:none;cursor:pointer">
-    <option value="checker">Checker Illusion</option>
-    <option value="cafe">Café Wall</option>
-    <option value="herbst">Herbst Goblet</option>
-    <option value="munker">Munker Illusion</option>
-  </select><br>
-  <button id="rotateBtn" style="padding:3px 10px;cursor:pointer">Toggle Rotation</button>
-  <label style="margin-left:10px"><input type="checkbox" id="bloom" checked> Bloom</label>
-  <br><button id="randomBtn" style="margin-top:4px;padding:3px 10px;cursor:pointer">Random Pattern</button>
-</div>
-<div id="hint">Optical art illusions in 3D — Ames room, impossible geometry, impossible truchet</div>
-<script type="importmap">
-{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
-</script>
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+  <div id="loading">Loading HDR environment…</div>
+  <div id="info">Drag to orbit · Scroll to zoom · Bloom + Tone Mapping + Vignette</div>
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x080808);
-const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 300);
-camera.position.set(12, 10, 18);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-document.body.appendChild(renderer.domElement);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-
-// Lighting
-scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-const sun = new THREE.DirectionalLight(0xfff8f0, 2);
-sun.position.set(10, 20, 10);
-sun.castShadow = true;
-scene.add(sun);
-const fill = new THREE.PointLight(0x4466ff, 0.5, 50);
-fill.position.set(-15, 8, -10);
-scene.add(fill);
-
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.8, 0.4, 0.7);
-composer.addPass(bloom);
-
-// ---- Ames Room ----
-// An Ames room has one corner much further away than it appears
-// For isometric view, we simulate it with trapezoidal walls
-// People at corners appear same size but are at different distances
-
-function createAmesRoom() {
-  const group = new THREE.Group();
-  
-  // Floor
-  const floorGeo = new THREE.PlaneGeometry(14, 10);
-  const floorCanvas = document.createElement('canvas');
-  floorCanvas.width = 256; floorCanvas.height = 256;
-  const fctx = floorCanvas.getContext('2d');
-  fctx.fillStyle = '#888';
-  fctx.fillRect(0, 0, 256, 256);
-  for (let x = 0; x < 256; x += 32) {
-    fctx.fillStyle = x / 32 % 2 === 0 ? '#777' : '#999';
-    fctx.fillRect(x, 0, 32, 256);
-  }
-  const floorTex = new THREE.CanvasTexture(floorCanvas);
-  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.8 });
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  group.add(floor);
-  
-  // Back wall (trapezoid for Ames effect) — use a PlaneGeometry for simplicity
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x998877, roughness: 0.9, side: THREE.DoubleSide });
-  const backWall = new THREE.Mesh(new THREE.PlaneGeometry(14, 8), wallMat);
-  backWall.position.set(0, 4, -5);
-  backWall.receiveShadow = true;
-  group.add(backWall);
-  
-  // Side walls (trapezoidal illusion - rendered as simple planes with painting)
-  const wallCanvas = document.createElement('canvas');
-  wallCanvas.width = 256; wallCanvas.height = 256;
-  const wctx = wallCanvas.getContext('2d');
-  
-  // Paint café wall illusion on side wall
-  const lineW = 16;
-  for (let y = 0; y < 256; y += lineW * 2) {
-    wctx.fillStyle = '#d0d0d0';
-    wctx.fillRect(0, y, 256, lineW);
-    wctx.fillStyle = '#404040';
-    wctx.fillRect(0, y + lineW, 256, lineW);
-  }
-  // Mortar lines
-  wctx.strokeStyle = '#222';
-  wctx.lineWidth = 2;
-  for (let y = 0; y < 256; y += lineW) {
-    wctx.beginPath();
-    wctx.moveTo(0, y);
-    wctx.lineTo(256, y);
-    wctx.stroke();
-  }
-  
-  const wallTex = new THREE.CanvasTexture(wallCanvas);
-  const wallSideMat = new THREE.MeshStandardMaterial({ map: wallTex, side: THREE.DoubleSide });
-  
-  const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(10, 8), wallSideMat);
-  leftWall.position.set(-7, 4, 0);
-  leftWall.rotation.y = Math.PI / 2;
-  leftWall.receiveShadow = true;
-  group.add(leftWall);
-  
-  const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(10, 8), wallSideMat.clone());
-  rightWall.position.set(7, 4, 0);
-  rightWall.rotation.y = -Math.PI / 2;
-  rightWall.receiveShadow = true;
-  group.add(rightWall);
-  
-  // Two people of identical size but different positions
-  const personGeo = new THREE.CylinderGeometry(0.4, 0.4, 3.5, 12);
-  const personMat = new THREE.MeshStandardMaterial({ color: 0xff3344, roughness: 0.5 });
-  
-  const person1 = new THREE.Mesh(personGeo, personMat);
-  person1.position.set(-3.5, 1.75, -4);
-  person1.castShadow = true;
-  group.add(person1);
-  
-  // Second person - closer (appears larger due to perspective but is same size)
-  const person2 = new THREE.Mesh(personGeo, personMat.clone());
-  person2.material.color.setHex(0x33ff66);
-  person2.position.set(3.5, 1.75, -2.5);  // closer but same height
-  person2.scale.setScalar(1);  // identical size
-  person2.castShadow = true;
-  group.add(person2);
-  
-  // Height markers
-  const markerGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-  const markerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  [-3.5, 3.5].forEach((x, i) => {
-    const marker = new THREE.Mesh(markerGeo, markerMat);
-    marker.position.set(x, 3.6, i === 0 ? -4 : -2.5);
-    group.add(marker);
-  });
-  
-  return group;
-}
-
-// ---- Impossible Truchet Corridor ----
-function createTruchetCorridor() {
-  const group = new THREE.Group();
-  const tileSize = 2;
-  const tiles = 4;
-  
-  const tileCanvas = document.createElement('canvas');
-  tileCanvas.width = 128; tileCanvas.height = 128;
-  
-  function drawTile(ctx, pattern) {
-    ctx.fillStyle = pattern % 2 === 0 ? '#f0f0f0' : '#1a1a1a';
-    ctx.fillRect(0, 0, 128, 128);
-    ctx.strokeStyle = pattern % 2 === 0 ? '#111' : '#eee';
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.arc(0, 0, 60, 0, Math.PI / 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(128, 128, 60, Math.PI, Math.PI * 1.5);
-    ctx.stroke();
-    if (pattern < 2) {
-      ctx.beginPath();
-      ctx.arc(128, 0, 60, Math.PI * 0.5, Math.PI);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(0, 128, 60, -Math.PI * 0.5, 0);
-      ctx.stroke();
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
     }
   }
-  
-  // Floor
-  const floorGeo = new THREE.PlaneGeometry(tiles * tileSize, tiles * tileSize, tiles, tiles);
-  const floorCanvas = document.createElement('canvas');
-  floorCanvas.width = 256; floorCanvas.height = 256;
-  const fctx = floorCanvas.getContext('2d');
-  for (let i = 0; i < tiles; i++) {
-    for (let j = 0; j < tiles; j++) {
-      const pattern = (i + j) % 4;
-      drawTile(fctx, pattern);
-      fctx.save();
-      fctx.translate(i * 128, j * 128);
-      fctx.restore();
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer }   from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass }       from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass }  from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass }       from 'three/addons/postprocessing/ShaderPass.js';
+    import { RGBELoader }       from 'three/addons/loaders/RGBELoader.js';
+    import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+
+    // ── Renderer ──────────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    // ── Scene & Camera ─────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(6, 5, 8);
+    camera.lookAt(0, 0, 0);
+
+    // ── Controls ───────────────────────────────────────────────────────────────
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.maxPolarAngle = Math.PI * 0.85;
+    controls.minDistance = 3;
+    controls.maxDistance = 20;
+    controls.target.set(0, 0.5, 0);
+
+    // ── HDR Environment ─────────────────────────────────────────────────────────
+    const rgblLoader = new RGBELoader();
+    rgblLoader.setPath('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/');
+    rgblLoader.load('studio_small_08_1k.hdr', (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      scene.environment = texture;
+      scene.background = new THREE.Color(0x080810);
+      document.getElementById('loading').classList.add('hidden');
+    }, undefined, () => {
+      // fallback: no HDR
+      scene.environment = new THREE.HemisphereLight(0x443366, 0x111122, 2).multiplyScalar(1);
+      document.getElementById('loading').classList.add('hidden');
+    });
+
+    // ── Room geometry (isometric-style box room) ───────────────────────────────
+    const roomW = 12, roomH = 8, roomD = 12;
+    const roomMat = new THREE.MeshStandardMaterial({
+      color: 0x0d0d1a,
+      roughness: 0.85,
+      metalness: 0.15,
+      side: THREE.BackSide,
+    });
+    const room = new THREE.Mesh(new THREE.BoxGeometry(roomW, roomH, roomD), roomMat);
+    room.position.y = roomH / 2 - 0.5;
+    room.receiveShadow = true;
+    scene.add(room);
+
+    // Floor grid lines
+    const gridHelper = new THREE.GridHelper(roomW, 24, 0x1a1a3a, 0x1a1a3a);
+    gridHelper.position.y = -0.49;
+    scene.add(gridHelper);
+
+    // ── Emissive materials ─────────────────────────────────────────────────────
+    const glowRed    = new THREE.MeshStandardMaterial({ color: 0xff2244, emissive: 0xff2244, emissiveIntensity: 3.0, roughness: 0.2, metalness: 0.8 });
+    const glowCyan   = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 3.0, roughness: 0.2, metalness: 0.8 });
+    const glowPurple = new THREE.MeshStandardMaterial({ color: 0xaa44ff, emissive: 0xaa44ff, emissiveIntensity: 3.0, roughness: 0.2, metalness: 0.8 });
+    const glowOrange = new THREE.MeshStandardMaterial({ color: 0xff8800, emissive: 0xff8800, emissiveIntensity: 3.0, roughness: 0.2, metalness: 0.8 });
+    const glowYellow = new THREE.MeshStandardMaterial({ color: 0xffee00, emissive: 0xffee00, emissiveIntensity: 3.0, roughness: 0.2, metalness: 0.8 });
+    const glowBlue   = new THREE.MeshStandardMaterial({ color: 0x4488ff, emissive: 0x4488ff, emissiveIntensity: 3.0, roughness: 0.2, metalness: 0.8 });
+
+    const emissiveMats = [glowRed, glowCyan, glowPurple, glowOrange, glowYellow, glowBlue];
+
+    // ── Central glowing sphere cluster ─────────────────────────────────────────
+    const sphereGroup = new THREE.Group();
+    const sphereGeo   = new THREE.SphereGeometry(0.55, 32, 32);
+    const positions = [
+      [0,    0.6,  0   ],
+      [0.9,  0.0,  0.6 ],
+      [-0.7, 0.3,  0.8 ],
+      [0.4,  1.2, -0.5],
+      [-0.5, -0.2,-0.7],
+      [0.8,  0.8, -0.3],
+    ];
+    const sphereMeshs = positions.map(([x, y, z], i) => {
+      const m = new THREE.Mesh(sphereGeo, emissiveMats[i % emissiveMats.length]);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      sphereGroup.add(m);
+      return m;
+    });
+    scene.add(sphereGroup);
+
+    // ── Floating cubes (isometric tiling) ─────────────────────────────────────
+    const cubeGroup = new THREE.Group();
+    const cubeGeo   = new THREE.BoxGeometry(0.7, 0.7, 0.7);
+    const cubePositions = [
+      [-3.5, 0.35, -2], [3.5, 0.35, -2], [-3.5, 0.35, 2], [3.5, 0.35, 2],
+      [-2,   0.35, -3.5], [2, 0.35, -3.5], [-2, 0.35, 3.5], [2, 0.35, 3.5],
+      [-4,   0.35,  0  ], [4,  0.35,  0 ], [0,  0.35, -4], [0,  0.35,  4],
+      [-3,   0.35, -3 ], [3,  0.35, -3 ], [-3, 0.35,  3], [3,  0.35,  3],
+    ];
+    cubePositions.forEach(([x, y, z], i) => {
+      const m = new THREE.Mesh(cubeGeo, emissiveMats[i % emissiveMats.length]);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.userData.baseY = y;
+      m.userData.phase = Math.random() * Math.PI * 2;
+      cubeGroup.add(m);
+    });
+    scene.add(cubeGroup);
+
+    // ── Thin glowing rods ──────────────────────────────────────────────────────
+    const rodGroup = new THREE.Group();
+    const rodGeo  = new THREE.CylinderGeometry(0.04, 0.04, 3.5, 8);
+    const rodPositions = [
+      [1.8, 1.75, 1.8], [-1.8, 1.75, 1.8], [1.8, 1.75, -1.8], [-1.8, 1.75, -1.8],
+      [0,   1.75, 2.2], [0,   1.75, -2.2],  [2.2, 1.75, 0],  [-2.2, 1.75, 0],
+    ];
+    rodPositions.forEach(([x, y, z], i) => {
+      const r = new THREE.Mesh(rodGeo, emissiveMats[i % emissiveMats.length]);
+      r.position.set(x, y, z);
+      r.rotation.z = Math.PI / 2 * (i % 2 === 0 ? 0 : 1);
+      r.rotation.x = Math.PI / 2 * (i % 4 < 2 ? 0 : 1);
+      rodGroup.add(r);
+    });
+    scene.add(rodGroup);
+
+    // ── Lights ─────────────────────────────────────────────────────────────────
+    const ambient = new THREE.AmbientLight(0x111122, 0.5);
+    scene.add(ambient);
+
+    const pointLight1 = new THREE.PointLight(0xff2244, 8, 12);
+    pointLight1.position.set(2, 4, 2);
+    pointLight1.castShadow = true;
+    scene.add(pointLight1);
+
+    const pointLight2 = new THREE.PointLight(0x00ffcc, 8, 12);
+    pointLight2.position.set(-2, 4, -2);
+    pointLight2.castShadow = true;
+    scene.add(pointLight2);
+
+    // ── Post-processing ────────────────────────────────────────────────────────
+    const composer = new EffectComposer(renderer);
+
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    // Bloom pass
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.2,   // strength
+      0.45,  // radius
+      0.15   // threshold
+    );
+    composer.addPass(bloomPass);
+
+    // Custom vignette + tone mapping shader pass
+    const VignetteShader = {
+      uniforms: {
+        tDiffuse:    { value: null },
+        uVignette:   { value: 0.45 },
+        uVignetteBlur: { value: 0.3 },
+        uSaturation: { value: 1.15 },
+      },
+      vertexShader: /* glsl */`
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tDiffuse;
+        uniform float uVignette;
+        uniform float uVignetteBlur;
+        uniform float uSaturation;
+        varying vec2 vUv;
+
+        vec3 adjustSaturation(vec3 color, float sat) {
+          float grey = dot(color, vec3(0.2126, 0.7152, 0.0722));
+          return mix(vec3(grey), color, sat);
+        }
+
+        void main() {
+          vec4 texel = texture2D(tDiffuse, vUv);
+          vec2 uv = vUv * (1.0 - vUv.yx);
+          float vig = uv.x * uv.y * 15.0;
+          vig = pow(vig, uVignette + uVignetteBlur * 0.5);
+          vig = smoothstep(0.0, 1.0, vig);
+          texel.rgb = adjustSaturation(texel.rgb, uSaturation);
+          texel.rgb *= mix(0.4, 1.0, vig);
+          gl_FragColor = texel;
+        }
+      `,
+    };
+
+    const vignettePass = new ShaderPass(VignetteShader);
+    composer.addPass(vignettePass);
+
+    // ── Resize ─────────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth, h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+      bloomPass.resolution.set(w, h);
+    });
+
+    // ── Animation ──────────────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+
+      // Rotate sphere cluster
+      sphereGroup.rotation.y = t * 0.25;
+
+      // Bob floating cubes
+      cubeGroup.children.forEach((cube) => {
+        const phase = cube.userData.phase;
+        cube.position.y = cube.userData.baseY + Math.sin(t * 0.8 + phase) * 0.18;
+        cube.rotation.x = t * 0.3 + phase;
+        cube.rotation.y = t * 0.2 + phase * 0.7;
+      });
+
+      // Pulse lights
+      pointLight1.intensity = 6 + Math.sin(t * 1.3) * 2;
+      pointLight2.intensity = 6 + Math.cos(t * 1.1) * 2;
+
+      // Vignette breathe
+      vignettePass.uniforms.uVignette.value = 0.42 + Math.sin(t * 0.4) * 0.06;
+
+      controls.update();
+      composer.render();
     }
-  }
-  const floorTex = new THREE.CanvasTexture(floorCanvas);
-  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.3, metalness: 0.5 });
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(0, 0, 0);
-  floor.receiveShadow = true;
-  group.add(floor);
-  
-  // Corridor walls (impossible - with visual paradox)
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x888899, roughness: 0.7 });
-  
-  // Left wall
-  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 6, tiles * tileSize), wallMat);
-  leftWall.position.set(-tiles * tileSize / 2, 3, 0);
-  group.add(leftWall);
-  
-  // Right wall  
-  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 6, tiles * tileSize), wallMat);
-  rightWall.position.set(tiles * tileSize / 2, 3, 0);
-  group.add(rightWall);
-  
-  // Ceiling
-  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(tiles * tileSize, 0.2, tiles * tileSize), wallMat);
-  ceiling.position.set(0, 6, 0);
-  group.add(ceiling);
-  
-  // Back wall (with portal)
-  const portalGeo = new THREE.TorusGeometry(1.5, 0.2, 16, 32);
-  const portalMat = new THREE.MeshStandardMaterial({ color: 0x3344ff, emissive: 0x1122aa, emissiveIntensity: 2, metalness: 0.9, roughness: 0.1 });
-  const portal = new THREE.Mesh(portalGeo, portalMat);
-  portal.position.set(0, 3, -tiles * tileSize / 2 + 0.1);
-  portal.rotation.x = Math.PI / 2;
-  group.add(portal);
-  
-  // Impossibly connected L-beams (Penrose-style)
-  const beamMat = new THREE.MeshStandardMaterial({ color: 0xcc4444, roughness: 0.5, metalness: 0.3 });
-  const beamGeo = new THREE.BoxGeometry(0.3, 0.3, 3);
-  
-  // Impossible beam 1
-  const beam1 = new THREE.Mesh(beamGeo, beamMat);
-  beam1.position.set(-2, 5.5, -1);
-  beam1.rotation.z = 0.3;
-  group.add(beam1);
-  
-  const beam2 = new THREE.Mesh(beamGeo, beamMat);
-  beam2.position.set(0, 4.5, 1);
-  beam2.rotation.z = -0.2;
-  group.add(beam2);
-  
-  const beam3 = new THREE.Mesh(beamGeo, beamMat);
-  beam3.position.set(2, 3.5, -1);
-  beam3.rotation.z = 0.1;
-  group.add(beam3);
-  
-  return group;
-}
-
-// ---- Munker Illusion: 3D colored cylinders ----
-function createMunkerIllusion() {
-  const group = new THREE.Group();
-  
-  const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-  const cylGeo = new THREE.CylinderGeometry(0.4, 0.4, 4, 16);
-  
-  for (let i = 0; i < 12; i++) {
-    const mat = new THREE.MeshStandardMaterial({ color: colors[i % colors.length], roughness: 0.4, metalness: 0.6 });
-    const cyl = new THREE.Mesh(cylGeo, mat);
-    const x = (i % 4 - 1.5) * 2.5;
-    const z = (Math.floor(i / 4) - 1) * 3;
-    cyl.position.set(x, 2, z);
-    cyl.castShadow = true;
-    group.add(cyl);
-  }
-  
-  // Base ring with illusion pattern
-  const ringGeo = new THREE.RingGeometry(1, 6, 64);
-  const ringCanvas = document.createElement('canvas');
-  ringCanvas.width = 256; ringCanvas.height = 256;
-  const rctx = ringCanvas.getContext('2d');
-  const pat = rctx.createPattern(createIllusionPattern(), 'repeat');
-  rctx.fillStyle = pat;
-  rctx.fillRect(0, 0, 256, 256);
-  const ringTex = new THREE.CanvasTexture(ringCanvas);
-  const ringMat = new THREE.MeshBasicMaterial({ map: ringTex, side: THREE.DoubleSide });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.01;
-  group.add(ring);
-  
-  return group;
-}
-
-function createIllusionPattern() {
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 64;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, 64, 64);
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, 64, 8);
-  ctx.fillRect(0, 24, 64, 8);
-  ctx.fillRect(0, 48, 64, 8);
-  return c;
-}
-
-// ---- Scene switching ----
-let currentScene = 'ames';
-let sceneGroup = createAmesRoom();
-scene.add(sceneGroup);
-
-function switchScene(name) {
-  scene.remove(sceneGroup);
-  sceneGroup = null;
-  currentScene = name;
-  if (name === 'ames') sceneGroup = createAmesRoom();
-  else if (name === 'truchet') sceneGroup = createTruchetCorridor();
-  else if (name === 'munker') sceneGroup = createMunkerIllusion();
-  scene.add(sceneGroup);
-}
-
-document.getElementById('patSel').onchange = e => switchScene(e.target.value);
-document.getElementById('randomBtn').onclick = () => {
-  const scenes = ['ames', 'truchet', 'munker'];
-  switchScene(scenes[Math.floor(Math.random() * scenes.length)]);
-  document.getElementById('patSel').value = currentScene;
-};
-
-let rotating = true;
-document.getElementById('rotateBtn').onclick = () => rotating = !rotating;
-document.getElementById('bloom').onchange = e => bloom.enabled = e.target.checked;
-
-window.addEventListener('keydown', e => {
-  if (e.code === 'Space') {
-    e.preventDefault();
-    rotating = !rotating;
-  }
-  if (e.code === 'ArrowRight') {
-    const scenes = ['ames', 'truchet', 'munker'];
-    const idx = (scenes.indexOf(currentScene) + 1) % scenes.length;
-    switchScene(scenes[idx]);
-    document.getElementById('patSel').value = currentScene;
-  }
-});
-
-let t = 0;
-function animate() {
-  requestAnimationFrame(animate);
-  t += 0.016;
-  if (rotating) {
-    sceneGroup.rotation.y = t * 0.15;
-  }
-  controls.update();
-  composer.render();
-}
-animate();
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
-});
-</script>
+    animate();
+  </script>
 </body>
 </html>
