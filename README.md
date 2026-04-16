@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **ct-slice-reconstruction** — [3501](./3501-ct-slice-reconstruction/index.html)
+- **fourier-optics-lens** — [3502](./3502-fourier-optics-lens/index.html)
+- **optimal-transport-wasserstein** — [3503](./3503-optimal-transport-wasserstein/index.html)
+- **slit-scan-photography** — [3504](./3504-slit-scan-photography/index.html)
+- **brillouin-zone-visualization** — [3505](./3505-brillouin-zone-visualization/index.html)
+- **kdv-soliton-wave** — [3506](./3506-kdv-soliton-wave/index.html)
+
 - **liquid-crystal-nematic-defects** — [3496](./3496-liquid-crystal-nematic-defects/index.html)
 - **visual-cryptography-steganography** — [3497](./3497-visual-cryptography-steganography/index.html)
 - **causal-diamond-spacetime-diagram** — [3498](./3498-causal-diamond-spacetime-diagram/index.html)
