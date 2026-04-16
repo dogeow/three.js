@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **dijkstra-shortest-path-3d** — [3786](./3786-dijkstra-shortest-path-3d/index.html)
+- **phase-space-attractor** — [3787](./3787-phase-space-attractor/index.html)
+- **syntax-tree-visualizer** — [3788](./3788-syntax-tree-visualizer/index.html)
+- **bayesian-network-inference** — [3789](./3789-bayesian-network-inference/index.html)
+- **persistent-homology-tda** — [3790](./3790-persistent-homology-tda/index.html)
+- **geographic-network-flow** — [3791](./3791-geographic-network-flow/index.html)
+
 - **fluid-simulation** — [3780](./3780-fluid-simulation/index.html)
 - **procedural-terrain** — [3782](./3782-procedural-terrain/index.html)
 - **particle-galaxy** — [3783](./3783-particle-galaxy/index.html)
