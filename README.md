@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **cardiac-electrophysiology** — [4096](./4096-cardiac-electrophysiology/index.html)
+- **wind-turbine-aerodynamics** — [4097](./4097-wind-turbine-aerodynamics/index.html)
+- **urban-dla-growth** — [4098](./4098-urban-dla-growth/index.html)
+- **chladni-plate-vibration** — [4099](./4099-chladni-plate-vibration/index.html)
+
 - **zpunch-fusion-plasma-confinement** — [4088](./4088-zpunch-fusion-plasma-confinement/index.html)
 - **electrostatic-lens-electron-optics** — [4089](./4089-electrostatic-lens-electron-optics/index.html)
 - **biomechanical-cell-membrane-deformation** — [4090](./4090-biomechanical-cell-membrane-deformation/index.html)

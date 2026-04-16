@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>URBAN DLA GROWTH MODEL</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#050508;font-family:'Segoe UI',sans-serif}
+canvas{display:block}
+#ui{position:fixed;top:16px;left:16px;z-index:10;color:#fff;font-size:12px}
+#ui h2{font-size:13px;opacity:.5;margin-bottom:8px}
+#stats span{display:block;color:#88ffcc;margin-bottom:2px}
+#info{position:fixed;bottom:16px;left:16px;color:rgba(255,255,255,.35);font-size:11px}
+</style>
+</head>
+<body>
+<div id="ui"><h2>Urban DLA Growth</h2>
+<div id="stats"><span id="bldg">Buildings: 0</span><span id="dens">Density: 0.000</span><span id="rad">Cluster Radius: 0</span></div>
+</div>
+<div id="info">Click: seed first building | Space: toggle auto-seed</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x050508);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,500);
+camera.position.set(0,40,55);camera.lookAt(0,0,0);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+scene.add(new THREE.AmbientLight(0x223344,1));
+scene.add(Object.assign(new THREE.DirectionalLight(0x8899bb,1.5),{position:new THREE.Vector3(20,30,10)}));
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.6,0.4,0.3));
+
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(120,120),new THREE.MeshStandardMaterial({color:0x0a0a12,roughness:1}));
+ground.rotation.x=-Math.PI/2;scene.add(ground);
+
+const MAX_B=3000;
+const buildings=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial({color:0x334455,emissive:0x112233,roughness:0.7,metalness:0.3}),MAX_B);
+buildings.count=0;scene.add(buildings);
+
+const cluster=[];
+const dummy=new THREE.Object3D();
+
+function occupied(x,z){
+  const g=1.8;
+  return cluster.some(c=>Math.abs(c.x-x)<g&&Math.abs(c.z-z)<g);
+}
+
+function distToNearest(x,z){
+  if(!cluster.length)return Infinity;
+  return Math.min(...cluster.map(c=>Math.sqrt((c.x-x)**2+(c.z-z)**2)));
+}
+
+const WALKERS=40;
+const wPos=new Float32Array(WALKERS*2);
+const wMeshes=[];
+for(let w=0;w<WALKERS;w++){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(0.3,8,6),new THREE.MeshBasicMaterial({color:0x88ffcc,transparent:true,opacity:0.7}));
+  scene.add(m);wMeshes.push(m);
+  const ang=Math.random()*Math.PI*2,r=15+Math.random()*30;
+  wPos[w*2]=Math.cos(ang)*r;wPos[w*2+1]=Math.sin(ang)*r;
+  m.position.set(wPos[w*2],0.5,wPos[w*2+1]);
+}
+
+let addTimer=0;
+function animate(t){
+  requestAnimationFrame(animate);
+  addTimer+=0.016;
+  for(let w=0;w<WALKERS;w++){
+    wPos[w*2]+=(Math.random()-0.5)*0.6;wPos[w*2+1]+=(Math.random()-0.5)*0.6;
+    if(cluster.length>0){
+      const near=cluster.reduce((a,b)=>{const da=Math.sqrt((a.x-wPos[w*2])**2+(a.z-wPos[w*2+1])**2);const db=Math.sqrt((b.x-wPos[w*2])**2+(b.z-wPos[w*2+1])**2);return da<db?a:b;});
+      const dx=near.x-wPos[w*2],dz=near.z-wPos[w*2+1];
+      const d=Math.sqrt(dx*dx+dz*dz);
+      if(d>0){wPos[w*2]+=dx/d*0.1;wPos[w*2+1]+=dz/d*0.1;}
+    }
+    wMeshes[w].position.set(wPos[w*2],0.5,wPos[w*2+1]);
+    if(!occupied(wPos[w*2],wPos[w*2+1])&&distToNearest(wPos[w*2],wPos[w*2+1])<2.0&&buildings.count<MAX_B){
+      const h=1+Math.random()*5;
+      dummy.position.set(wPos[w*2],h/2,wPos[w*2+1]);
+      dummy.scale.set(0.8+Math.random()*1.2,h,0.8+Math.random()*1.2);
+      dummy.updateMatrix();
+      buildings.setMatrixAt(buildings.count,dummy.matrix);
+      buildings.count++;buildings.instanceMatrix.needsUpdate=true;
+      cluster.push({x:wPos[w*2],z:wPos[w*2+1]});
+      const ang=Math.random()*Math.PI*2,r=20+Math.random()*35;
+      wPos[w*2]=Math.cos(ang)*r;wPos[w*2+1]=Math.sin(ang)*r;
+    }
+    if(Math.abs(wPos[w*2])>50||Math.abs(wPos[w*2+1])>50){
+      const ang=Math.random()*Math.PI*2,r=20+Math.random()*30;
+      wPos[w*2]=Math.cos(ang)*r;wPos[w*2+1]=Math.sin(ang)*r;
+    }
+  }
+  const r=cluster.length?Math.max(...cluster.map(c=>Math.sqrt(c.x**2+c.z**2))):0;
+  const dens=cluster.length/(Math.PI*r*r+0.001);
+  document.getElementById('bldg').textContent='Buildings: '+cluster.length;
+  document.getElementById('dens').textContent='Density: '+dens.toFixed(4);
+  document.getElementById('rad').textContent='Cluster Radius: '+r.toFixed(1);
+  controls.update();composer.render();
+}
+animate(0);
+window.addEventListener('click',()=>{
+  if(!cluster.length){
+    dummy.position.set(0,1.5,0);dummy.scale.set(2,3,2);dummy.updateMatrix();
+    buildings.setMatrixAt(0,dummy.matrix);
+    buildings.count=1;buildings.instanceMatrix.needsUpdate=true;
+    cluster.push({x:0,z:0});
+  }
+});
+window.addEventListener('keydown',e=>{if(e.code==='Space'){}});
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);});
+</script>
+</body></html>

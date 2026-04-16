@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>CARDIAC ELECTROPHYSIOLOGY</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#0a0010;font-family:'Segoe UI',sans-serif}
+canvas{display:block}
+#ui{position:fixed;top:16px;left:16px;z-index:10;color:#fff;font-size:12px}
+#ui h2{font-size:13px;font-weight:400;opacity:.6;margin-bottom:8px}
+#beat{color:#ff6b9d;font-size:14px}
+#legend{position:fixed;bottom:16px;left:16px;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.5);font-size:11px}
+#legend-bar{width:120px;height:10px;background:linear-gradient(to right,#0a0010,#ff6b9d,#fff)}
+</style>
+</head>
+<body>
+<div id="ui"><h2>Cardiac Electrophysiology</h2><div id="beat">BPM: --</div></div>
+<div id="legend">Resting<div id="legend-bar"></div>Activated</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const N=80,GRID=N*N,du=0.045,dv=0.005,a=0.15,b=0.25;
+let u=new Float32Array(GRID).fill(0),v=new Float32Array(GRID).fill(0);
+let uN=new Float32Array(GRID),vN=new Float32Array(GRID);
+function seedPulse(){
+  const cx=Math.floor(N/2),cy=Math.floor(N/2);
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){
+    const dx=i-cx,dy=j-cy;
+    if(Math.sqrt(dx*dx+dy*dy)<4){u[j*N+i]=1.2;v[j*N+i]=0.1;}
+  }
+}
+seedPulse();
+function f(u){return u*(u-a)*(1-u)-v;}
+function stepPDE(){
+  for(let j=1;j<N-1;j++)for(let i=1;i<N-1;i++){
+    const idx=j*N+i;
+    const lap=u[idx-1]+u[idx+1]+u[idx-N]+u[idx+N]-4*u[idx];
+    uN[idx]=Math.max(0,Math.min(1,u[idx]+du*lap+f(u[idx])));
+    vN[idx]=v[idx]+dv*(u[idx]-b);
+  }
+  let t=u;u=uN;uN=t;t=v;v=vN;vN=t;
+}
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0a0010);
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,500);
+camera.position.set(0,40,45);camera.lookAt(0,0,0);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+scene.add(new THREE.AmbientLight(0xffffff,0.3));
+const dir=new THREE.DirectionalLight(0xff88aa,1.2);
+dir.position.set(10,20,10);scene.add(dir);
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.9,0.4,0.3));
+
+const geo=new THREE.PlaneGeometry(30,30,N-1,N-1);
+const colors=new Float32Array(geo.attributes.position.count*3);
+geo.setAttribute('color',new THREE.BufferAttribute(colors,3));
+const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.3,metalness:0.1,side:THREE.DoubleSide});
+const mesh=new THREE.Mesh(geo,mat);
+mesh.rotation.x=-Math.PI*0.85;scene.add(mesh);
+const wireMat=new THREE.MeshBasicMaterial({color:0xff6b9d,wireframe:true,opacity:0.06,transparent:true});
+const wireMesh=new THREE.Mesh(geo.clone(),wireMat);
+wireMesh.rotation.x=-Math.PI*0.85;scene.add(wireMesh);
+
+function updateMesh(){
+  const ca=geo.attributes.color.array;
+  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){
+    const idx=j*(N-1)+i;
+    const val=u[j*N+i];
+    const c=new THREE.Color().setHSL(0.92-val*0.25,0.9,val*0.6+0.05);
+    ca[idx*3]=c.r;ca[idx*3+1]=c.g;ca[idx*3+2]=c.b;
+  }
+  geo.attributes.color.needsUpdate=true;
+}
+
+let lastBeat=0,beatTimes=[];
+const beatEl=document.getElementById('beat');
+function animate(t){
+  requestAnimationFrame(animate);
+  for(let s=0;s<4;s++)stepPDE();
+  updateMesh();
+  mesh.rotation.z+=0.002;wireMesh.rotation.z=mesh.rotation.z;
+  controls.update();composer.render();
+  const centerU=u[Math.floor(N/2)*N+Math.floor(N/2)];
+  if(centerU>0.9&&lastBeat<0.3)beatTimes.push(t);
+  lastBeat=centerU;
+  beatTimes=beatTimes.filter(x=>t-x<60000);
+  if(beatTimes.length>1)beatEl.textContent='BPM: '+Math.round(beatTimes.length*60000/(t-beatTimes[0]));
+}
+animate(0);
+window.addEventListener('keydown',e=>{if(e.code==='Space'){u.fill(0);v.fill(0);seedPulse();beatTimes=[];}});
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);});
+</script>
+</body></html>
