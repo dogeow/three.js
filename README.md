@@ -745,6 +745,10 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **n-body-gravitation-sim** — [4289](./4289-n-body-gravitation-sim/index.html)
+- **cloth-simulation-verlet** — [4291](./4291-cloth-simulation-verlet/index.html)
+- **audio-reactive-3d-visualizer** — [4292](./4292-audio-reactive-3d-visualizer/index.html)
+
 - **lava-flow-eruption-viscous-fluid** — [4283](./4283-lava-flow-eruption-viscous-fluid/index.html)
 - **drumhead-membrane-chladni-3d** — [4284](./4284-drumhead-membrane-chladni-3d/index.html)
 - **concrete-crack-propagation-fracture** — [4285](./4285-concrete-crack-propagation-fracture/index.html)
