@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **npr-crosshatch-shader** — [3647](./3647-npr-crosshatch-shader/index.html)
+- **voxel-chunk-terrain-engine** — [3648](./3648-voxel-chunk-terrain-engine/index.html)
+- **softbody-volume-pressure-sim** — [3649](./3649-softbody-volume-pressure-sim/index.html)
+- **sdf-csg-boolean-ops** — [3650](./3650-sdf-csg-boolean-ops/index.html)
+- **hair-strand-follicle-sim** — [3651](./3651-hair-strand-follicle-sim/index.html)
+- **topology-simp-optimization** — [3652](./3652-topology-simp-optimization/index.html)
+- **morphogenetic-tissue-growth** — [3653](./3653-morphogenetic-tissue-growth/index.html)
+- **fluid-structure-coupled-sim** — [3654](./3654-fluid-structure-coupled-sim/index.html)
+
 - **vortex-shedding-fluid-turbulence** — [3643](./3643-vortex-shedding-fluid-turbulence/index.html)
 - **plasma-ball-electrode-discharge** — [3644](./3644-plasma-ball-electrode-discharge/index.html)
 - **sandpile-avalanche-cellular-automata** — [3645](./3645-sandpile-avalanche-cellular-automata/index.html)
