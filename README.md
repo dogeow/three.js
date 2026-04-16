@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **gyroid** — [3811](./3811-gyroid/index.html)
+- **string-vibration** — [3812](./3812-string-vibration/index.html)
+- **glass-fracture** — [3814](./3814-glass-fracture/index.html)
+- **blackhole-lensing** — [3815](./3815-blackhole-lensing/index.html)
+
 - **quantum-tunneling-wave-packet** — [3805](./3805-quantum-tunneling-wave-packet/index.html)
 - **stochastic-resonance-physical-signal** — [3806](./3806-stochastic-resonance-physical-signal/index.html)
 - **hebbian-associative-memory-network** — [3807](./3807-hebbian-associative-memory-network/index.html)
