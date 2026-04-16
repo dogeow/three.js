@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>COANDA EFFECT FLUID ATTACHMENT</title>
+<style>
+body{margin:0;overflow:hidden;background:#02080a;font-family:monospace}
+canvas{display:block}
+#panel{position:fixed;top:12px;left:12px;color:#4f8;font-size:12px;background:rgba(0,0,0,0.6);padding:10px;border-radius:4px;line-height:1.8}
+#info{position:fixed;bottom:12px;left:12px;color:#8fb;font-size:12px;background:rgba(0,0,0,0.6);padding:8px;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="panel"><b>Coanda Effect</b><br>Flow vel: <span id="vel">2.0</span> m/s<br>Attachment: <span id="attach">ON</span></div>
+<div id="info">Wall-attached jet — fluid coherence along curved surface</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x02080a);
+const camera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,200);
+camera.position.set(0,0,22);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+// Curved wall (Coanda surface)
+const wallPoints=[];
+for(let i=0;i<=40;i++){
+    const t=i/40;
+    wallPoints.push(new THREE.Vector3(-12+t*24, Math.sin(t*Math.PI)*3, 0));
+}
+const wallGeo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(wallPoints),80,0.4,16,false);
+const wallMat=new THREE.MeshStandardMaterial({color:0x334455,roughness:0.8,metalness:0.2});
+const wall=new THREE.Mesh(wallGeo,wallMat);
+scene.add(wall);
+
+// Particle stream
+const N=300;
+const particles=[];
+const pGeo=new THREE.SphereGeometry(0.06,4,4);
+const pMat=new THREE.MeshBasicMaterial({color:0x00ff88,transparent:true,opacity:0.8});
+
+for(let i=0;i<N;i++){
+    const p=new THREE.Mesh(pGeo,pMat.clone());
+    const angle=(i/N)*Math.PI*0.8;
+    p.position.set(-12+angle/0.5*12, Math.sin(angle)*3+0.6, (Math.random()-0.5)*2);
+    p.userData={angle,phase:Math.random()*Math.PI*2,speed:1.5+Math.random()*1.0};
+    particles.push(p); scene.add(p);
+}
+
+scene.add(new THREE.GridHelper(40,40,0x0a1a0a,0x051505));
+scene.add(new THREE.AmbientLight(0x112211));
+const pl=new THREE.PointLight(0x00ff44,2,50); pl.position.set(0,5,5); scene.add(pl);
+
+let t=0;
+function animate(){
+    requestAnimationFrame(animate);
+    t+=0.016;
+    for(const p of particles){
+        p.userData.phase+=0.05*p.userData.speed;
+        const a=p.userData.angle;
+        const newX=-12+a/0.5*12+t*2%24;
+        const newY=Math.sin(a)*3+0.5*Math.sin(p.userData.phase);
+        const newZ=p.position.z+Math.sin(p.userData.phase*0.5)*0.02;
+        p.position.set(newX,newY,newZ);
+        p.material.opacity=0.4+0.4*Math.abs(Math.cos(p.userData.phase));
+        if(newX>12){p.userData.phase=Math.random()*Math.PI*2;p.position.set(-12,a/0.5*12,newZ);}
+    }
+    document.getElementById('vel').textContent=(2.0+Math.sin(t*0.5)).toFixed(1);
+    controls.update(); renderer.render(scene,camera);
+}
+animate();
+</script></body></html>

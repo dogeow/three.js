@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>VASCULAR NETWORK MORPHOGENESIS</title>
+<style>
+body{margin:0;overflow:hidden;background:#1a0505;font-family:monospace}
+canvas{display:block}
+#panel{position:fixed;top:12px;left:12px;color:#f55;font-size:12px;background:rgba(0,0,0,0.6);padding:10px;border-radius:4px;line-height:1.8}
+#info{position:fixed;bottom:12px;left:12px;color:#faa;font-size:12px;background:rgba(0,0,0,0.6);padding:8px;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="panel"><b>Vascular Morphogenesis</b><br>Vessels: <span id="vessels">0</span><br>Flow: <span id="flow">0.00</span> ml/s</div>
+<div id="info">Sprouting angiogenesis — Murray's law optimized vascular network</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a0505);
+const camera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,200);
+camera.position.set(0,0,25);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+const vesselGroup = new THREE.Group();
+scene.add(vesselGroup);
+
+class Vessel{
+    constructor(start,end,radius){
+        this.start=start.clone(); this.end=end.clone(); this.radius=radius;
+        this.mid=start.clone().lerp(end,0.5);
+        this.flow=Math.pow(radius,4)*100;
+        this.mesh=this._buildMesh();
+    }
+    _buildMesh(){
+        const dir=this.end.clone().sub(this.start);
+        const len=dir.length();
+        const geo=new THREE.CylinderGeometry(this.radius,this.radius*0.9,len,6);
+        const mat=new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.0,0.8,0.3+this.radius*2),emissive:0x330000,roughness:0.6});
+        const mesh=new THREE.Mesh(geo,mat);
+        const mid=this.start.clone().lerp(this.end,0.5);
+        mesh.position.copy(mid);
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize());
+        return mesh;
+    }
+}
+
+const vessels=[];
+const root=new Vessel(new THREE.Vector3(0,-10,0),new THREE.Vector3(0,-5,0),0.5);
+vessels.push(root); vesselGroup.add(root.mesh);
+
+function bifurcate(v,depth){
+    if(depth>5)return;
+    const dir=v.end.clone().sub(v.start).normalize();
+    const perp=new THREE.Vector3(1,0,0).applyQuaternion(new THREE.Quaternion().setFromAxisAngle(dir,Math.random()*Math.PI));
+    const spread=0.3+Math.random()*0.3;
+    const newLen=2.5*Math.pow(0.7,depth);
+    const newRadius=v.radius*Math.pow(0.7,0.33);
+    for(let i=0;i<2;i++){
+        const angle=(i-0.5)*spread;
+        const newDir=dir.clone().applyAxisAngle(perp,angle).normalize();
+        const end=v.end.clone().add(newDir.multiplyScalar(newLen));
+        const child=new Vessel(v.end.clone(),end,newRadius);
+        vessels.push(child); vesselGroup.add(child.mesh);
+        bifurcate(child,depth+1);
+    }
+}
+bifurcate(root,0);
+
+let t=0;
+function animate(){
+    requestAnimationFrame(animate);
+    t+=0.005;
+    for(const v of vessels){
+        const pulse=1.0+0.05*Math.sin(t*10+v.flow*0.1);
+        v.mesh.scale.x=v.mesh.scale.z=pulse;
+    }
+    document.getElementById('vessels').textContent=vessels.length;
+    document.getElementById('flow').textContent=vessels.reduce((s,v)=>s+v.flow,0).toFixed(2);
+    controls.update(); renderer.render(scene,camera);
+}
+animate();
+</script></body></html>

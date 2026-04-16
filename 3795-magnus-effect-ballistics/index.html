@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>MAGNUS EFFECT BALLISTICS</title>
+<style>
+body{margin:0;overflow:hidden;background:#0a0a14;font-family:monospace}
+canvas{display:block}
+#panel{position:fixed;top:12px;left:12px;right:12px;color:#8af;font-size:12px;background:rgba(0,0,0,0.6);padding:10px;border-radius:4px;line-height:1.8}
+#info{position:fixed;bottom:12px;left:12px;color:#68f;font-size:12px;background:rgba(0,0,0,0.6);padding:8px;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="panel"><b>Magnus Effect Ballistics</b>&nbsp;|&nbsp;Spin: <span id="spin">2000</span> rpm&nbsp;|&nbsp;Speed: <span id="speed">30</span> m/s&nbsp;|&nbsp;Drop: <span id="drop">0.0</span> m&nbsp;|&nbsp;<button id="btn" style="background:#224;color:#8af;border:none;padding:2px 8px;cursor:pointer">RESET</button></div>
+<div id="info">Spinning ball with Magnus force — Bernoulli lift on rotating sphere</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a14);
+const camera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,500);
+camera.position.set(0,5,30);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+scene.add(new THREE.GridHelper(60,30,0x111133,0x080818));
+
+const ballGeo=new THREE.SphereGeometry(0.3,32,32);
+const ballMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.3,metalness:0.1});
+const ball=new THREE.Mesh(ballGeo,ballMat);
+scene.add(ball);
+
+const spinArrows=[];
+for(let i=0;i<8;i++){
+    const a=new THREE.ArrowHelper(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,0),0.6,0x00ff88,0.3,0.15);
+    scene.add(a); spinArrows.push(a);
+}
+
+const TRAIL_LEN=200;
+const trailGeo=new THREE.BufferGeometry();
+const trailPos=new Float32Array(TRAIL_LEN*3);
+trailGeo.setAttribute('position',new THREE.BufferAttribute(trailPos,3));
+const trail=new THREE.Line(trailGeo,new THREE.LineBasicMaterial({color:0x4466ff,transparent:true,opacity:0.5}));
+scene.add(trail);
+
+const predictDots=[];
+for(let i=0;i<50;i++){
+    const dot=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8),
+        new THREE.MeshBasicMaterial({color:0x00ffff,transparent:true,opacity:0.6}));
+    scene.add(dot); predictDots.push(dot);
+}
+
+scene.add(new THREE.AmbientLight(0x223344));
+const pl=new THREE.PointLight(0x4488ff,2,100); pl.position.set(10,20,10); scene.add(pl);
+
+let spin=2000, pos=new THREE.Vector3(-20,1,0), vel=new THREE.Vector3(20,8,2), trailIdx=0;
+
+function reset(){pos.set(-20,1,0);vel.set(20,8,2);for(let i=0;i<TRAIL_LEN*3;i++)trailPos[i]=0;}
+function predict(){
+    const p=pos.clone(), v=vel.clone(), dt=0.05, m=0.0008;
+    for(let i=0;i<predictDots.length;i++){
+        const fm=spin*2*Math.PI/60;
+        v.add(new THREE.Vector3(0,m*fm*v.length()*v.z,0));
+        v.y-=9.8*dt; p.add(v.clone().multiplyScalar(dt));
+        predictDots[i].position.copy(p);
+        predictDots[i].material.opacity=0.6*(1-i/predictDots.length);
+    }
+}
+function animate(){
+    requestAnimationFrame(animate);
+    const dt=0.016, fm=spin*2*Math.PI/60, m=0.0008;
+    vel.add(new THREE.Vector3(0,m*fm*vel.length()*vel.z,0));
+    vel.y-=9.8*dt; pos.add(vel.clone().multiplyScalar(dt));
+    ball.position.copy(pos);
+    ball.rotation.x+=vel.length()*dt*2; ball.rotation.z+=fm*dt;
+    const tidx=(trailIdx%TRAIL_LEN)*3;
+    trailPos[tidx]=pos.x; trailPos[tidx+1]=pos.y; trailPos[tidx+2]=pos.z; trailIdx++;
+    trailGeo.attributes.position.needsUpdate=true;
+    for(let i=0;i<spinArrows.length;i++){
+        const angle=(i/spinArrows.length)*Math.PI*2+performance.now()*0.003;
+        spinArrows[i].position.set(pos.x+Math.cos(angle)*0.5,pos.y,pos.z+Math.sin(angle)*0.5);
+        spinArrows[i].setDirection(new THREE.Vector3(-Math.sin(angle),0,Math.cos(angle)));
+    }
+    if(pos.y<0||pos.x>30)reset();
+    document.getElementById('spin').textContent=spin;
+    document.getElementById('speed').textContent=vel.length().toFixed(1);
+    document.getElementById('drop').textContent=Math.max(0,1-pos.y).toFixed(1);
+    predict(); controls.update(); renderer.render(scene,camera);
+}
+animate();
+document.getElementById('btn').addEventListener('click',reset);
+</script></body></html>
