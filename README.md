@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **karman-vortex-street-fluid-dynamics** — [3816](./3816-karman-vortex-street-fluid-dynamics/index.html)
+- **soap-film-minimal-surface-tension** — [3817](./3817-soap-film-minimal-surface-tension/index.html)
+- **crowd-evacuation-steering-behaviors** — [3818](./3818-crowd-evacuation-steering-behaviors/index.html)
+- **spinodal-decomposition-phase-field** — [3819](./3819-spinodal-decomposition-phase-field/index.html)
+- **klein-bottle-topological-surface** — [3820](./3820-klein-bottle-topological-surface/index.html)
+
 - **gyroid** — [3811](./3811-gyroid/index.html)
 - **string-vibration** — [3812](./3812-string-vibration/index.html)
 - **glass-fracture** — [3814](./3814-glass-fracture/index.html)
