@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **vascular-network-murray-law** — [4056](./4056-vascular-network-murray-law/index.html)
+- **stellar-parallax-proper-motion** — [4057](./4057-stellar-parallax-proper-motion/index.html)
+- **lennard-jones-potential-dynamics** — [4058](./4058-lennard-jones-potential-dynamics/index.html)
+- **landslide-slope-stability-sim** — [4059](./4059-landslide-slope-stability-sim/index.html)
+- **dendritic-snowflake-vapor-deposition** — [4060](./4060-dendritic-snowflake-vapor-deposition/index.html)
+- **saffman-taylor-viscous-fingering** — [4061](./4061-saffman-taylor-viscous-fingering/index.html)
+- **kdv-soliton-wave-collision** — [4062](./4062-kdv-soliton-wave-collision/index.html)
+- **bragg-xray-diffraction-crystal** — [4063](./4063-bragg-xray-diffraction-crystal/index.html)
+
 - **soft-tissue-cutting-surgery-sim** — [4050](./4050-soft-tissue-cutting-surgery-sim/index.html)
 - **plasma-wakefield-acceleration-physics** — [4051](./4051-plasma-wakefield-acceleration-physics/index.html)
 - **speckle-optical-metrology-3d** — [4052](./4052-speckle-optical-metrology-3d/index.html)
