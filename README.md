@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **quantum-hall-edge-states** — [3529](./3529-quantum-hall-edge-states/index.html)
+- **chladni-plate-modes** — [3530](./3530-chladni-plate-modes/index.html)
+- **ferrofluid-surface-spikes** — [3531](./3531-ferrofluid-surface-spikes/index.html)
+- **parametric-pendulum-bifurcation** — [3532](./3532-parametric-pendulum-bifurcation/index.html)
+- **hele-shaw-fingering** — [3533](./3533-hele-shaw-fingering/index.html)
+
 - **magnetic-field-biotsavart** — [3523](./3523-magnetic-field-biotsavart/index.html)
 - **sintering-grain-growth** — [3524](./3524-sintering-grain-growth/index.html)
 - **binary-star-orbit** — [3525](./3525-binary-star-orbit/index.html)
