@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **stellarator-magnetic-confinement-fusion** — [4336](./4336-stellarator-magnetic-confinement-fusion/index.html)
+- **einstein-ring-gravitational-lensing** — [4337](./4337-einstein-ring-gravitational-lensing/index.html)
+- **spider-web-tension-silk-structural-mechanics** — [4338](./4338-spider-web-tension-silk-structural-mechanics/index.html)
+- **shor-quantum-factorization-algorithm-visualization** — [4339](./4339-shor-quantum-factorization-algorithm-visualization/index.html)
+- **snow-avalanche-granular-rigid-coupling** — [4340](./4340-snow-avalanche-granular-rigid-coupling/index.html)
+- **marching-squares-contour-topography-extraction** — [4341](./4341-marching-squares-contour-topography-extraction/index.html)
+- **rainbow-atmospheric-refraction-dispersion** — [4342](./4342-rainbow-atmospheric-refraction-dispersion/index.html)
+
 - **lorenz-attractor-chaos-theory** — [4329](./4329-lorenz-attractor-chaos-theory/index.html)
 - **dna-replication-helicase** — [4330](./4330-dna-replication-helicase/index.html)
 - **stellar-dendrite-crystal-growth** — [4331](./4331-stellar-dendrite-crystal-growth/index.html)
