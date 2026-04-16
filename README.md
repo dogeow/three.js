@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **dendroidal-arboreal-structure** — [4232](./4232-dendroidal-arboreal-structure/index.html)
+- **shader-art-cellular-automata** — [4233](./4233-shader-art-cellular-automata/index.html)
+- **procedural-erosion-hydraulic** — [4234](./4234-procedural-erosion-hydraulic/index.html)
+- **spacetime-minkowski-diagram** — [4235](./4235-spacetime-minkowski-diagram/index.html)
+- **soap-bubble-catenoid-bridge** — [4236](./4236-soap-bubble-catenoid-bridge/index.html)
+- **aurora-borealis-emission** — [4237](./4237-aurora-borealis-emission/index.html)
+
 - **chaos-game-fractal** — [4225](./4225-chaos-game-fractal/index.html)
 - **magnetic-mirror-confinement-plasma** — [4227](./4227-magnetic-mirror-confinement-plasma/index.html)
 - **morphogen-turing-pattern-3d** — [4229](./4229-morphogen-turing-pattern-3d/index.html)
