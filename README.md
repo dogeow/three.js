@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **holographic-tomo-3d** — [3880](./3880-holographic-tomo-3d/index.html)
+- **morris-water-maze** — [3881](./3881-morris-water-maze/index.html)
+- **magnetohydrodynamics-plasma-mhd** — [3882](./3882-magnetohydrodynamics-plasma-mhd/index.html)
+- **sph-fluid-rigid-coupling** — [3883](./3883-sph-fluid-rigid-coupling/index.html)
+- **semiconductor-band-structure** — [3884](./3884-semiconductor-band-structure/index.html)
+- **spherical-inversion-mirror** — [3885](./3885-spherical-inversion-mirror/index.html)
+- **turbulent-jet-cfd** — [3886](./3886-turbulent-jet-cfd/index.html)
+- **biofilm-bacterial-colony-sim** — [3887](./3887-biofilm-bacterial-colony-sim/index.html)
+
 - **audio-visualizer-reactive-music-3d** — [3874](./3874-audio-visualizer-reactive-music-3d/index.html)
 - **gaussian-splat-3d-point-cloud-viewer** — [3875](./3875-gaussian-splat-3d-point-cloud-viewer/index.html)
 - **superconductor-magnetic-levitation-meissner-effect** — [3876](./3876-superconductor-magnetic-levitation-meissner-effect/index.html)
