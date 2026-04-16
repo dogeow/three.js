@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **wavelet-transform-time-frequency-3d** — [4343](./4343-wavelet-transform-time-frequency-3d/index.html)
+- **gravitational-wave-detector-ligo-arm** — [4344](./4344-gravitational-wave-detector-ligo-arm/index.html)
+- **quantum-phase-estimation-algorithm** — [4345](./4345-quantum-phase-estimation-algorithm/index.html)
+- **scanning-probe-microscopy-stm-afm** — [4346](./4346-scanning-probe-microscopy-stm-afm/index.html)
+- **photon-correlations-hong-ou-mandel** — [4347](./4347-photon-correlations-hong-ou-mandel/index.html)
+- **magneto-optical-kerr-effect-visualization** — [4348](./4348-magneto-optical-kerr-effect-visualization/index.html)
+- **spin-transfer-torque-magnetic-memory** — [4349](./4349-spin-transfer-torque-magnetic-memory/index.html)
+- **josephson-junction-superconductor** — [4350](./4350-josephson-junction-superconductor/index.html)
+
 - **stellarator-magnetic-confinement-fusion** — [4336](./4336-stellarator-magnetic-confinement-fusion/index.html)
 - **einstein-ring-gravitational-lensing** — [4337](./4337-einstein-ring-gravitational-lensing/index.html)
 - **spider-web-tension-silk-structural-mechanics** — [4338](./4338-spider-web-tension-silk-structural-mechanics/index.html)
