@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **stellar-scintillation-twinkling** — [3934](./3934-stellar-scintillation-twinkling/index.html)
+- **blood-cell-capillary-flow** — [3935](./3935-blood-cell-capillary-flow/index.html)
+- **pointillism-seurat-painting** — [3936](./3936-pointillism-seurat-painting/index.html)
+- **maglev-train-magnetic-levitation** — [3937](./3937-maglev-train-magnetic-levitation/index.html)
+- **3d-harp-string-physics** — [3938](./3938-3d-harp-string-physics/index.html)
+- **fpga-logic-block-visualization** — [3939](./3939-fpga-logic-block-visualization/index.html)
+- **sous-vide-fluid-heat-transfer** — [3940](./3940-sous-vide-fluid-heat-transfer/index.html)
+
 - **acoustic-hologram-3d** — [3926](./3926-acoustic-hologram-3d/index.html)
 - **ferrofluid-magnetic-field** — [3927](./3927-ferrofluid-magnetic-field/index.html)
 - **photovoltaic-solar-panel** — [3928](./3928-photovoltaic-solar-panel/index.html)
