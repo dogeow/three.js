@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **sph-fluid-simulation** — [3638](./3638-sph-fluid-simulation/index.html)
+- **slime-mold-physarum-3d** — [3639](./3639-slime-mold-physarum-3d/index.html)
+- **galton-board-bean-machine** — [3640](./3640-galton-board-bean-machine/index.html)
+- **marching-cubes-metaballs** — [3641](./3641-marching-cubes-metaballs/index.html)
+
 - **phase-field-dendrite** — [3632](./3632-phase-field-dendrite/index.html)
 - **neural-ode-dynamics** — [3633](./3633-neural-ode-dynamics/index.html)
 - **genetic-algorithm-3d** — [3634](./3634-genetic-algorithm-3d/index.html)
