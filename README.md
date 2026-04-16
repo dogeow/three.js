@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **quantum-error-correction-surface-code** — [3752](./3752-quantum-error-correction-surface-code/index.html)
+- **molecular-docking-shape-complementarity** — [3753](./3753-molecular-docking-shape-complementarity/index.html)
+- **fluid-structure-vortex-induced-vibration** — [3754](./3754-fluid-structure-vortex-induced-vibration/index.html)
+- **piv-particle-image-velocimetry** — [3755](./3755-piv-particle-image-velocimetry/index.html)
+- **soft-robotics-pneumatic-actuator** — [3756](./3756-soft-robotics-pneumatic-actuator/index.html)
+- **blockchain-dag-transaction-graph** — [3757](./3757-blockchain-dag-transaction-graph/index.html)
+- **stress-optics-birefringence-simulation** — [3758](./3758-stress-optics-birefringence-simulation/index.html)
+
 - **cnc-milling-simulation** — [3738](./3738-cnc-milling-simulation/index.html)
 - **satellite-attitude-dynamics** — [3739](./3739-satellite-attitude-dynamics/index.html)
 - **blood-flow-vessel-sim** — [3740](./3740-blood-flow-vessel-sim/index.html)
