@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **table-tennis-3d-physics-rally** — [3989](./3989-table-tennis-3d-physics-rally/index.html)
+- **rubiks-cube-3d-mechanical** — [3990](./3990-rubiks-cube-3d-mechanical/index.html)
+- **sokoban-3d-box-puzzle** — [3991](./3991-sokoban-3d-box-puzzle/index.html)
+- **pinball-physics-flipper** — [3992](./3992-pinball-physics-flipper/index.html)
+- **mancala-stone-drop-game** — [3993](./3993-mancala-stone-drop-game/index.html)
+- **catapult-siege-projectile-physics** — [3994](./3994-catapult-siege-projectile-physics/index.html)
+
 - **topological-data-analysis-morse-complex-3d** — [3986](./3986-topological-data-analysis-morse-complex-3d/index.html)
 - **isostatic-tensegrity-structure** — [3987](./3987-isostatic-tensegrity-structure/index.html)
 - **metamaterial-negative-poisson-ratio** — [3987](./3987-metamaterial-negative-poisson-ratio/index.html)
