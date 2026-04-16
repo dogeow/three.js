@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **volcanic-plinian-column-eruption-sim** — [4007](./4007-volcanic-plinian-column-eruption-sim/index.html)
+- **cpu-mips-pipeline-datapath-visualization** — [4008](./4008-cpu-mips-pipeline-datapath-visualization/index.html)
+- **rayleigh-benard-convection-cell** — [4009](./4009-rayleigh-benard-convection-cell/index.html)
+- **blockchain-merkle-tree-audit-proof** — [4010](./4010-blockchain-merkle-tree-audit-proof/index.html)
+- **dendrochronology-tree-ring-visualization** — [4011](./4011-dendrochronology-tree-ring-visualization/index.html)
+- **additive-manufacturing-path-planning-sim** — [4012](./4012-additive-manufacturing-path-planning-sim/index.html)
+- **soap-bubble-minimal-surface-weaire-phelan** — [4013](./4013-soap-bubble-minimal-surface-weaire-phelan/index.html)
+
 - **gyroscope-tightrope-walker-balance** — [4002](./4002-gyroscope-tightrope-walker-balance/index.html)
 - **eddy-current-magnet-brake-physics** — [4003](./4003-eddy-current-magnet-brake-physics/index.html)
 - **robot-hand-inverse-kinematics-grasping** — [4004](./4004-robot-hand-inverse-kinematics-grasping/index.html)
