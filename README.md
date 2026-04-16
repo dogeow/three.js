@@ -745,6 +745,26 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **chaos-game-fractal** — [4225](./4225-chaos-game-fractal/index.html)
+- **magnetic-mirror-confinement-plasma** — [4227](./4227-magnetic-mirror-confinement-plasma/index.html)
+- **morphogen-turing-pattern-3d** — [4229](./4229-morphogen-turing-pattern-3d/index.html)
+- **solar-coronal-mass-ejection-sim** — [4230](./4230-solar-coronal-mass-ejection-sim/index.html)
+
+- **jenga-rigid-body-stacking** — [4219](./4219-jenga-rigid-body-stacking/index.html)
+- **waveguide-bowed-string-synthesis** — [4220](./4220-waveguide-bowed-string-synthesis/index.html)
+- **delaunay-3d-triangulation** — [4221](./4221-delaunay-3d-triangulation/index.html)
+- **rrt-robot-path-planner** — [4222](./4222-rrt-robot-path-planner/index.html)
+- **multi-body-gear-dynamics** — [4223](./4223-multi-body-gear-dynamics/index.html)
+- **granular-percolation-sim** — [4224](./4224-granular-percolation-sim/index.html)
+
+- **物理粒子系统** — [4211](./4211-物理粒子系统/index.html)
+- **地形生成** — [4213](./4213-地形生成/index.html)
+- **程序化城市** — [4214](./4214-程序化城市/index.html)
+- **流体动力学** — [4215](./4215-流体动力学/index.html)
+- **声音交互** — [4216](./4216-声音交互/index.html)
+- **光线追踪艺术** — [4217](./4217-光线追踪艺术/index.html)
+- **布料模拟** — [4218](./4218-布料模拟/index.html)
+
 - **smoke-turbulence-pic-fluid** — [4206](./4206-smoke-turbulence-pic-fluid/index.html)
 - **magnetohydrodynamics-mhd-conductive-fluid** — [4207](./4207-magnetohydrodynamics-mhd-conductive-fluid/index.html)
 - **phonon-crystal-lattice-vibration** — [4208](./4208-phonon-crystal-lattice-vibration/index.html)
