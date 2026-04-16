@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **reaction-diffusion-turing-patterns** — [3625](./3625-reaction-diffusion-turing-patterns/index.html)
+- **procedural-city-generation** — [3626](./3626-procedural-city-generation/index.html)
+- **snowflake-vapor-deposition-growth** — [3627](./3627-snowflake-vapor-deposition-growth/index.html)
+- **double-pendulum-chaos** — [3628](./3628-double-pendulum-chaos/index.html)
+- **minimal-surface-soap-film** — [3629](./3629-minimal-surface-soap-film/index.html)
+- **fracture-crack-propagation** — [3630](./3630-fracture-crack-propagation/index.html)
+- **granular-hourglass-physics** — [3631](./3631-granular-hourglass-physics/index.html)
+
 - **bioluminescent-deep-sea-ecosystem** — [3618](./3618-bioluminescent-deep-sea-ecosystem/index.html)
 - **ferromagnetic-ising-domain-evolution** — [3619](./3619-ferromagnetic-ising-domain-evolution/index.html)
 - **parametric-tensegrity-structure-sim** — [3620](./3620-parametric-tensegrity-structure-sim/index.html)
