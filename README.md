@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **spiral-vortex-dynamics** — [3979](./3979-spiral-vortex-dynamics/index.html)
+- **optical-diffraction-tomography** — [3980](./3980-optical-diffraction-tomography/index.html)
+- **turing-machine-universal** — [3981](./3981-turing-machine-universal/index.html)
+- **euler-spiral-clothoid** — [3982](./3982-euler-spiral-clothoid/index.html)
+- **fresnel-lens-focus** — [3983](./3983-fresnel-lens-focus/index.html)
+- **buckling-column-structural** — [3984](./3984-buckling-column-structural/index.html)
+- **peristalsis-fluid-transport** — [3985](./3985-peristalsis-fluid-transport/index.html)
+
 - **1** — [3969](./3969-1/index.html)
 - **2** — [3970](./3970-2/index.html)
 - **3** — [3971](./3971-3/index.html)
