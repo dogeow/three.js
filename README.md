@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **ant-colony-optimization-3d-terrain** — [4022](./4022-ant-colony-optimization-3d-terrain/index.html)
+- **shader-graph-visual-editor** — [4023](./4023-shader-graph-visual-editor/index.html)
+- **flag-fluid-structure-interaction** — [4024](./4024-flag-fluid-structure-interaction/index.html)
+- **l-system-bonsai-procedural** — [4025](./4025-l-system-bonsai-procedural/index.html)
+- **planetary-ring-moon-shepherd** — [4026](./4026-planetary-ring-moon-shepherd/index.html)
+- **music-midi-3d-conductor** — [4027](./4027-music-midi-3d-conductor/index.html)
+
 - **cloth-simulation-verlet-integration** — [4014](./4014-cloth-simulation-verlet-integration/index.html)
 - **dna-replication-fork-animation** — [4015](./4015-dna-replication-fork-animation/index.html)
 - **kaleidoscope-finite-group-symmetry-art** — [4016](./4016-kaleidoscope-finite-group-symmetry-art/index.html)
