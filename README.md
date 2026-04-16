@@ -745,6 +745,17 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **solar-sail-photon-propulsion** — [4351](./4351-solar-sail-photon-propulsion/index.html)
+- **vortex-street-flow-simulation** — [4355](./4355-vortex-street-flow-simulation/index.html)
+- **coulomb-scattering-rutherford-alpha** — [4356](./4356-coulomb-scattering-rutherford-alpha/index.html)
+- **fresnel-zone-plate-focusing** — [4357](./4357-fresnel-zone-plate-focusing/index.html)
+- **sodium-chloride-crystal-growth** — [4358](./4358-sodium-chloride-crystal-growth/index.html)
+- **interference-binaural-beat-frequency** — [4359](./4359-interference-binaural-beat-frequency/index.html)
+- **slime-mold-physarum-transport** — [4360](./4360-slime-mold-physarum-transport/index.html)
+- **acoustic-resonance-cavity-helmholtz** — [4361](./4361-acoustic-resonance-cavity-helmholtz/index.html)
+- **pendulum-sync-huygens-coupling** — [4362](./4362-pendulum-sync-huygens-coupling/index.html)
+- **diffraction-hookes-law-spring** — [4363](./4363-diffraction-hookes-law-spring/index.html)
+
 - **wavelet-transform-time-frequency-3d** — [4343](./4343-wavelet-transform-time-frequency-3d/index.html)
 - **gravitational-wave-detector-ligo-arm** — [4344](./4344-gravitational-wave-detector-ligo-arm/index.html)
 - **quantum-phase-estimation-algorithm** — [4345](./4345-quantum-phase-estimation-algorithm/index.html)
