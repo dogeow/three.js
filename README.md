@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **interference-fringe-double-slit** — [4182](./4182-interference-fringe-double-slit/index.html)
+- **lidar-point-cloud-scene-reconstruction** — [4183](./4183-lidar-point-cloud-scene-reconstruction/index.html)
+- **honeycomb-hexagonal-tessellation-art** — [4184](./4184-honeycomb-hexagonal-tessellation-art/index.html)
+- **island-generation-fbm-terrain** — [4185](./4185-island-generation-fbm-terrain/index.html)
+- **pendulum-wave-ensemble** — [4186](./4186-pendulum-wave-ensemble/index.html)
+- **vortex-reconnection-turbulence** — [4187](./4187-vortex-reconnection-turbulence/index.html)
+- **kaleidoscope-mirror-symmetry-art** — [4188](./4188-kaleidoscope-mirror-symmetry-art/index.html)
+
 - **skeletal-animation-skinning-bones** — [4173](./4173-skeletal-animation-skinning-bones/index.html)
 - **first-person-shooter-controls-pointer-lock** — [4174](./4174-first-person-shooter-controls-pointer-lock/index.html)
 - **physics-engine-rigid-body-cannonjs** — [4175](./4175-physics-engine-rigid-body-cannonjs/index.html)
