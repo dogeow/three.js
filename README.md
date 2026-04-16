@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **mhd-ferrofluid-surface** — [3732](./3732-mhd-ferrofluid-surface/index.html)
+- **phase-field-crystal-3d** — [3733](./3733-phase-field-crystal-3d/index.html)
+- **electrohydrodynamics-dielectrophoresis** — [3734](./3734-electrohydrodynamics-dielectrophoresis/index.html)
+- **voronoi-brittle-fracture** — [3735](./3735-voronoi-brittle-fracture/index.html)
+- **active-matter-vicsek** — [3736](./3736-active-matter-vicsek/index.html)
+- **pendulum-wave-vernier** — [3737](./3737-pendulum-wave-vernier/index.html)
+
 - **cloth-softbody** — [3725](./3725-cloth-softbody/index.html)
 - **fluid-particle** — [3727](./3727-fluid-particle/index.html)
 - **fluid-dynamics** — [3728](./3728-fluid-dynamics/index.html)
