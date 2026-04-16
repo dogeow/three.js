@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **cloth-softbody** — [3725](./3725-cloth-softbody/index.html)
+- **fluid-particle** — [3727](./3727-fluid-particle/index.html)
+- **fluid-dynamics** — [3728](./3728-fluid-dynamics/index.html)
+- **geometry-morphing** — [3730](./3730-geometry-morphing/index.html)
+- **particle-attraction** — [3731](./3731-particle-attraction/index.html)
+
 - **pool-billiards-3d** — [3711](./3711-pool-billiards-3d/index.html)
 - **ant-colony-pheromone** — [3712](./3712-ant-colony-pheromone/index.html)
 - **particle-in-cell-plasma** — [3713](./3713-particle-in-cell-plasma/index.html)
