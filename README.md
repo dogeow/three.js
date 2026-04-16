@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **reinforcement-learning-q-learning-3d** — [3772](./3772-reinforcement-learning-q-learning-3d/index.html)
+- **materials-science-alloy-solidification** — [3773](./3773-materials-science-alloy-solidification/index.html)
+- **network-science-cascading-failure** — [3774](./3774-network-science-cascading-failure/index.html)
+- **karplus-strong-synthesis-3d** — [3775](./3775-karplus-strong-synthesis-3d/index.html)
+- **computer-vision-slam-3d** — [3776](./3776-computer-vision-slam-3d/index.html)
+- **fluid-mechanics-boundary-layer** — [3777](./3777-fluid-mechanics-boundary-layer/index.html)
+- **geophysics-seismic-3d** — [3778](./3778-geophysics-seismic-3d/index.html)
+
 - **dendrimer-branched-polymer-simulation** — [3765](./3765-dendrimer-branched-polymer-simulation/index.html)
 - **photonic-crystal-fiber-optics-bandgap** — [3766](./3766-photonic-crystal-fiber-optics-bandgap/index.html)
 - **synaptic-plasticity-spike-timing-dependent** — [3767](./3767-synaptic-plasticity-spike-timing-dependent/index.html)
