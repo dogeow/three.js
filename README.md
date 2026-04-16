@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **cloth-simulation-verlet-integration** — [4014](./4014-cloth-simulation-verlet-integration/index.html)
+- **dna-replication-fork-animation** — [4015](./4015-dna-replication-fork-animation/index.html)
+- **kaleidoscope-finite-group-symmetry-art** — [4016](./4016-kaleidoscope-finite-group-symmetry-art/index.html)
+- **music-step-sequencer-3d-grid** — [4017](./4017-music-step-sequencer-3d-grid/index.html)
+- **fluvial-erosion-terrain-simulation** — [4018](./4018-fluvial-erosion-terrain-simulation/index.html)
+- **diffraction-grating-interference-physics** — [4019](./4019-diffraction-grating-interference-physics/index.html)
+- **cellular-automata-conway-life-3d** — [4020](./4020-cellular-automata-conway-life-3d/index.html)
+- **pendulum-chaos-double-well** — [4021](./4021-pendulum-chaos-double-well/index.html)
+
 - **volcanic-plinian-column-eruption-sim** — [4007](./4007-volcanic-plinian-column-eruption-sim/index.html)
 - **cpu-mips-pipeline-datapath-visualization** — [4008](./4008-cpu-mips-pipeline-datapath-visualization/index.html)
 - **rayleigh-benard-convection-cell** — [4009](./4009-rayleigh-benard-convection-cell/index.html)
