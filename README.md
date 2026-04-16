@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **dendrimer-branched-polymer-simulation** — [3765](./3765-dendrimer-branched-polymer-simulation/index.html)
+- **photonic-crystal-fiber-optics-bandgap** — [3766](./3766-photonic-crystal-fiber-optics-bandgap/index.html)
+- **synaptic-plasticity-spike-timing-dependent** — [3767](./3767-synaptic-plasticity-spike-timing-dependent/index.html)
+- **bénard-convection-rayleigh-bénard-cells** — [3768](./3768-bénard-convection-rayleigh-bénard-cells/index.html)
+- **crack-bridging-grain-boundary-material** — [3769](./3769-crack-bridging-grain-boundary-material/index.html)
+- **dendrogram-hierarchical-clustering-3d** — [3770](./3770-dendrogram-hierarchical-clustering-3d/index.html)
+- **belousov-zhabotinsky-reaction-3d** — [3771](./3771-belousov-zhabotinsky-reaction-3d/index.html)
+
 - **virus-particle-diffusion-3d** — [3759](./3759-virus-particle-diffusion-3d/index.html)
 - **hurricane-eye-wall-simulation** — [3760](./3760-hurricane-eye-wall-simulation/index.html)
 - **double-gyre-ocean-circulation** — [3761](./3761-double-gyre-ocean-circulation/index.html)
