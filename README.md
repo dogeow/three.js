@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **binary-star-gravitational-orbit** — [4139](./4139-binary-star-gravitational-orbit/index.html)
+- **blood-cell-flow-laminar-sim** — [4140](./4140-blood-cell-flow-laminar-sim/index.html)
+- **seismic-wave-propagation-2d** — [4141](./4141-seismic-wave-propagation-2d/index.html)
+- **parametric-facade-sun-shading** — [4142](./4142-parametric-facade-sun-shading/index.html)
+- **mandelbulb-3d-fractal-explorer** — [4143](./4143-mandelbulb-3d-fractal-explorer/index.html)
+- **tennis-ball-aerodynamics-spin** — [4144](./4144-tennis-ball-aerodynamics-spin/index.html)
+
 - **umbrella-canopy-aerodynamics-sim** — [4118](./4118-umbrella-canopy-aerodynamics-sim/index.html)
 - **liquid-sloshing-tank-oscillation** — [4119](./4119-liquid-sloshing-tank-oscillation/index.html)
 - **progressive-structural-collapse-sim** — [4120](./4120-progressive-structural-collapse-sim/index.html)
