@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **causal-inference-do-calculus** — [3918](./3918-causal-inference-do-calculus/index.html)
+- **compiler-ast-parser** — [3919](./3919-compiler-ast-parser/index.html)
+- **music-theory-harmony-sphere** — [3920](./3920-music-theory-harmony-sphere/index.html)
+- **ligo-gravitational-wave-detector** — [3921](./3921-ligo-gravitational-wave-detector/index.html)
+- **brain-connectome-neural-pathways** — [3922](./3922-brain-connectome-neural-pathways/index.html)
+- **crispr-cas9-gene-editing** — [3923](./3923-crispr-cas9-gene-editing/index.html)
+- **formal-verification-proof-tree** — [3924](./3924-formal-verification-proof-tree/index.html)
+- **cartography-projection-comparison** — [3925](./3925-cartography-projection-comparison/index.html)
+
 - **microtubule-kinesin-molecular-motor-transport** — [3912](./3912-microtubule-kinesin-molecular-motor-transport/index.html)
 - **quantum-dot-nanoparticle-electron-shell** — [3913](./3913-quantum-dot-nanoparticle-electron-shell/index.html)
 - **saffman-taylor-viscous-fingering-hele-shaw** — [3914](./3914-saffman-taylor-viscous-fingering-hele-shaw/index.html)
