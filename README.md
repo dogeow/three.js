@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **sonoluminescence-bubble-collapse** — [4082](./4082-sonoluminescence-bubble-collapse/index.html)
+- **dielectric-elastomer-actuator** — [4083](./4083-dielectric-elastomer-actuator/index.html)
+- **microfluidics-droplet-dynamics** — [4084](./4084-microfluidics-droplet-dynamics/index.html)
+- **wigner-crystal-quantum-lattice** — [4085](./4085-wigner-crystal-quantum-lattice/index.html)
+- **spintronics-magnon-wave** — [4086](./4086-spintronics-magnon-wave/index.html)
+- **vesicle-lipid-bilayer-deformation** — [4087](./4087-vesicle-lipid-bilayer-deformation/index.html)
+
 - **coupled-oscillators-kuramoto** — [4076](./4076-coupled-oscillators-kuramoto/index.html)
 - **crystal-growth-diffusion-limited-aggregation** — [4077](./4077-crystal-growth-diffusion-limited-aggregation/index.html)
 - **magnetic-field-3d-flux-lines** — [4078](./4078-magnetic-field-3d-flux-lines/index.html)
