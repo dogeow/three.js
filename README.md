@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **game-theory-nash-equilibrium** — [4299](./4299-game-theory-nash-equilibrium/index.html)
+- **mcts-game-tree-search** — [4300](./4300-mcts-game-tree-search/index.html)
+- **petri-net-workflow-simulation** — [4301](./4301-petri-net-workflow-simulation/index.html)
+- **compiler-register-allocation-graph-coloring** — [4302](./4302-compiler-register-allocation-graph-coloring/index.html)
+- **particle-filter-robot-localization** — [4303](./4303-particle-filter-robot-localization/index.html)
+- **seismic-reflection-survey** — [4304](./4304-seismic-reflection-survey/index.html)
+- **vortex-lattice-wing-aerodynamics** — [4305](./4305-vortex-lattice-wing-aerodynamics/index.html)
+- **flutter-aeroelasticity-coupled-vibration** — [4306](./4306-flutter-aeroelasticity-coupled-vibration/index.html)
+
 - **tornado-vortex-vorticity-simulation** — [4293](./4293-tornado-vortex-vorticity-simulation/index.html)
 - **volcanic-eruption-pyroclastic-flow** — [4294](./4294-volcanic-eruption-pyroclastic-flow/index.html)
 - **enzyme-substrate-lock-key-dynamics** — [4295](./4295-enzyme-substrate-lock-key-dynamics/index.html)

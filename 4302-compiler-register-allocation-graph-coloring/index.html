@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compiler Register Allocation – Graph Coloring</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #0d0d1a; }
+    canvas { display: block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<script type="module">
+// {title: "Compiler Register Allocation – Graph Coloring (Chaitin-Briggs)"}
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── Scene Setup ─────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d1a);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 8, 22);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 0, 0);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─── Lighting ─────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 20, 10);
+scene.add(dirLight);
+
+// ─── Register Colors ─────────────────────────────────────────────────────────
+const REGISTER_COLORS = [
+  0xff4757, // R0 – red
+  0x2ed573, // R1 – green
+  0x1e90ff, // R2 – blue
+  0xffa502, // R3 – orange
+];
+const SPILL_COLOR = 0xaaaaaa;
+const PENDING_COLOR = 0xffffff;
+const ACTIVE_COLOR = 0xffff00;
+
+// ─── Variable / Node Definitions ────────────────────────────────────────────
+const VARIABLES = [
+  { id: 'a', label: 'a' },
+  { id: 'b', label: 'b' },
+  { id: 'c', label: 'c' },
+  { id: 'd', label: 'd' },
+  { id: 'e', label: 'e' },
+  { id: 'f', label: 'f' },
+  { id: 'g', label: 'g' },
+  { id: 'h', label: 'h' },
+];
+
+// Interference edges (undirected)
+const INTERFERENCES = [
+  ['a', 'b'], ['a', 'c'], ['a', 'd'],
+  ['b', 'c'], ['b', 'e'], ['b', 'f'],
+  ['c', 'd'], ['c', 'e'], ['c', 'g'],
+  ['d', 'f'], ['d', 'g'],
+  ['e', 'f'], ['e', 'h'],
+  ['f', 'h'],
+  ['g', 'h'],
+];
+
+const NUM_REGISTERS = 4;
+
+// ─── Layout ──────────────────────────────────────────────────────────────────
+function circularPositions(nodes, radius = 7) {
+  const n = nodes.length;
+  return nodes.map((_, i) => {
+    const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+    return new THREE.Vector3(radius * Math.cos(angle), 0, radius * Math.sin(angle));
+  });
+}
+
+const posMap = {};
+{
+  const positions = circularPositions(VARIABLES, 7.5);
+  VARIABLES.forEach((v, i) => { posMap[v.id] = positions[i]; });
+}
+
+// ─── HUD Sprites ─────────────────────────────────────────────────────────────
+const stateLabel = createHUD();
+const spillLabel  = createHUD();
+const stackLabel  = createHUD();
+scene.add(stateLabel, spillLabel, stackLabel);
+
+function createHUD() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 64;
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(11, 1.4, 1);
+  sprite.position.set(-13, 7.5, 0);
+  sprite._canvas = canvas;
+  sprite._ctx = canvas.getContext('2d');
+  sprite._tex = tex;
+  return sprite;
+}
+
+function updateHUD(sprite, text, color = '#ffffff') {
+  const { _canvas: cv, _ctx: ctx, _tex: tex } = sprite;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.beginPath();
+  ctx.roundRect(0, 0, cv.width, cv.height, 12);
+  ctx.fill();
+  ctx.font = 'bold 26px monospace';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cv.width / 2, cv.height / 2);
+  tex.needsUpdate = true;
+}
+
+// ─── Graph Meshes ────────────────────────────────────────────────────────────
+const nodeMeshes = {};
+const edgeLines  = [];
+
+function makeNode(varInfo, position) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.7, 32, 24),
+    new THREE.MeshPhongMaterial({ color: PENDING_COLOR, shininess: 100, emissive: 0x111122 })
+  );
+  mesh.position.copy(position);
+  scene.add(mesh);
+
+  // Variable label sprite
+  const lc = document.createElement('canvas');
+  lc.width = 128; lc.height = 128;
+  const lx = lc.getContext('2d');
+  lx.font = 'bold 72px monospace';
+  lx.fillStyle = '#000000';
+  lx.textAlign = 'center';
+  lx.textBaseline = 'middle';
+  lx.fillText(varInfo.label, 64, 64);
+  const lt = new THREE.CanvasTexture(lc);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: lt, transparent: true }));
+  spr.scale.set(1.2, 1.2, 1.2);
+  mesh.add(spr);
+
+  nodeMeshes[varInfo.id] = mesh;
+  return mesh;
+}
+
+function makeEdge(idA, idB, posA, posB) {
+  const pts = [posA.clone().setY(0.05), posB.clone().setY(0.05)];
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({ color: 0x445566, transparent: true, opacity: 0.65 });
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  edgeLines.push({ line, idA, idB });
+}
+
+VARIABLES.forEach(v => makeNode(v, posMap[v.id]));
+INTERFERENCES.forEach(([a, b]) => makeEdge(a, b, posMap[a], posMap[b]));
+
+// ─── Algorithm Helpers ───────────────────────────────────────────────────────
+function getDegree(varId) {
+  return INTERFERENCES.filter(([x, y]) => x === varId || y === varId).length;
+}
+
+function getNeighbors(varId) {
+  const s = new Set();
+  INTERFERENCES.forEach(([x, y]) => { if (x === varId) s.add(y); if (y === varId) s.add(x); });
+  return s;
+}
+
+function getAvailableColor(varId, assign) {
+  const used = new Set();
+  getNeighbors(varId).forEach(n => {
+    const a = assign[n];
+    if (a !== undefined && a !== 'spill') used.add(a);
+  });
+  for (let c = 0; c < NUM_REGISTERS; c++) if (!used.has(c)) return c;
+  return -1;
+}
+
+// ─── State ───────────────────────────────────────────────────────────────────
+const assignment = {};
+const stack      = [];
+const spilled    = new Set();
+const simplified = new Set();
+
+function setNodeColor(id, hex) {
+  if (!nodeMeshes[id]) return;
+  nodeMeshes[id].material.color.setHex(hex);
+  nodeMeshes[id].material.emissive.setHex(hex * 0.07 | 0);
+}
+
+function pulse(id) {
+  if (nodeMeshes[id]) nodeMeshes[id].scale.setScalar(1.35);
+}
+
+function unscale(id) {
+  if (nodeMeshes[id]) nodeMeshes[id].scale.setScalar(1.0);
+}
+
+function fadeEdge(idA, idB, op = 0.12) {
+  const e = edgeLines.find(e =>
+    (e.idA === idA && e.idB === idB) || (e.idA === idB && e.idB === idA)
+  );
+  if (e) e.line.material.opacity = op;
+}
+
+function restoreEdges() {
+  edgeLines.forEach(e => { e.line.material.opacity = 0.65; });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─── Legend ───────────────────────────────────────────────────────────────────
+function buildLegend() {
+  const names = ['R0', 'R1', 'R2', 'R3', 'MEM'];
+  const hexes = ['#ff4757', '#2ed573', '#1e90ff', '#ffa502', '#aaaaaa'];
+  const g = new THREE.Group();
+  names.forEach((name, i) => {
+    const cv = document.createElement('canvas');
+    cv.width = 160; cv.height = 64;
+    const cx = cv.getContext('2d');
+    cx.fillStyle = hexes[i];
+    cx.fillRect(8, 14, 36, 36);
+    cx.font = 'bold 26px monospace';
+    cx.fillStyle = '#ffffff';
+    cx.textAlign = 'left';
+    cx.textBaseline = 'middle';
+    cx.fillText(name, 54, 32);
+    const tx = new THREE.CanvasTexture(cv);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tx, transparent: true }));
+    sp.scale.set(3, 1.5, 1);
+    sp.position.set(i * 3.4 - 6.5, -9, 0);
+    g.add(sp);
+  });
+  scene.add(g);
+}
+buildLegend();
+
+// ─── Algorithm Phases ────────────────────────────────────────────────────────
+
+// PHASE 1 – SIMPLIFY
+async function simplifyPhase() {
+  updateHUD(stateLabel, 'PHASE 1: SIMPLIFY  (remove low-degree nodes)', '#2ed573');
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const candidates = VARIABLES
+      .filter(v => !simplified.has(v.id) && !spilled.has(v.id))
+      .filter(v => getDegree(v.id) < NUM_REGISTERS);
+
+    if (!candidates.length) break;
+
+    // Pick highest-degree candidate
+    candidates.sort((x, y) => getDegree(y.id) - getDegree(x.id));
+    const chosen = candidates[0];
+
+    simplified.add(chosen.id);
+    stack.push(chosen.id);
+    changed = true;
+
+    setNodeColor(chosen.id, ACTIVE_COLOR);
+    pulse(chosen.id);
+    updateHUD(stateLabel,
+      `SIMPLIFY: remove "${chosen.id}"  (deg=${getDegree(chosen.id)})  stack[${stack.length}]`,
+      '#2ed573'
+    );
+    getNeighbors(chosen.id).forEach(n => {
+      if (!simplified.has(n)) fadeEdge(chosen.id, n, 0.12);
+    });
+
+    await sleep(700);
+    setNodeColor(chosen.id, 0x2a3a50);
+    unscale(chosen.id);
+  }
+}
+
+// PHASE 2 – SPILL
+async function spillPhase() {
+  updateHUD(stateLabel, 'PHASE 2: SPILL  (uncolorable nodes → memory)', '#ff4757');
+  let spillMsg = '';
+
+  VARIABLES.forEach(v => {
+    if (!simplified.has(v.id) && !spilled.has(v.id)) {
+      if (getAvailableColor(v.id, assignment) === -1) {
+        spilled.add(v.id);
+        assignment[v.id] = 'spill';
+        setNodeColor(v.id, SPILL_COLOR);
+        spillMsg = `Spilled: ${[...spilled].join(', ')}`;
+        updateHUD(stateLabel, `SPILL: "${v.id}" → memory`, '#ff4757');
+        updateHUD(spillLabel, spillMsg, '#ffa502');
+        pulse(v.id);
+      }
+    }
+  });
+
+  if (!spilled.size) {
+    updateHUD(spillLabel, 'No spills needed!', '#2ed573');
+  }
+  await sleep(600);
+}
+
+// PHASE 3 – SELECT
+async function selectPhase() {
+  updateHUD(stateLabel, 'PHASE 3: SELECT  (pop stack, assign registers)', '#1e90ff');
+
+  while (stack.length > 0) {
+    const varId = stack.pop();
+    const col = getAvailableColor(varId, assignment);
+
+    if (col !== -1) {
+      assignment[varId] = col;
+      setNodeColor(varId, REGISTER_COLORS[col]);
+      updateHUD(stateLabel,
+        `SELECT: "${varId}" → R${col}   [${stack.length} remaining on stack]`,
+        '#1e90ff'
+      );
+    } else {
+      assignment[varId] = 'spill';
+      setNodeColor(varId, SPILL_COLOR);
+      updateHUD(stateLabel, `SELECT: "${varId}" → SPILL`, '#ff4757');
+    }
+
+    pulse(varId);
+    await sleep(650);
+    unscale(varId);
+    restoreEdges();
+    await sleep(180);
+  }
+}
+
+// PHASE 4 – DONE
+async function done() {
+  updateHUD(stateLabel, 'ALL DONE', '#ffffff');
+  const regs = ['R0', 'R1', 'R2', 'R3'];
+  let txt = 'Register Assignment:\n';
+  VARIABLES.forEach(v => {
+    const a = assignment[v.id];
+    const reg = a === 'spill' ? 'MEM' : regs[a];
+    txt += `  ${v.label} → ${reg}\n`;
+  });
+  updateHUD(stackLabel, txt.trim(), '#dddddd');
+}
+
+// ─── Full Algorithm ───────────────────────────────────────────────────────────
+async function run() {
+  await sleep(400);
+  await simplifyPhase();
+  await sleep(300);
+  await spillPhase();
+  await sleep(300);
+  await selectPhase();
+  await sleep(200);
+  await done();
+}
+
+// ─── Instructions overlay ────────────────────────────────────────────────────
+const hint = document.createElement('div');
+hint.style.cssText = `
+  position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.8);color:#aaa;font-family:monospace;
+  padding:10px 22px;border-radius:8px;font-size:13px;
+  pointer-events:none;z-index:100;border:1px solid #333;white-space:nowrap;
+`;
+hint.innerHTML = `
+  <b style="color:#fff">Register Allocation</b> — Chaitin-Briggs Graph Coloring &nbsp;|&nbsp;
+  ① Simplify: remove low-degree nodes onto stack &nbsp;|&nbsp;
+  ② Spill: uncolorable vars → memory &nbsp;|&nbsp;
+  ③ Select: assign registers on pop &nbsp;|&nbsp;
+  OrbitControls: drag to rotate
+`;
+document.body.appendChild(hint);
+
+// ─── Render loop ─────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+setTimeout(run, 600);
+</script>
+</body>
+</html>
