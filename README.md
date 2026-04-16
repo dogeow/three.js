@@ -745,6 +745,11 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **generative-art-interactive** — [3534](./3534-generative-art-interactive/index.html)
+- **parametric-form-finding** — [3536](./3536-parametric-form-finding/index.html)
+- **ink-wash-sumi-e** — [3537](./3537-ink-wash-sumi-e/index.html)
+- **softbody-jelly-physics** — [3538](./3538-softbody-jelly-physics/index.html)
+
 - **quantum-hall-edge-states** — [3529](./3529-quantum-hall-edge-states/index.html)
 - **chladni-plate-modes** — [3530](./3530-chladni-plate-modes/index.html)
 - **ferrofluid-surface-spikes** — [3531](./3531-ferrofluid-surface-spikes/index.html)
