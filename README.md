@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **mpemba-effect-heat-transfer** — [4104](./4104-mpemba-effect-heat-transfer/index.html)
+- **undular-bore-solitary-wave** — [4105](./4105-undular-bore-solitary-wave/index.html)
+- **capillary-rise-porous-medium** — [4106](./4106-capillary-rise-porous-medium/index.html)
+- **rotating-cylinder-vortex-street** — [4107](./4107-rotating-cylinder-vortex-street/index.html)
+- **cheerios-effect-capillary-attraction** — [4108](./4108-cheerios-effect-capillary-attraction/index.html)
+- **kelvin-electrostatic-generator** — [4109](./4109-kelvin-electrostatic-generator/index.html)
+
 - **acoustic-levitation-sim** — [4102](./4102-acoustic-levitation-sim/index.html)
 - **soliton-wave-collision** — [4103](./4103-soliton-wave-collision/index.html)
 
