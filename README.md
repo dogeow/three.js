@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **smoke-turbulence-pic-fluid** — [4206](./4206-smoke-turbulence-pic-fluid/index.html)
+- **magnetohydrodynamics-mhd-conductive-fluid** — [4207](./4207-magnetohydrodynamics-mhd-conductive-fluid/index.html)
+- **phonon-crystal-lattice-vibration** — [4208](./4208-phonon-crystal-lattice-vibration/index.html)
+- **soap-film-minimal-surface-plateau** — [4209](./4209-soap-film-minimal-surface-plateau/index.html)
+- **gray-scott-reaction-diffusion** — [4210](./4210-gray-scott-reaction-diffusion/index.html)
+
 - **01** — [4200](./4200-01/index.html)
 - **02** — [4201](./4201-02/index.html)
 - **03** — [4202](./4202-03/index.html)
