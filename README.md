@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **lava-flow-eruption-viscous-fluid** — [4283](./4283-lava-flow-eruption-viscous-fluid/index.html)
+- **drumhead-membrane-chladni-3d** — [4284](./4284-drumhead-membrane-chladni-3d/index.html)
+- **concrete-crack-propagation-fracture** — [4285](./4285-concrete-crack-propagation-fracture/index.html)
+- **soap-bubble-merging-coalescence** — [4286](./4286-soap-bubble-merging-coalescence/index.html)
+- **urban-microclimate-thermal-canyon** — [4287](./4287-urban-microclimate-thermal-canyon/index.html)
+- **plankton-bioluminescence-wave** — [4288](./4288-plankton-bioluminescence-wave/index.html)
+
 - **cpu-architecture-pipeline-visualization** — [4275](./4275-cpu-architecture-pipeline-visualization/index.html)
 - **organic-tumor-growth-sim** — [4276](./4276-organic-tumor-growth-sim/index.html)
 - **crane-tower-construction-sim** — [4277](./4277-crane-tower-construction-sim/index.html)
