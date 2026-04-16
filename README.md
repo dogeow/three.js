@@ -745,6 +745,21 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **turing-pattern-3d** — [4044](./4044-turing-pattern-3d/index.html)
+- **benard-convection-cell** — [4045](./4045-benard-convection-cell/index.html)
+- **rayleigh-taylor-instability** — [4046](./4046-rayleigh-taylor-instability/index.html)
+- **knot-invariant-visualization** — [4048](./4048-knot-invariant-visualization/index.html)
+- **topological-quantum-field-theory** — [4049](./4049-topological-quantum-field-theory/index.html)
+
+- **3d-texture-painting** — [4036](./4036-3d-texture-painting/index.html)
+- **3d-morph-targets** — [4037](./4037-3d-morph-targets/index.html)
+- **3d-water-shader** — [4038](./4038-3d-water-shader/index.html)
+- **3d-particle-physics** — [4039](./4039-3d-particle-physics/index.html)
+- **3d-procedural-city** — [4040](./4040-3d-procedural-city/index.html)
+- **3d-audio-visualizer** — [4041](./4041-3d-audio-visualizer/index.html)
+- **3d-fluid-simulation** — [4042](./4042-3d-fluid-simulation/index.html)
+- **3d-terrain-erosion** — [4043](./4043-3d-terrain-erosion/index.html)
+
 - **hurricane-spiral-baroclinic-ocean-simulation** — [4028](./4028-hurricane-spiral-baroclinic-ocean-simulation/index.html)
 - **finite-element-stress-analysis-3d** — [4029](./4029-finite-element-stress-analysis-3d/index.html)
 - **traffic-flow-lwr-car-following-model** — [4030](./4030-traffic-flow-lwr-car-following-model/index.html)
