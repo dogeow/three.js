@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **acoustic-hologram-3d** — [3926](./3926-acoustic-hologram-3d/index.html)
+- **ferrofluid-magnetic-field** — [3927](./3927-ferrofluid-magnetic-field/index.html)
+- **photovoltaic-solar-panel** — [3928](./3928-photovoltaic-solar-panel/index.html)
+- **quantum-dot-emission** — [3929](./3929-quantum-dot-emission/index.html)
+- **belousov-zhabotinsky-3d** — [3930](./3930-belousov-zhabotinsky-3d/index.html)
+- **phylogenetic-tree-evo** — [3931](./3931-phylogenetic-tree-evo/index.html)
+- **electrostatic-discharge** — [3932](./3932-electrostatic-discharge/index.html)
+- **lidar-pointcloud** — [3933](./3933-lidar-pointcloud/index.html)
+
 - **causal-inference-do-calculus** — [3918](./3918-causal-inference-do-calculus/index.html)
 - **compiler-ast-parser** — [3919](./3919-compiler-ast-parser/index.html)
 - **music-theory-harmony-sphere** — [3920](./3920-music-theory-harmony-sphere/index.html)
