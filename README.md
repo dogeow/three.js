@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **quantum-circuit-visualizer-3d** — [3689](./3689-quantum-circuit-visualizer-3d/index.html)
+- **flag-flutter-fluid-structure-sim** — [3690](./3690-flag-flutter-fluid-structure-sim/index.html)
+- **crystal-precipitation-nucleation-growth** — [3691](./3691-crystal-precipitation-nucleation-growth/index.html)
+- **procedural-terrain-hydraulic-erosion** — [3692](./3692-procedural-terrain-hydraulic-erosion/index.html)
+- **mri-volumetric-medical-rendering** — [3693](./3693-mri-volumetric-medical-rendering/index.html)
+- **swarm-robotics-coordination-sim** — [3694](./3694-swarm-robotics-coordination-sim/index.html)
+- **turing-pattern-3d-reaction-diffusion** — [3695](./3695-turing-pattern-3d-reaction-diffusion/index.html)
+
 - **neuromorphic-spiking-neuron** — [3677](./3677-neuromorphic-spiking-neuron/index.html)
 - **quantum-zeno-effect** — [3678](./3678-quantum-zeno-effect/index.html)
 - **casimir-vacuum-fluctuation** — [3679](./3679-casimir-vacuum-fluctuation/index.html)
