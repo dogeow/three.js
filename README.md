@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **planetary-gearbox-sim** — [3799](./3799-planetary-gearbox-sim/index.html)
+- **infinity-mirror-room** — [3800](./3800-infinity-mirror-room/index.html)
+- **npr-hatching-shader** — [3801](./3801-npr-hatching-shader/index.html)
+- **kessler-syndrome-sim** — [3802](./3802-kessler-syndrome-sim/index.html)
+- **caustic-water-pool-optics** — [3803](./3803-caustic-water-pool-optics/index.html)
+- **subsurface-scattering-gemstone** — [3804](./3804-subsurface-scattering-gemstone/index.html)
+
 - **dijkstra-shortest-path-3d** — [3786](./3786-dijkstra-shortest-path-3d/index.html)
 - **phase-space-attractor** — [3787](./3787-phase-space-attractor/index.html)
 - **syntax-tree-visualizer** — [3788](./3788-syntax-tree-visualizer/index.html)
