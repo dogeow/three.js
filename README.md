@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **climate-simulation** — [4070](./4070-climate-simulation/index.html)
+- **n-body-gravity** — [4071](./4071-n-body-gravity/index.html)
+- **relativistic-visualization** — [4072](./4072-relativistic-visualization/index.html)
+- **neural-network-viz** — [4073](./4073-neural-network-viz/index.html)
+- **traffic-simulation** — [4074](./4074-traffic-simulation/index.html)
+- **economic-market** — [4075](./4075-economic-market/index.html)
+
 - **--list-existing** — [4064](./4064---list-existing/index.html)
 - **autonomous-driving-simulation-3d** — [4065](./4065-autonomous-driving-simulation-3d/index.html)
 - **cnc-toolpath-simulation-3d** — [4066](./4066-cnc-toolpath-simulation-3d/index.html)
