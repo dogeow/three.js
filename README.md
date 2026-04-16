@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **phase-field-dendrite** — [3632](./3632-phase-field-dendrite/index.html)
+- **neural-ode-dynamics** — [3633](./3633-neural-ode-dynamics/index.html)
+- **genetic-algorithm-3d** — [3634](./3634-genetic-algorithm-3d/index.html)
+- **fourier-neural-operator** — [3635](./3635-fourier-neural-operator/index.html)
+- **cfd-solver-pressure** — [3636](./3636-cfd-solver-pressure/index.html)
+
 - **reaction-diffusion-turing-patterns** — [3625](./3625-reaction-diffusion-turing-patterns/index.html)
 - **procedural-city-generation** — [3626](./3626-procedural-city-generation/index.html)
 - **snowflake-vapor-deposition-growth** — [3627](./3627-snowflake-vapor-deposition-growth/index.html)
