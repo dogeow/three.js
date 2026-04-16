@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js 材质示例</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #111; }
+    canvas { display: block; }
+    #info { position: absolute; top: 10px; left: 10px; color: #fff; font-family: Arial; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="info">材质对比：左上 MeshStandardMaterial | 右上 MeshPhongMaterial<br>左下 MeshLambertMaterial | 右下 MeshBasicMaterial</div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+
+    // 场景
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a1a);
+
+    // 相机
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.z = 6;
+
+    // 渲染器
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // 光照
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(5, 5, 5);
+    directionalLight.castShadow = true;
+    scene.add(directionalLight);
+
+    // 创建4个球体，分别使用不同材质
+    const sphereGeometry = new THREE.SphereGeometry(0.8, 32, 32);
+
+    // 1. MeshStandardMaterial - 金属度/粗糙度材质
+    const standardMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4fc3f7,
+      metalness: 0.8,
+      roughness: 0.2
+    });
+    const standardSphere = new THREE.Mesh(sphereGeometry, standardMaterial);
+    standardSphere.position.set(-2.5, 1.5, 0);
+    scene.add(standardSphere);
+
+    // 2. MeshPhongMaterial - 高光材质
+    const phongMaterial = new THREE.MeshPhongMaterial({
+      color: 0xff5722,
+      shininess: 100,
+      specular: 0xffffff
+    });
+    const phongSphere = new THREE.Mesh(sphereGeometry, phongMaterial);
+    phongSphere.position.set(2.5, 1.5, 0);
+    scene.add(phongSphere);
+
+    // 3. MeshLambertMaterial - 漫反射材质
+    const lambertMaterial = new THREE.MeshLambertMaterial({
+      color: 0x8bc34a
+    });
+    const lambertSphere = new THREE.Mesh(sphereGeometry, lambertMaterial);
+    lambertSphere.position.set(-2.5, -1.5, 0);
+    scene.add(lambertSphere);
+
+    // 4. MeshBasicMaterial - 不受光照影响的基础材质
+    const basicMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffeb3b
+    });
+    const basicSphere = new THREE.Mesh(sphereGeometry, basicMaterial);
+    basicSphere.position.set(2.5, -1.5, 0);
+    scene.add(basicSphere);
+
+    // 窗口调整
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 动画
+    function animate() {
+      requestAnimationFrame(animate);
+
+      standardSphere.rotation.y += 0.01;
+      phongSphere.rotation.y += 0.01;
+      lambertSphere.rotation.y += 0.01;
+      basicSphere.rotation.y += 0.01;
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

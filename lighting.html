@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js 光照示例</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #info { position: absolute; top: 10px; left: 10px; color: #fff; font-family: Arial; font-size: 13px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div id="info">
+    光照类型说明：<br>
+    AmbientLight - 环境光（均匀照明）<br>
+    PointLight - 点光源（向四周发射）<br>
+    DirectionalLight - 平行光（太阳光）<br>
+    SpotLight - 聚光灯（锥形光束）
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // 场景
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+
+    // 相机
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(8, 5, 8);
+
+    // 渲染器
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // 轨道控制
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // 通用几何体材质
+    const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+
+    // 1. AmbientLight - 环境光
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+    scene.add(ambientLight);
+
+    const ambientSphere = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x9c27b0 }));
+    ambientSphere.position.set(-3, 2, 0);
+    ambientSphere.name = 'AmbientLight';
+    scene.add(ambientSphere);
+
+    // 2. PointLight - 点光源
+    const pointLight = new THREE.PointLight(0xff9800, 1, 20);
+    pointLight.position.set(0, 3, 0);
+    pointLight.castShadow = true;
+    scene.add(pointLight);
+
+    const pointSphere = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xff9800, emissive: 0xff9800, emissiveIntensity: 0.5 }));
+    pointSphere.position.set(0, 2, 0);
+    scene.add(pointSphere);
+
+    // 3. DirectionalLight - 平行光
+    const directionalLight = new THREE.DirectionalLight(0x4caf50, 1);
+    directionalLight.position.set(5, 5, 5);
+    directionalLight.castShadow = true;
+    scene.add(directionalLight);
+
+    const dirSphere = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x4caf50 }));
+    dirSphere.position.set(3, 2, 0);
+    scene.add(dirSphere);
+
+    // 4. SpotLight - 聚光灯
+    const spotLight = new THREE.SpotLight(0x2196f3, 1);
+    spotLight.position.set(-3, 4, 3);
+    spotLight.angle = Math.PI / 6;
+    spotLight.penumbra = 0.3;
+    spotLight.castShadow = true;
+    scene.add(spotLight);
+
+    const spotSphere = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x2196f3 }));
+    spotSphere.position.set(-3, 2, 0);
+    scene.add(spotSphere);
+
+    // 地板
+    const floorGeometry = new THREE.PlaneGeometry(20, 20);
+    const floorMaterial = new THREE.ShadowMaterial({ opacity: 0.3 });
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -1;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // 窗口调整
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 动画
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

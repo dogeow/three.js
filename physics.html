@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js 物理碰撞/交互示例</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #1a1a2e; }
+    canvas { display: block; }
+    #info { position: absolute; top: 10px; left: 10px; color: #fff; font-family: Arial; font-size: 13px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <strong>Raycaster 交互演示</strong><br>
+    - 鼠标悬停：高亮物体<br>
+    - 点击：弹出物体<br>
+    - 拖拽：旋转相机视角
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // 场景
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+
+    // 相机
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 5, 12);
+
+    // 渲染器
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // 轨道控制
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.maxPolarAngle = Math.PI / 2;
+
+    // 光照
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(5, 10, 5);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    // 地板
+    const floorGeometry = new THREE.PlaneGeometry(20, 20);
+    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2a4a, roughness: 0.8 });
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // 可交互物体数组
+    const interactables = [];
+    const colors = [0xe91e63, 0x4caf50, 0x2196f3, 0xff9800, 0x9c27b0, 0x00bcd4, 0xffeb3b, 0x795548];
+    const geometries = [
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.SphereGeometry(0.6, 32, 32),
+      new THREE.ConeGeometry(0.6, 1.2, 32),
+      new THREE.CylinderGeometry(0.4, 0.4, 1, 32)
+    ];
+
+    // 创建可交互物体
+    for (let i = 0; i < 8; i++) {
+      const geometry = geometries[i % geometries.length];
+      const material = new THREE.MeshStandardMaterial({
+        color: colors[i],
+        roughness: 0.3,
+        metalness: 0.5,
+        emissive: colors[i],
+        emissiveIntensity: 0
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      const col = i % 4;
+      const row = Math.floor(i / 4);
+      mesh.position.set((col - 1.5) * 2.5, 1, (row - 0.5) * 2.5);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData = {
+        originalColor: colors[i],
+        originalY: 1,
+        velocities: { x: 0, y: 0, z: 0 },
+        isPopped: false
+      };
+      scene.add(mesh);
+      interactables.push(mesh);
+    }
+
+    // Raycaster 和鼠标
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let hoveredObject = null;
+
+    // 高亮函数
+    function highlightObject(obj) {
+      if (hoveredObject && hoveredObject !== obj) {
+        hoveredObject.material.emissiveIntensity = 0;
+      }
+      if (obj) {
+        obj.material.emissiveIntensity = 0.3;
+        hoveredObject = obj;
+      }
+    }
+
+    // 鼠标移动
+    window.addEventListener('mousemove', (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    });
+
+    // 点击弹出
+    window.addEventListener('click', (event) => {
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(interactables);
+
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        if (!obj.userData.isPopped) {
+          obj.userData.isPopped = true;
+          obj.userData.velocities.y = 0.3;
+        }
+      }
+    });
+
+    // 物理模拟
+    function updatePhysics() {
+      const gravity = -0.01;
+      const bounce = 0.6;
+
+      interactables.forEach(obj => {
+        if (obj.userData.isPopped) {
+          // 重力
+          obj.userData.velocities.y += gravity;
+
+          // 更新位置
+          obj.position.x += obj.userData.velocities.x;
+          obj.position.y += obj.userData.velocities.y;
+          obj.position.z += obj.userData.velocities.z;
+
+          // 旋转
+          obj.rotation.x += 0.05;
+          obj.rotation.z += 0.03;
+
+          // 地面碰撞
+          if (obj.position.y <= obj.userData.originalY * 0.5) {
+            obj.userData.velocities.y *= -bounce;
+            obj.position.y = obj.userData.originalY * 0.5;
+
+            // 摩擦
+            obj.userData.velocities.x *= 0.9;
+            obj.userData.velocities.z *= 0.9;
+
+            // 停止条件
+            if (Math.abs(obj.userData.velocities.y) < 0.01) {
+              obj.userData.isPopped = false;
+              obj.userData.velocities = { x: 0, y: 0, z: 0 };
+            }
+          }
+        } else {
+          // 悬浮动画
+          obj.position.y = obj.userData.originalY + Math.sin(Date.now() * 0.003 + obj.position.x) * 0.1;
+        }
+      });
+    }
+
+    // 窗口调整
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 动画循环
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Raycaster 检测
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(interactables);
+      highlightObject(intersects.length > 0 ? intersects[0].object : null);
+
+      // 物理更新
+      updatePhysics();
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

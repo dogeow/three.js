@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js 相机示例</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; font-family: Arial; color: #fff; }
+    canvas { display: block; }
+    #info { position: absolute; top: 10px; left: 10px; font-size: 13px; line-height: 1.6; }
+    #controls { position: absolute; bottom: 10px; left: 10px; }
+    button { padding: 8px 16px; margin-right: 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <strong>相机类型对比：</strong><br>
+    PerspectiveCamera - 透视相机（符合人眼视觉，有景深）<br>
+    OrthographicCamera - 正交相机（无透视，远近等大）
+  </div>
+  <div id="controls">
+    <button id="btnPerspective">透视相机</button>
+    <button id="btnOrthographic">正交相机</button>
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    let usePerspective = true;
+    let perspectiveCamera, orthographicCamera, activeCamera;
+    const frustumSize = 6;
+
+    // 场景
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+
+    // 透视相机
+    perspectiveCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    perspectiveCamera.position.set(5, 5, 5);
+
+    // 正交相机
+    const aspect = window.innerWidth / window.innerHeight;
+    orthographicCamera = new THREE.OrthographicCamera(
+      -frustumSize * aspect / 2, frustumSize * aspect / 2,
+      frustumSize / 2, -frustumSize / 2,
+      0.1, 100
+    );
+    orthographicCamera.position.set(5, 5, 5);
+
+    activeCamera = perspectiveCamera;
+
+    // 渲染器
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // 轨道控制
+    const controls = new OrbitControls(activeCamera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // 光照
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(5, 5, 5);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    // 创建多个几何体展示透视差异
+    const geometries = [
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.SphereGeometry(0.5, 32, 32),
+      new THREE.ConeGeometry(0.5, 1, 32),
+      new THREE.CylinderGeometry(0.3, 0.3, 1, 32),
+      new THREE.TorusGeometry(0.4, 0.15, 16, 100)
+    ];
+    const colors = [0xe91e63, 0x4caf50, 0x2196f3, 0xff9800, 0x9c27b0];
+
+    const meshes = [];
+    geometries.forEach((geo, i) => {
+      const material = new THREE.MeshStandardMaterial({ color: colors[i], roughness: 0.3 });
+      const mesh = new THREE.Mesh(geo, material);
+      mesh.position.set((i - 2) * 1.5, 0, 0);
+      mesh.castShadow = true;
+      scene.add(mesh);
+      meshes.push(mesh);
+    });
+
+    // 按钮事件
+    document.getElementById('btnPerspective').addEventListener('click', () => {
+      usePerspective = true;
+      activeCamera = perspectiveCamera;
+      controls.object = activeCamera;
+      activeCamera.aspect = window.innerWidth / window.innerHeight;
+      activeCamera.updateProjectionMatrix();
+    });
+
+    document.getElementById('btnOrthographic').addEventListener('click', () => {
+      usePerspective = false;
+      activeCamera = orthographicCamera;
+      controls.object = activeCamera;
+      updateOrthographicCamera();
+    });
+
+    function updateOrthographicCamera() {
+      const aspect = window.innerWidth / window.innerHeight;
+      orthographicCamera.left = -frustumSize * aspect / 2;
+      orthographicCamera.right = frustumSize * aspect / 2;
+      orthographicCamera.top = frustumSize / 2;
+      orthographicCamera.bottom = -frustumSize / 2;
+      orthographicCamera.updateProjectionMatrix();
+    }
+
+    window.addEventListener('resize', () => {
+      perspectiveCamera.aspect = window.innerWidth / window.innerHeight;
+      perspectiveCamera.updateProjectionMatrix();
+      updateOrthographicCamera();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      meshes.forEach((m, i) => {
+        m.rotation.y += 0.01 * (i + 1);
+        m.rotation.x += 0.005 * (i + 1);
+      });
+      controls.update();
+      renderer.render(scene, activeCamera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

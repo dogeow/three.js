@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js 动画示例</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #0a0a0a; }
+    canvas { display: block; }
+    #info { position: absolute; top: 10px; left: 10px; color: #fff; font-family: Arial; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="info">TWEEN.js 缓动动画演示 - 点击画布随机弹射物体</div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "tween.js": "https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@23.1.1/dist/tween.esm.js"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import * as TWEEN from 'tween.js';
+
+    // 场景
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0a);
+
+    // 相机
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2, 8);
+
+    // 渲染器
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+
+    // 光照
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(5, 10, 5);
+    scene.add(dirLight);
+
+    // 创建动画物体组
+    const group = new THREE.Group();
+    scene.add(group);
+
+    const colors = [0xe91e63, 0x4caf50, 0x2196f3, 0xff9800, 0x9c27b0, 0x00bcd4];
+
+    // 创建多个动画物体
+    const objects = [];
+    for (let i = 0; i < 6; i++) {
+      const geometry = i % 2 === 0
+        ? new THREE.BoxGeometry(0.8, 0.8, 0.8)
+        : new THREE.SphereGeometry(0.5, 32, 32);
+
+      const material = new THREE.MeshStandardMaterial({
+        color: colors[i],
+        roughness: 0.3,
+        metalness: 0.5
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set((i - 2.5) * 1.5, 0, 0);
+      mesh.userData = {
+        originalY: 0,
+        targetY: 0,
+        originalScale: 1,
+        targetScale: 1
+      };
+      group.add(mesh);
+      objects.push(mesh);
+    }
+
+    // 初始化动画：所有物体从小到大弹入
+    objects.forEach((obj, i) => {
+      obj.scale.set(0, 0, 0);
+      new TWEEN.Tween(obj.scale)
+        .to({ x: 1, y: 1, z: 1 }, 600)
+        .easing(TWEEN.Easing.Back.Out)
+        .delay(i * 100)
+        .start();
+    });
+
+    // 点击画布随机弹射
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    window.addEventListener('click', (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(group.children);
+
+      if (intersects.length > 0) {
+        const mesh = intersects[0].object;
+
+        // 弹跳动画
+        new TWEEN.Tween(mesh.position)
+          .to({ y: mesh.position.y + 2 }, 400)
+          .easing(TWEEN.Easing.Quadratic.Out)
+          .chain(
+            new TWEEN.Tween(mesh.position)
+              .to({ y: 0 }, 600)
+              .easing(TWEEN.Easing.Bounce.Out)
+          )
+          .start();
+
+        // 旋转动画
+        new TWEEN.Tween(mesh.rotation)
+          .to({ y: mesh.rotation.y + Math.PI * 2 }, 800)
+          .easing(TWEEN.Easing.Quadratic.Out)
+          .start();
+
+        // 缩放动画
+        new TWEEN.Tween(mesh.scale)
+          .to({ x: 1.3, y: 1.3, z: 1.3 }, 200)
+          .easing(TWEEN.Easing.Quadratic.Out)
+          .chain(
+            new TWEEN.Tween(mesh.scale)
+              .to({ x: 1, y: 1, z: 1 }, 400)
+              .easing(TWEEN.Easing.Elastic.Out)
+          )
+          .start();
+      }
+    });
+
+    // 窗口调整
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 持续浮动动画
+    function floatObjects(time) {
+      objects.forEach((obj, i) => {
+        if (!TWEEN.isActive()) {
+          obj.position.y = Math.sin(time * 0.001 + i) * 0.3;
+        }
+      });
+    }
+
+    // 动画循环
+    function animate(time) {
+      requestAnimationFrame(animate);
+      TWEEN.update(time);
+      floatObjects(time);
+      group.rotation.y += 0.002;
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
