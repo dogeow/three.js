@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3713. Particle In Cell Plasma</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#000112;font-family:Segoe UI,sans-serif}
+canvas{display:block}
+#ui{position:fixed;top:14px;left:14px;z-index:10;color:#88aaff;font-size:12px;background:rgba(0,0,0,0.6);padding:10px 14px;border-radius:8px;border:1px solid rgba(100,100,255,0.2)}
+#ui strong{color:#aaccff}
+#ui span{color:#ff6644}
+</style>
+</head>
+<body>
+<div id="ui">
+  <strong>⚡ Particle-In-Cell Plasma</strong><br>
+  Red = electrons &nbsp;|&nbsp; Blue = ions<br>
+  <span>E-field:</span> <input type="range" id="efield" min="0" max="5" step="0.1" value="1" style="width:100px">
+  <span id="ef-val">1.0</span><br>
+  <span>B-field:</span> <input type="range" id="bfield" min="0" max="5" step="0.1" value="1" style="width:100px">
+  <span id="bf-val">1.0</span><br>
+  Space = inject particles | R = reset
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
