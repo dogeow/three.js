@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **反应扩散系统** — [3856](./3856-反应扩散系统/index.html)
+- **双摆混沌吸引子** — [3857](./3857-双摆混沌吸引子/index.html)
+- **逆运动学机械臂** — [3858](./3858-逆运动学机械臂/index.html)
+- **洛伦兹吸引子** — [3859](./3859-洛伦兹吸引子/index.html)
+- **波干涉图样** — [3860](./3860-波干涉图样/index.html)
+
 - **pinhole-camera-obscura** — [3850](./3850-pinhole-camera-obscura/index.html)
 - **spirograph-art-generator** — [3851](./3851-spirograph-art-generator/index.html)
 - **chladni-3d-plate-vibration** — [3852](./3852-chladni-3d-plate-vibration/index.html)
