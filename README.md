@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **3d-wave-interference** — [3508](./3508-3d-wave-interference/index.html)
+- **3d-agent-simulation** — [3510](./3510-3d-agent-simulation/index.html)
+- **3d-fractal-terrain** — [3511](./3511-3d-fractal-terrain/index.html)
+- **3d-molecular-dynamics** — [3512](./3512-3d-molecular-dynamics/index.html)
+- **3d-smoke-fluid** — [3513](./3513-3d-smoke-fluid/index.html)
+- **3d-neural-network** — [3514](./3514-3d-neural-network/index.html)
+
 - **ct-slice-reconstruction** — [3501](./3501-ct-slice-reconstruction/index.html)
 - **fourier-optics-lens** — [3502](./3502-fourier-optics-lens/index.html)
 - **optimal-transport-wasserstein** — [3503](./3503-optimal-transport-wasserstein/index.html)
