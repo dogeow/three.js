@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **stellar-nucleosynthesis** — [3571](./3571-stellar-nucleosynthesis/index.html)
+- **holographic-interferometry-sim** — [3572](./3572-holographic-interferometry-sim/index.html)
+- **dripping-faucet-chaos** — [3573](./3573-dripping-faucet-chaos/index.html)
+- **acoustic-levitation-standing-wave** — [3574](./3574-acoustic-levitation-standing-wave/index.html)
+- **gyroscopic-precession** — [3575](./3575-gyroscopic-precession/index.html)
+- **quasicrystal-growth-simulation** — [3576](./3576-quasicrystal-growth-simulation/index.html)
+- **origami-rigid-fold-physics** — [3577](./3577-origami-rigid-fold-physics/index.html)
+
 - **l-system-plant-growth** — [3565](./3565-l-system-plant-growth/index.html)
 - **raymarched-sdf-fractal-art** — [3566](./3566-raymarched-sdf-fractal-art/index.html)
 - **ambient-occlusion-comparison** — [3567](./3567-ambient-occlusion-comparison/index.html)
