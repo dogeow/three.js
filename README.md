@@ -6,7 +6,9 @@
 
 ### 核心基础示例
 - [x] 立方体示例 (cube.html) - 完成
+✅ [立方体] 已完成 - cube.html
 - [x] 球体示例 (sphere.html) - 完成
+  ✅ [球体] 已完成 - sphere.html
 - [x] 材质示例 (materials.html) - 完成
 - [x] 光照示例 (lighting.html) - 完成
 - [x] 相机示例 (cameras.html) - 完成
