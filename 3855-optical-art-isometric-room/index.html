@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Optical Art Isometric Room</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#000;font-family:monospace}
+canvas{display:block}
+#panel{position:fixed;top:14px;left:14px;color:#eee;font-size:12px;background:rgba(0,0,0,0.85);padding:12px 16px;border-radius:6px;line-height:2;border:1px solid rgba(255,255,255,0.08)}
+#hint{position:fixed;bottom:14px;left:14px;color:rgba(255,255,255,0.4);font-size:12px}
+</style>
+</head>
+<body>
+<div id="panel">
+  <b style="color:#fff">Optical Art Isometric Room</b><br>
+  Pattern: <select id="patSel" style="background:#222;color:#fff;border:none;cursor:pointer">
+    <option value="checker">Checker Illusion</option>
+    <option value="cafe">Café Wall</option>
+    <option value="herbst">Herbst Goblet</option>
+    <option value="munker">Munker Illusion</option>
+  </select><br>
+  <button id="rotateBtn" style="padding:3px 10px;cursor:pointer">Toggle Rotation</button>
+  <label style="margin-left:10px"><input type="checkbox" id="bloom" checked> Bloom</label>
+  <br><button id="randomBtn" style="margin-top:4px;padding:3px 10px;cursor:pointer">Random Pattern</button>
+</div>
+<div id="hint">Optical art illusions in 3D — Ames room, impossible geometry, impossible truchet</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080808);
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 300);
+camera.position.set(12, 10, 18);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+const sun = new THREE.DirectionalLight(0xfff8f0, 2);
+sun.position.set(10, 20, 10);
+sun.castShadow = true;
+scene.add(sun);
+const fill = new THREE.PointLight(0x4466ff, 0.5, 50);
+fill.position.set(-15, 8, -10);
+scene.add(fill);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.8, 0.4, 0.7);
+composer.addPass(bloom);
+
+// ---- Ames Room ----
+// An Ames room has one corner much further away than it appears
+// For isometric view, we simulate it with trapezoidal walls
+// People at corners appear same size but are at different distances
+
+function createAmesRoom() {
+  const group = new THREE.Group();
+  
+  // Floor
+  const floorGeo = new THREE.PlaneGeometry(14, 10);
+  const floorCanvas = document.createElement('canvas');
+  floorCanvas.width = 256; floorCanvas.height = 256;
+  const fctx = floorCanvas.getContext('2d');
+  fctx.fillStyle = '#888';
+  fctx.fillRect(0, 0, 256, 256);
+  for (let x = 0; x < 256; x += 32) {
+    fctx.fillStyle = x / 32 % 2 === 0 ? '#777' : '#999';
+    fctx.fillRect(x, 0, 32, 256);
+  }
+  const floorTex = new THREE.CanvasTexture(floorCanvas);
+  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.8 });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  group.add(floor);
+  
+  // Back wall (trapezoid for Ames effect) — use a PlaneGeometry for simplicity
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x998877, roughness: 0.9, side: THREE.DoubleSide });
+  const backWall = new THREE.Mesh(new THREE.PlaneGeometry(14, 8), wallMat);
+  backWall.position.set(0, 4, -5);
+  backWall.receiveShadow = true;
+  group.add(backWall);
+  
+  // Side walls (trapezoidal illusion - rendered as simple planes with painting)
+  const wallCanvas = document.createElement('canvas');
+  wallCanvas.width = 256; wallCanvas.height = 256;
+  const wctx = wallCanvas.getContext('2d');
+  
+  // Paint café wall illusion on side wall
+  const lineW = 16;
+  for (let y = 0; y < 256; y += lineW * 2) {
+    wctx.fillStyle = '#d0d0d0';
+    wctx.fillRect(0, y, 256, lineW);
+    wctx.fillStyle = '#404040';
+    wctx.fillRect(0, y + lineW, 256, lineW);
+  }
+  // Mortar lines
+  wctx.strokeStyle = '#222';
+  wctx.lineWidth = 2;
+  for (let y = 0; y < 256; y += lineW) {
+    wctx.beginPath();
+    wctx.moveTo(0, y);
+    wctx.lineTo(256, y);
+    wctx.stroke();
+  }
+  
+  const wallTex = new THREE.CanvasTexture(wallCanvas);
+  const wallSideMat = new THREE.MeshStandardMaterial({ map: wallTex, side: THREE.DoubleSide });
+  
+  const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(10, 8), wallSideMat);
+  leftWall.position.set(-7, 4, 0);
+  leftWall.rotation.y = Math.PI / 2;
+  leftWall.receiveShadow = true;
+  group.add(leftWall);
+  
+  const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(10, 8), wallSideMat.clone());
+  rightWall.position.set(7, 4, 0);
+  rightWall.rotation.y = -Math.PI / 2;
+  rightWall.receiveShadow = true;
+  group.add(rightWall);
+  
+  // Two people of identical size but different positions
+  const personGeo = new THREE.CylinderGeometry(0.4, 0.4, 3.5, 12);
+  const personMat = new THREE.MeshStandardMaterial({ color: 0xff3344, roughness: 0.5 });
+  
+  const person1 = new THREE.Mesh(personGeo, personMat);
+  person1.position.set(-3.5, 1.75, -4);
+  person1.castShadow = true;
+  group.add(person1);
+  
+  // Second person - closer (appears larger due to perspective but is same size)
+  const person2 = new THREE.Mesh(personGeo, personMat.clone());
+  person2.material.color.setHex(0x33ff66);
+  person2.position.set(3.5, 1.75, -2.5);  // closer but same height
+  person2.scale.setScalar(1);  // identical size
+  person2.castShadow = true;
+  group.add(person2);
+  
+  // Height markers
+  const markerGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+  const markerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  [-3.5, 3.5].forEach((x, i) => {
+    const marker = new THREE.Mesh(markerGeo, markerMat);
+    marker.position.set(x, 3.6, i === 0 ? -4 : -2.5);
+    group.add(marker);
+  });
+  
+  return group;
+}
+
+// ---- Impossible Truchet Corridor ----
+function createTruchetCorridor() {
+  const group = new THREE.Group();
+  const tileSize = 2;
+  const tiles = 4;
+  
+  const tileCanvas = document.createElement('canvas');
+  tileCanvas.width = 128; tileCanvas.height = 128;
+  
+  function drawTile(ctx, pattern) {
+    ctx.fillStyle = pattern % 2 === 0 ? '#f0f0f0' : '#1a1a1a';
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.strokeStyle = pattern % 2 === 0 ? '#111' : '#eee';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.arc(0, 0, 60, 0, Math.PI / 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(128, 128, 60, Math.PI, Math.PI * 1.5);
+    ctx.stroke();
+    if (pattern < 2) {
+      ctx.beginPath();
+      ctx.arc(128, 0, 60, Math.PI * 0.5, Math.PI);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 128, 60, -Math.PI * 0.5, 0);
+      ctx.stroke();
+    }
+  }
+  
+  // Floor
+  const floorGeo = new THREE.PlaneGeometry(tiles * tileSize, tiles * tileSize, tiles, tiles);
+  const floorCanvas = document.createElement('canvas');
+  floorCanvas.width = 256; floorCanvas.height = 256;
+  const fctx = floorCanvas.getContext('2d');
+  for (let i = 0; i < tiles; i++) {
+    for (let j = 0; j < tiles; j++) {
+      const pattern = (i + j) % 4;
+      drawTile(fctx, pattern);
+      fctx.save();
+      fctx.translate(i * 128, j * 128);
+      fctx.restore();
+    }
+  }
+  const floorTex = new THREE.CanvasTexture(floorCanvas);
+  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.3, metalness: 0.5 });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, 0, 0);
+  floor.receiveShadow = true;
+  group.add(floor);
+  
+  // Corridor walls (impossible - with visual paradox)
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x888899, roughness: 0.7 });
+  
+  // Left wall
+  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 6, tiles * tileSize), wallMat);
+  leftWall.position.set(-tiles * tileSize / 2, 3, 0);
+  group.add(leftWall);
+  
+  // Right wall  
+  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 6, tiles * tileSize), wallMat);
+  rightWall.position.set(tiles * tileSize / 2, 3, 0);
+  group.add(rightWall);
+  
+  // Ceiling
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(tiles * tileSize, 0.2, tiles * tileSize), wallMat);
+  ceiling.position.set(0, 6, 0);
+  group.add(ceiling);
+  
+  // Back wall (with portal)
+  const portalGeo = new THREE.TorusGeometry(1.5, 0.2, 16, 32);
+  const portalMat = new THREE.MeshStandardMaterial({ color: 0x3344ff, emissive: 0x1122aa, emissiveIntensity: 2, metalness: 0.9, roughness: 0.1 });
+  const portal = new THREE.Mesh(portalGeo, portalMat);
+  portal.position.set(0, 3, -tiles * tileSize / 2 + 0.1);
+  portal.rotation.x = Math.PI / 2;
+  group.add(portal);
+  
+  // Impossibly connected L-beams (Penrose-style)
+  const beamMat = new THREE.MeshStandardMaterial({ color: 0xcc4444, roughness: 0.5, metalness: 0.3 });
+  const beamGeo = new THREE.BoxGeometry(0.3, 0.3, 3);
+  
+  // Impossible beam 1
+  const beam1 = new THREE.Mesh(beamGeo, beamMat);
+  beam1.position.set(-2, 5.5, -1);
+  beam1.rotation.z = 0.3;
+  group.add(beam1);
+  
+  const beam2 = new THREE.Mesh(beamGeo, beamMat);
+  beam2.position.set(0, 4.5, 1);
+  beam2.rotation.z = -0.2;
+  group.add(beam2);
+  
+  const beam3 = new THREE.Mesh(beamGeo, beamMat);
+  beam3.position.set(2, 3.5, -1);
+  beam3.rotation.z = 0.1;
+  group.add(beam3);
+  
+  return group;
+}
+
+// ---- Munker Illusion: 3D colored cylinders ----
+function createMunkerIllusion() {
+  const group = new THREE.Group();
+  
+  const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+  const cylGeo = new THREE.CylinderGeometry(0.4, 0.4, 4, 16);
+  
+  for (let i = 0; i < 12; i++) {
+    const mat = new THREE.MeshStandardMaterial({ color: colors[i % colors.length], roughness: 0.4, metalness: 0.6 });
+    const cyl = new THREE.Mesh(cylGeo, mat);
+    const x = (i % 4 - 1.5) * 2.5;
+    const z = (Math.floor(i / 4) - 1) * 3;
+    cyl.position.set(x, 2, z);
+    cyl.castShadow = true;
+    group.add(cyl);
+  }
+  
+  // Base ring with illusion pattern
+  const ringGeo = new THREE.RingGeometry(1, 6, 64);
+  const ringCanvas = document.createElement('canvas');
+  ringCanvas.width = 256; ringCanvas.height = 256;
+  const rctx = ringCanvas.getContext('2d');
+  const pat = rctx.createPattern(createIllusionPattern(), 'repeat');
+  rctx.fillStyle = pat;
+  rctx.fillRect(0, 0, 256, 256);
+  const ringTex = new THREE.CanvasTexture(ringCanvas);
+  const ringMat = new THREE.MeshBasicMaterial({ map: ringTex, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.01;
+  group.add(ring);
+  
+  return group;
+}
+
+function createIllusionPattern() {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, 64, 8);
+  ctx.fillRect(0, 24, 64, 8);
+  ctx.fillRect(0, 48, 64, 8);
+  return c;
+}
+
+// ---- Scene switching ----
+let currentScene = 'ames';
+let sceneGroup = createAmesRoom();
+scene.add(sceneGroup);
+
+function switchScene(name) {
+  scene.remove(sceneGroup);
+  sceneGroup = null;
+  currentScene = name;
+  if (name === 'ames') sceneGroup = createAmesRoom();
+  else if (name === 'truchet') sceneGroup = createTruchetCorridor();
+  else if (name === 'munker') sceneGroup = createMunkerIllusion();
+  scene.add(sceneGroup);
+}
+
+document.getElementById('patSel').onchange = e => switchScene(e.target.value);
+document.getElementById('randomBtn').onclick = () => {
+  const scenes = ['ames', 'truchet', 'munker'];
+  switchScene(scenes[Math.floor(Math.random() * scenes.length)]);
+  document.getElementById('patSel').value = currentScene;
+};
+
+let rotating = true;
+document.getElementById('rotateBtn').onclick = () => rotating = !rotating;
+document.getElementById('bloom').onchange = e => bloom.enabled = e.target.checked;
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    rotating = !rotating;
+  }
+  if (e.code === 'ArrowRight') {
+    const scenes = ['ames', 'truchet', 'munker'];
+    const idx = (scenes.indexOf(currentScene) + 1) % scenes.length;
+    switchScene(scenes[idx]);
+    document.getElementById('patSel').value = currentScene;
+  }
+});
+
+let t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.016;
+  if (rotating) {
+    sceneGroup.rotation.y = t * 0.15;
+  }
+  controls.update();
+  composer.render();
+}
+animate();
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

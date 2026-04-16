@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Diffraction Grating 3D Spectrum</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#020408;font-family:monospace}
+canvas{display:block}
+#panel{position:fixed;top:14px;left:14px;color:#eee;font-size:12px;background:rgba(0,0,0,0.85);padding:12px 16px;border-radius:6px;line-height:2;border:1px solid rgba(255,255,255,0.08);min-width:220px}
+#hint{position:fixed;bottom:14px;left:14px;color:rgba(255,255,255,0.4);font-size:12px}
+</style>
+</head>
+<body>
+<div id="panel">
+  <b style="color:#fff">Diffraction Grating Spectrum</b><br>
+  Lines/mm: <span id="lmm">600</span><br>
+  <input id="sL" type="range" min="100" max="2400" step="50" value="600" style="width:140px">
+  <br>Angle: <span id="ang">0</span>°<br>
+  <input id="sA" type="range" min="-60" max="60" step="1" value="0" style="width:140px">
+  <br><button id="whiteBtn" style="padding:3px 10px;cursor:pointer">White Light</button>
+  <button id="laserBtn" style="padding:3px 10px;cursor:pointer">Laser</button>
+  <br><label><input type="checkbox" id="orders" checked> Diffraction Orders</label>
+</div>
+<div id="hint">Diffraction grating spectroscopy — disperse light into spectrum | 3D visualization of orders</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020408);
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 500);
+camera.position.set(0, 5, 22);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.0, 0.4, 0.7));
+
+// Grid floor
+scene.add(new THREE.GridHelper(40, 40, 0x0a1525, 0x050a12));
+
+// ---- Grating surface ----
+// Slit spacing d = 1e6/lines_per_mm microns
+let linesPerMM = 600;
+let incidentAngle = 0; // degrees
+const GRATING_WIDTH = 10, GRATING_HEIGHT = 8;
+const GRATING_SEGS = 200;
+
+const gratingGeo = new THREE.PlaneGeometry(GRATING_WIDTH, GRATING_HEIGHT, GRATING_SEGS, GRATING_SEGS);
+const gratingCanvas = document.createElement('canvas');
+gratingCanvas.width = 512; gratingCanvas.height = 512;
+const gctx = gratingCanvas.getContext('2d');
+const gratingTex = new THREE.CanvasTexture(gratingCanvas);
+
+function drawGratingPattern() {
+  const ctx = gctx;
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, 512, 512);
+  const spacing = Math.round(512 / (linesPerMM / 50)); // visual scale
+  ctx.strokeStyle = '#aaa';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < 512; x += Math.max(1, spacing)) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 512);
+    ctx.stroke();
+  }
+  gratingTex.needsUpdate = true;
+}
+
+drawGratingPattern();
+const gratingMat = new THREE.MeshStandardMaterial({
+  map: gratingTex,
+  metalness: 0.9,
+  roughness: 0.15,
+  emissive: 0x111122,
+  side: THREE.DoubleSide,
+});
+const gratingMesh = new THREE.Mesh(gratingGeo, gratingMat);
+gratingMesh.rotation.x = -Math.PI * 0.1;
+gratingMesh.position.set(0, 2, 0);
+scene.add(gratingMesh);
+
+// ---- Light source ----
+const sourceGroup = new THREE.Group();
+
+// White light source (point)
+const sourceGeo = new THREE.SphereGeometry(0.3, 24, 24);
+const sourceMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const sourceMesh = new THREE.Mesh(sourceGeo, sourceMat);
+sourceMesh.position.set(0, 2, 10);
+sourceGroup.add(sourceMesh);
+
+// Source glow
+const glowGeo = new THREE.SphereGeometry(0.6, 16, 16);
+const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15 });
+const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+sourceMesh.add(glowMesh);
+
+scene.add(sourceGroup);
+
+// ---- Diffraction orders visualization ----
+// Wavelengths in nm
+const WAVELENGTHS = [400, 450, 500, 550, 600, 650, 700];
+const COLORS = ['#8000ff', '#0044ff', '#00aaff', '#00ff88', '#aaff00', '#ff8800', '#ff0044'];
+
+// m-th order angle: d*sin(theta_m) = m*lambda
+// For normal incidence: sin(theta_m) = m*lambda/d
+// d = 1e6/linesPerMM microns = 1e-3/linesPerMM mm
+function getAngle(order, wavelength_nm) {
+  const d_um = 1e6 / linesPerMM; // micron
+  const lambda_um = wavelength_nm / 1000;
+  const sinT = (order * lambda_um) / d_um;
+  if (Math.abs(sinT) > 1) return null;
+  return Math.asin(sinT);
+}
+
+// Create spectrum lines
+const orderGroups = {};
+const ORDER_COUNT = 4;
+
+function createSpectrumOrders() {
+  // Remove old orders
+  Object.values(orderGroups).forEach(g => scene.remove(g));
+  
+  const gratingZ = gratingMesh.position.z;
+  const gratingY = gratingMesh.position.y;
+  const gratingNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(gratingMesh.quaternion);
+  
+  for (let m = -ORDER_COUNT; m <= ORDER_COUNT; m++) {
+    if (m === 0) continue;
+    const group = new THREE.Group();
+    orderGroups[m] = group;
+    
+    WAVELENGTHS.forEach((wl, wi) => {
+      const angle = getAngle(m, wl);
+      if (angle === null) return;
+      
+      const thetaDeg = angle * 180 / Math.PI + incidentAngle;
+      const thetaRad = thetaDeg * Math.PI / 180;
+      
+      // Direction of diffracted ray
+      const dx = Math.sin(thetaRad);
+      const dz = -Math.cos(thetaRad);
+      const dy = 0;
+      
+      // Ray line
+      const rayLen = 20;
+      const points = [
+        new THREE.Vector3(0, gratingY, gratingZ),
+        new THREE.Vector3(dx * rayLen, gratingY + dy * rayLen, gratingZ + dz * rayLen),
+      ];
+      const rayGeo = new THREE.BufferGeometry().setFromPoints(points);
+      const rayMat = new THREE.LineBasicMaterial({ color: COLORS[wi], transparent: true, opacity: 0.7 });
+      const ray = new THREE.Line(rayGeo, rayMat);
+      scene.add(ray);
+      group.add(ray);
+      
+      // Spectrum dot at screen
+      const screenDist = 15;
+      const screenX = dx * screenDist;
+      const screenZ = gratingZ + dz * screenDist;
+      const dotGeo = new THREE.SphereGeometry(0.08, 8, 8);
+      const dotMat = new THREE.MeshBasicMaterial({ color: COLORS[wi] });
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.position.set(screenX, gratingY, screenZ);
+      scene.add(dot);
+      group.add(dot);
+    });
+    
+    // Order label
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 128; labelCanvas.height = 64;
+    const lctx = labelCanvas.getContext('2d');
+    lctx.clearRect(0, 0, 128, 64);
+    lctx.font = 'bold 32px Courier New';
+    lctx.fillStyle = m > 0 ? '#ff8800' : '#00aaff';
+    lctx.textAlign = 'center';
+    lctx.fillText(`m=${m > 0 ? '+' : ''}${m}`, 64, 40);
+    const labelTex = new THREE.CanvasTexture(labelCanvas);
+    const labelGeo = new THREE.PlaneGeometry(2, 1);
+    const labelMat = new THREE.MeshBasicMaterial({ map: labelTex, transparent: true });
+    const labelMesh = new THREE.Mesh(labelGeo, labelMat);
+    const avgAngle = getAngle(m, 550);
+    if (avgAngle !== null) {
+      const avgRad = (avgAngle + incidentAngle * Math.PI / 180);
+      labelMesh.position.set(Math.sin(avgRad) * 8, gratingY + 2.5, gratingZ - Math.cos(avgRad) * 8);
+      labelMesh.lookAt(0, gratingY, gratingZ);
+    }
+    scene.add(labelMesh);
+    group.add(labelMesh);
+  }
+  
+  // Incident beam (m=0)
+  {
+    const points = [
+      new THREE.Vector3(0, 2, 10),
+      new THREE.Vector3(0, gratingY, gratingZ - GRATING_WIDTH * 0.1),
+    ];
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+    scene.add(new THREE.Line(geo, mat));
+  }
+}
+
+// Dispersion screen (white plane)
+const screenGeo = new THREE.PlaneGeometry(18, 6);
+const screenCanvas = document.createElement('canvas');
+screenCanvas.width = 512; screenCanvas.height = 128;
+const sctx = screenCanvas.getContext('2d');
+const screenTex = new THREE.CanvasTexture(screenCanvas);
+const screenMat = new THREE.MeshBasicMaterial({ map: screenTex });
+const screenMesh = new THREE.Mesh(screenGeo, screenMat);
+screenMesh.position.set(0, 2, -7);
+scene.add(screenMesh);
+
+function updateScreen() {
+  sctx.fillStyle = '#050505';
+  sctx.fillRect(0, 0, 512, 128);
+  
+  WAVELENGTHS.forEach((wl, wi) => {
+    const xFrac = (wl - 400) / 300;
+    for (let m = 1; m <= ORDER_COUNT; m++) {
+      const angle = getAngle(m, wl);
+      if (!angle) continue;
+      const screenX = ((angle * 180 / Math.PI + incidentAngle + 60) / 120) * 512;
+      const col = COLORS[wi];
+      sctx.fillStyle = col;
+      const intensity = 1 - Math.abs(m - 1) * 0.2;
+      sctx.globalAlpha = intensity;
+      sctx.fillRect(Math.max(0, screenX - 2), 0, 4, 128);
+    }
+    for (let m = -1; m >= -ORDER_COUNT; m--) {
+      const angle = getAngle(m, wl);
+      if (!angle) continue;
+      const screenX = ((angle * 180 / Math.PI + incidentAngle + 60) / 120) * 512;
+      const col = COLORS[wi];
+      sctx.fillStyle = col;
+      const intensity = 1 - Math.abs(m + 1) * 0.2;
+      sctx.globalAlpha = intensity;
+      sctx.fillRect(Math.max(0, screenX - 2), 0, 4, 128);
+    }
+  });
+  sctx.globalAlpha = 1;
+  screenTex.needsUpdate = true;
+}
+
+// Laser mode: single wavelength
+let isLaser = false;
+let laserWL = 632.8; // HeNe red
+
+function setWhiteLight() {
+  isLaser = false;
+  sourceMat.color.setHex(0xffffff);
+  glowMat.color.setHex(0xffffff);
+  sourceMesh.scale.setScalar(1);
+  createSpectrumOrders();
+  updateScreen();
+}
+
+function setLaser() {
+  isLaser = true;
+  sourceMat.color.setHex(0xff0000);
+  glowMat.color.setHex(0xff0000);
+  sourceMesh.scale.setScalar(2);
+  createSpectrumOrders();
+  updateScreen();
+}
+
+document.getElementById('whiteBtn').onclick = setWhiteLight;
+document.getElementById('laserBtn').onclick = setLaser;
+document.getElementById('orders').onchange = e => {
+  const show = e.target.checked;
+  Object.entries(orderGroups).forEach(([m, g]) => {
+    g.visible = show;
+  });
+};
+
+const sL = document.getElementById('sL');
+const sA = document.getElementById('sA');
+sL.oninput = () => {
+  linesPerMM = parseInt(sL.value);
+  document.getElementById('lmm').textContent = linesPerMM;
+  drawGratingPattern();
+  createSpectrumOrders();
+  updateScreen();
+};
+sA.oninput = () => {
+  incidentAngle = parseInt(sA.value);
+  document.getElementById('ang').textContent = incidentAngle;
+  createSpectrumOrders();
+  updateScreen();
+};
+
+scene.add(new THREE.AmbientLight(0x223344, 2));
+const dL = new THREE.DirectionalLight(0xffffff, 1.5);
+dL.position.set(5, 10, 15);
+scene.add(dL);
+
+// Info display
+const infoDiv = document.createElement('div');
+infoDiv.style.cssText = 'position:fixed;top:14px;right:14px;color:#8cf;font-size:12px;background:rgba(0,0,0,0.8);padding:10px 14px;border-radius:6px;border:1px solid rgba(100,200,255,0.2);line-height:1.8';
+document.body.appendChild(infoDiv);
+
+function updateInfo() {
+  const d_um = 1e6 / linesPerMM;
+  const maxWL_um = d_um;
+  const maxOrder = Math.floor(d_um * 1000);
+  infoDiv.innerHTML = `d = ${d_um.toFixed(2)} μm<br>Max λ = ${maxWL_um.toFixed(2)} μm<br>Resolution R = ${linesPerMM * 10}|m|`;
+}
+
+updateInfo();
+sL.oninput = updateInfo;
+
+createSpectrumOrders();
+updateScreen();
+
+let t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.016;
+  if (isLaser) {
+    // Laser flickers
+    sourceMesh.scale.setScalar(2 + Math.sin(t * 30) * 0.1);
+  }
+  controls.update();
+  composer.render();
+}
+animate();
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

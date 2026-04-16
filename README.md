@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **pinhole-camera-obscura** — [3850](./3850-pinhole-camera-obscura/index.html)
+- **spirograph-art-generator** — [3851](./3851-spirograph-art-generator/index.html)
+- **chladni-3d-plate-vibration** — [3852](./3852-chladni-3d-plate-vibration/index.html)
+- **diffraction-grating-3d-spectrum** — [3853](./3853-diffraction-grating-3d-spectrum/index.html)
+- **optical-art-isometric-room** — [3855](./3855-optical-art-isometric-room/index.html)
+
 - **fluid-structure-interaction-flag** — [3842](./3842-fluid-structure-interaction-flag/index.html)
 - **cnc-milling-toolpath-sim** — [3843](./3843-cnc-milling-toolpath-sim/index.html)
 - **predator-prey-lotka-volterra-ecosystem** — [3844](./3844-predator-prey-lotka-volterra-ecosystem/index.html)
