@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **物理摆锤** — [4168](./4168-物理摆锤/index.html)
+- **霓虹波纹** — [4169](./4169-霓虹波纹/index.html)
+- **数据流可视化** — [4170](./4170-数据流可视化/index.html)
+- **粒子星系** — [4171](./4171-粒子星系/index.html)
+- **透明玻璃折射** — [4172](./4172-透明玻璃折射/index.html)
+
 - **photonic-bandgap-crystal** — [4153](./4153-photonic-bandgap-crystal/index.html)
 - **soft-body-flesh-tissue-sim** — [4154](./4154-soft-body-flesh-tissue-sim/index.html)
 - **markov-chain-monte-carlo-visualization** — [4155](./4155-markov-chain-monte-carlo-visualization/index.html)
