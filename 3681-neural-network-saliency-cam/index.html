@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3681. Neural Network Saliency — CNN Visualizer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #info { position: absolute; top: 16px; left: 16px; color: #8cf; font-size: 13px; line-height: 1.7; pointer-events: none; text-shadow: 0 0 8px #0088ff; }
+  #controls { position: absolute; bottom: 16px; left: 16px; color: #aaa; font-size: 12px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="info">Neural Network Saliency — CNN Visualizer<br><span style="color:#888">3D CNN architecture · Saliency/Grad-CAM heatmap · Attention visualization</span></div>
+<div id="controls">Drag: Rotate | Scroll: Zoom | Click: Click layer to highlight</div>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
