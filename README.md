@@ -745,6 +745,16 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **skeletal-animation-skinning-bones** — [4173](./4173-skeletal-animation-skinning-bones/index.html)
+- **first-person-shooter-controls-pointer-lock** — [4174](./4174-first-person-shooter-controls-pointer-lock/index.html)
+- **physics-engine-rigid-body-cannonjs** — [4175](./4175-physics-engine-rigid-body-cannonjs/index.html)
+- **post-processing-chain-multi-pass** — [4176](./4176-post-processing-chain-multi-pass/index.html)
+- **webxr-vr-hand-tracking-controls** — [4177](./4177-webxr-vr-hand-tracking-controls/index.html)
+- **real-time-shadow-pcf-cascaded** — [4178](./4178-real-time-shadow-pcf-cascaded/index.html)
+- **lod-frustum-culling-performance** — [4179](./4179-lod-frustum-culling-performance/index.html)
+- **voxel-minecraft-chunk-rendering** — [4180](./4180-voxel-minecraft-chunk-rendering/index.html)
+- **marching-cubes-metaball-advanced** — [4181](./4181-marching-cubes-metaball-advanced/index.html)
+
 - **物理摆锤** — [4168](./4168-物理摆锤/index.html)
 - **霓虹波纹** — [4169](./4169-霓虹波纹/index.html)
 - **数据流可视化** — [4170](./4170-数据流可视化/index.html)
