@@ -745,6 +745,18 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **interference-fringe-moire-pattern** — [3655](./3655-interference-fringe-moire-pattern/index.html)
+- **dNA-replication-fork-animation** — [3656](./3656-dNA-replication-fork-animation/index.html)
+- **ferrofluid-magnetic-field-spikes** — [4189](./4189-ferrofluid-magnetic-field-spikes/index.html)
+- **shadow-puppet-theater-optics** — [4191](./4191-shadow-puppet-theater-optics/index.html)
+- **liesegang-ring-precipitation** — [4192](./4192-liesegang-ring-precipitation/index.html)
+- **cloth-simulation-verlet-physics** — [4193](./4193-cloth-simulation-verlet-physics/index.html)
+- **crowd-simulation-boids-flocking** — [4195](./4195-crowd-simulation-boids-flocking/index.html)
+- **shallow-water-fluid-simulation** — [4196](./4196-shallow-water-fluid-simulation/index.html)
+- **stress-analysis-fem-deformation** — [4197](./4197-stress-analysis-fem-deformation/index.html)
+- **audio-reactive-shader-visualization** — [4198](./4198-audio-reactive-shader-visualization/index.html)
+- **procedural-city-building-3d** — [4199](./4199-procedural-city-building-3d/index.html)
+
 - **interference-fringe-double-slit** — [4182](./4182-interference-fringe-double-slit/index.html)
 - **lidar-point-cloud-scene-reconstruction** — [4183](./4183-lidar-point-cloud-scene-reconstruction/index.html)
 - **honeycomb-hexagonal-tessellation-art** — [4184](./4184-honeycomb-hexagonal-tessellation-art/index.html)
