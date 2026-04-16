@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **fourier-transform-3d-visualization** — [4260](./4260-fourier-transform-3d-visualization/index.html)
+- **electrophorus-electrostatic-generator** — [4261](./4261-electrophorus-electrostatic-generator/index.html)
+- **kepler-orbit-mechanics** — [4262](./4262-kepler-orbit-mechanics/index.html)
+- **tesseract-4d-hypercube-projection** — [4263](./4263-tesseract-4d-hypercube-projection/index.html)
+- **surface-tension-raindrop-sim** — [4264](./4264-surface-tension-raindrop-sim/index.html)
+- **sloshing-tank-fluid-oscillation** — [4265](./4265-sloshing-tank-fluid-oscillation/index.html)
+- **origami-origami-fold-kinematics** — [4266](./4266-origami-origami-fold-kinematics/index.html)
+
 - **diffusion-model-particle-flow** — [4252](./4252-diffusion-model-particle-flow/index.html)
 - **liquid-crystal-nematic-display-sim** — [4253](./4253-liquid-crystal-nematic-display-sim/index.html)
 - **polymer-chain-rouse-dynamics** — [4254](./4254-polymer-chain-rouse-dynamics/index.html)
