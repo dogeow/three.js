@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **shepard-tone-infinite-ascent-psychacoustic** — [3821](./3821-shepard-tone-infinite-ascent-psychacoustic/index.html)
+- **voronoi-site-motion-animated-tesselation** — [3822](./3822-voronoi-site-motion-animated-tesselation/index.html)
+- **elastic-pendulum-chaos-bifurcation** — [3823](./3823-elastic-pendulum-chaos-bifurcation/index.html)
+- **spectral-graph-theory-eigenvector-centrality** — [3824](./3824-spectral-graph-theory-eigenvector-centrality/index.html)
+- **parametric-architectural-hyperboloid-surface** — [3825](./3825-parametric-architectural-hyperboloid-surface/index.html)
+- **honeycomb-compressive-structure-failure** — [3826](./3826-honeycomb-compressive-structure-failure/index.html)
+- **electrochemical-battery-dendrite-growth** — [3827](./3827-electrochemical-battery-dendrite-growth/index.html)
+- **michell-truss-topology-optimization** — [3828](./3828-michell-truss-topology-optimization/index.html)
+
 - **karman-vortex-street-fluid-dynamics** — [3816](./3816-karman-vortex-street-fluid-dynamics/index.html)
 - **soap-film-minimal-surface-tension** — [3817](./3817-soap-film-minimal-surface-tension/index.html)
 - **crowd-evacuation-steering-behaviors** — [3818](./3818-crowd-evacuation-steering-behaviors/index.html)
