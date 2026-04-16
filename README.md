@@ -745,6 +745,17 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **1** — [3969](./3969-1/index.html)
+- **2** — [3970](./3970-2/index.html)
+- **3** — [3971](./3971-3/index.html)
+- **newton-cradle-3d-momentum-conservation** — [3972](./3972-newton-cradle-3d-momentum-conservation/index.html)
+- **heat-equation-pde-diffusion-simulation** — [3973](./3973-heat-equation-pde-diffusion-simulation/index.html)
+- **marble-run-ball-physics** — [3974](./3974-marble-run-ball-physics/index.html)
+- **domino-chain-reaction-physics** — [3975](./3975-domino-chain-reaction-physics/index.html)
+- **pendulum-clock-escape-mechanism** — [3976](./3976-pendulum-clock-escape-mechanism/index.html)
+- **ripple-tank-wave-interference** — [3977](./3977-ripple-tank-wave-interference/index.html)
+- **neural-network-train-3d-visualization** — [3978](./3978-neural-network-train-3d-visualization/index.html)
+
 - **snake-game-3d** — [3961](./3961-snake-game-3d/index.html)
 - **chess-3d-board** — [3962](./3962-chess-3d-board/index.html)
 - **skiing-physics-sim** — [3963](./3963-skiing-physics-sim/index.html)
