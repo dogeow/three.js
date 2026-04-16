@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **fluid-simulation** — [3780](./3780-fluid-simulation/index.html)
+- **procedural-terrain** — [3782](./3782-procedural-terrain/index.html)
+- **particle-galaxy** — [3783](./3783-particle-galaxy/index.html)
+- **morphing-geometry** — [3784](./3784-morphing-geometry/index.html)
+- **bloom-postprocessing** — [3785](./3785-bloom-postprocessing/index.html)
+
 - **reinforcement-learning-q-learning-3d** — [3772](./3772-reinforcement-learning-q-learning-3d/index.html)
 - **materials-science-alloy-solidification** — [3773](./3773-materials-science-alloy-solidification/index.html)
 - **network-science-cascading-failure** — [3774](./3774-network-science-cascading-failure/index.html)
