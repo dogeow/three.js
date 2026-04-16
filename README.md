@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **holographic-optical-element** — [3657](./3657-holographic-optical-element/index.html)
+- **quantum-error-correction** — [3658](./3658-quantum-error-correction/index.html)
+- **point-cloud-heritage-scan** — [3659](./3659-point-cloud-heritage-scan/index.html)
+- **architectural-acoustics** — [3660](./3660-architectural-acoustics/index.html)
+- **tropical-geometry** — [3661](./3661-tropical-geometry/index.html)
+
 - **npr-crosshatch-shader** — [3647](./3647-npr-crosshatch-shader/index.html)
 - **voxel-chunk-terrain-engine** — [3648](./3648-voxel-chunk-terrain-engine/index.html)
 - **softbody-volume-pressure-sim** — [3649](./3649-softbody-volume-pressure-sim/index.html)
