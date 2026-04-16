@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **volumetric-fluid** — [3584](./3584-volumetric-fluid/index.html)
+- **rayleigh-atmosphere** — [3585](./3585-rayleigh-atmosphere/index.html)
+- **dla-crystal-growth** — [3586](./3586-dla-crystal-growth/index.html)
+- **3d-graph-network** — [3587](./3587-3d-graph-network/index.html)
+- **erosion-simulation** — [3588](./3588-erosion-simulation/index.html)
+- **morphogenesis** — [3591](./3591-morphogenesis/index.html)
+
 - **causal-bayesian-network-viz** — [3578](./3578-causal-bayesian-network-viz/index.html)
 - **transformer-attention-heads-3d** — [3579](./3579-transformer-attention-heads-3d/index.html)
 - **evolutionary-art-genome-selection** — [3580](./3580-evolutionary-art-genome-selection/index.html)
