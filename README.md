@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **--list-existing** — [4064](./4064---list-existing/index.html)
+- **autonomous-driving-simulation-3d** — [4065](./4065-autonomous-driving-simulation-3d/index.html)
+- **cnc-toolpath-simulation-3d** — [4066](./4066-cnc-toolpath-simulation-3d/index.html)
+- **multi-agent-market-economics** — [4067](./4067-multi-agent-market-economics/index.html)
+- **physics-based-instrument-synthesis** — [4068](./4068-physics-based-instrument-synthesis/index.html)
+- **urban-growth-dla-simulation** — [4069](./4069-urban-growth-dla-simulation/index.html)
+
 - **vascular-network-murray-law** — [4056](./4056-vascular-network-murray-law/index.html)
 - **stellar-parallax-proper-motion** — [4057](./4057-stellar-parallax-proper-motion/index.html)
 - **lennard-jones-potential-dynamics** — [4058](./4058-lennard-jones-potential-dynamics/index.html)
