@@ -744,7 +744,19 @@ animate()
 | [360](./360-voxel-extrusion-font/index.html) | **体素字体挤压 ★** | InstancedMesh体素动画、入场逐字弹出、赛博朋克霓虹风格 |
 
 ## 附录：全部示例索引
+- **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **wavefunction-collapse-born-rule** — [3898](./3898-wavefunction-collapse-born-rule/index.html)
+- **skipping-stone-hydrodynamics** — [3899](./3899-skipping-stone-hydrodynamics/index.html)
+- **riemann-zeta-critical-line** — [3900](./3900-riemann-zeta-critical-line/index.html)
+- **procedural-weaving-textile** — [3901](./3901-procedural-weaving-textile/index.html)
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **torus-knot** — [3888](./3888-torus-knot/index.html)
+- **sphere-float** — [3889](./3889-sphere-float/index.html)
+- **particle-field** — [3890](./3890-particle-field/index.html)
+- **shader-wave** — [3891](./3891-shader-wave/index.html)
+- **aurora-sky** — [3893](./3893-aurora-sky/index.html)
+- **neon-grid** — [3894](./3894-neon-grid/index.html)
+
 - **holographic-tomo-3d** — [3880](./3880-holographic-tomo-3d/index.html)
 - **morris-water-maze** — [3881](./3881-morris-water-maze/index.html)
 - **magnetohydrodynamics-plasma-mhd** — [3882](./3882-magnetohydrodynamics-plasma-mhd/index.html)
