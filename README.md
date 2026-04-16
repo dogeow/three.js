@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **inverse-kinematics-robot-arm** — [3902](./3902-inverse-kinematics-robot-arm/index.html)
+- **volumetric-cloud-atmospheric** — [3903](./3903-volumetric-cloud-atmospheric/index.html)
+- **crystal-growth-evaporation** — [3904](./3904-crystal-growth-evaporation/index.html)
+- **parametric-weaving-fabric** — [3905](./3905-parametric-weaving-fabric/index.html)
+- **sonar-acoustic-rangefinder** — [3906](./3906-sonar-acoustic-rangefinder/index.html)
+- **material-processing-injection-molding** — [3907](./3907-material-processing-injection-molding/index.html)
+
 - **wavefunction-collapse-born-rule** — [3898](./3898-wavefunction-collapse-born-rule/index.html)
 - **skipping-stone-hydrodynamics** — [3899](./3899-skipping-stone-hydrodynamics/index.html)
 - **riemann-zeta-critical-line** — [3900](./3900-riemann-zeta-critical-line/index.html)

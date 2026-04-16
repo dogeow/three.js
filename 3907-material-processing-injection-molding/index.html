@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>INJECTION MOLDING SIMULATION</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#0a0a0a}
+canvas{display:block}
+#panel{position:fixed;top:12px;left:12px;color:#8cf;font-size:12px;background:rgba(0,0,0,0.7);padding:10px 14px;border-radius:6px;line-height:2}
+#hint{position:fixed;bottom:14px;left:14px;color:#555;font-size:12px}
+</style>
+</head>
+<body>
+<div id="panel"><b style="color:#adf">INJECTION MOLDING</b><br>Phase: <span id="phase">IDLE</span><br>Fill: <span id="fill">0</span>%<br>Temp: <span id="temp">25</span>°C</div>
+<div id="hint">Press SPACE to start cycle | R to reset</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0a0a0a);
+const camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,0.1,200);
+camera.position.set(0,8,22);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+scene.add(new THREE.GridHelper(30,30,0x1a1a1a,0x101010));
+scene.add(new THREE.AmbientLight(0x334466,2));
+const dl=new THREE.DirectionalLight(0xffffff,1.5);
+dl.position.set(5,10,5);scene.add(dl);
+
+// Mold halves
+const moldMat=new THREE.MeshStandardMaterial({color:0x445566,metalness:0.8,roughness:0.3});
+const moldA=new THREE.Mesh(new THREE.BoxGeometry(12,1,8),moldMat);
+moldA.position.set(0,4.5,0);scene.add(moldA);
+const moldB=new THREE.Mesh(new THREE.BoxGeometry(12,1,8),moldMat);
+moldB.position.set(0,-4.5,0);scene.add(moldB);
+
+// Cavity (plastic part shape)
+const partGeo=new THREE.CylinderGeometry(2,2,4,32);
+const partMat=new THREE.MeshStandardMaterial({color:0x2288ff,metalness:0.1,roughness:0.5,transparent:true,opacity:0});
+const part=new THREE.Mesh(partGeo,partMat);
+scene.add(part);
+
+// Injector nozzle
+const nozzleGeo=new THREE.CylinderGeometry(0.3,0.5,2,16);
+const nozzleMat=new THREE.MeshStandardMaterial({color:0x888888,metalness:0.9,roughness:0.2});
+const nozzle=new THREE.Mesh(nozzleGeo,nozzleMat);
+nozzle.position.set(0,6,0);scene.add(nozzle);
+
+// State machine
+let state='IDLE';
+let fillPct=0;
+let temp=25;
+let cycleTime=0;
+const FILL_DUR=3.0,COOL_DUR=4.0,EJECT_DUR=2.0;
+
+function startCycle(){
+    if(state!=='IDLE')return;
+    state='FILL';fillPct=0;temp=280;cycleTime=0;
+    part.material.opacity=0;part.scale.set(0.01,0.01,0.01);
+}
+
+function reset(){
+    state='IDLE';fillPct=0;temp=25;cycleTime=0;
+    part.material.opacity=0;part.scale.set(0.01,0.01,0.01);
+}
+
+window.addEventListener('keydown',e=>{
+    if(e.code==='Space')startCycle();
+    if(e.code==='KeyR')reset();
+});
+
+function animate(){
+    requestAnimationFrame(animate);
+    const dt=0.016;cycleTime+=dt;
+    if(state==='FILL'){
+        fillPct=Math.min(100,(cycleTime/FILL_DUR)*100);
+        const s=fillPct/100;
+        part.scale.set(s,s,s);
+        part.material.opacity=s*0.85;
+        if(fillPct>=100){state='COOL';cycleTime=0;}
+    } else if(state==='COOL'){
+        temp=Math.max(25,280-(cycleTime/COOL_DUR)*255);
+        if(cycleTime>=COOL_DUR){state='EJECT';cycleTime=0;}
+    } else if(state==='EJECT'){
+        const ejectS=Math.max(0.01,1-(cycleTime/EJECT_DUR));
+        part.scale.set(ejectS,ejectS,ejectS);
+        if(cycleTime>=EJECT_DUR){state='IDLE';temp=25;part.scale.set(0.01,0.01,0.01);part.material.opacity=0;}
+    }
+    document.getElementById('phase').textContent=state;
+    document.getElementById('fill').textContent=Math.round(fillPct);
+    document.getElementById('temp').textContent=Math.round(temp);
+    controls.update();
+    renderer.render(scene,camera);
+}
+animate();
+window.addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

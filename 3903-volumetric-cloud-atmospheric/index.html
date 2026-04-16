@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>VOLUMETRIC CLOUD ATMOSPHERIC</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#0a1020}
+canvas{display:block}
+#info{position:fixed;bottom:14px;left:14px;color:rgba(150,180,220,0.6);font-size:12px}
+</style>
+</head>
+<body>
+<div id="info">Volumetric Cloud — Raymarching with FBM noise | Drag to explore</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const renderer=new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0a1020);
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,500);
+camera.position.set(0,2,20);
+
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.5,0.4,0.8));
+
+scene.add(new THREE.AmbientLight(0x4466aa,1));
+const sun=new THREE.DirectionalLight(0xffeedd,2);
+sun.position.set(30,40,-20);scene.add(sun);
+
+const groundGeo=new THREE.PlaneGeometry(200,200);
+const groundMat=new THREE.MeshStandardMaterial({color:0x1a2518,roughness:1});
+const ground=new THREE.Mesh(groundGeo,groundMat);
+ground.rotation.x=-Math.PI/2;
+ground.position.y=-5;
+scene.add(ground);
+
+const vertShader="\nvarying vec2 vUv;\nvarying vec3 vWorld;\nvoid main(){\n    vUv=uv;\n    vWorld=(modelMatrix*vec4(position,1.0)).xyz;\n    gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);\n}";
+
+const fragShader="\nprecision highp float;\nvarying vec2 vUv;\nuniform float uTime;\nuniform vec3 cameraPos;\n\nfloat hash(vec3 p){\n    p=fract(p*0.3183099+.1);\n    p*=17.0;\n    return fract(p.x*p.y*p.z*(p.x+p.y+p.z));\n}\nfloat noise(vec3 x){\n    vec3 i=floor(x),f=fract(x);\n    f=f*f*(3.0-2.0*f);\n    return mix(mix(mix(hash(i+vec3(0,0,0)),hash(i+vec3(1,0,0)),f.x),\n        mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),\n        mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),\n        mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);\n}\nfloat fbm(vec3 p){\n    float v=0.0,a=0.5;\n    for(int i=0;i<5;i++){v+=a*noise(p);p*=2.0;a*=0.5;}\n    return v;\n}\nfloat cloudDensity(vec3 p){\n    float h=clamp((p.y-2.0)/12.0,0.0,1.0);\n    if(h<=0.0)return 0.0;\n    vec3 q=p+vec3(uTime*0.8,uTime*0.1,uTime*0.5);\n    float f=fbm(q*0.25);\n    f=smoothstep(0.3,0.7,f)*h;\n    return max(0.0,f);\n}\nvoid main(){\n    vec3 rd=normalize(vWorld-cameraPos);\n    vec3 col=vec3(0.05,0.08,0.18);\n    vec3 light=normalize(vec3(0.5,0.8,-0.3));\n    float t=0.0,dens=0.0;\n    for(int i=0;i<80;i++){\n        if(t>120.0||dens>0.98)break;\n        vec3 p=cameraPos+rd*t;\n        float d=cloudDensity(p);\n        if(d>0.01){\n            float h=clamp((p.y-2.0)/12.0,0.0,1.0);\n            float diff=max(0.0,noise(p*0.5+vec3(uTime*0.3)));\n            vec3 cloudCol=mix(vec3(0.6,0.65,0.75),vec3(1.0,0.98,0.95),diff);\n            float scatter=0.5+0.5*dot(rd,light);\n            col=mix(col,cloudCol*(0.8+0.5*scatter+h*0.3),d*(1.0-dens)*0.05);\n            dens+=d*0.06;\n        }\n        t+=max(0.4,1.6-dens*1.5);\n    }\n    float sunG=max(0.0,dot(rd,light));\n    col+=vec3(1.0,0.85,0.6)*pow(sunG,32.0)*0.6;\n    col+=vec3(1.0,0.7,0.4)*pow(sunG,4.0)*0.3;\n    gl_FragColor=vec4(col,1.0);\n}";
+
+const cloudMat=new THREE.ShaderMaterial({
+    vertexShader:vertShader,fragmentShader:fragShader,
+    uniforms:{uTime:{value:0},cameraPos:{value:camera.position}},
+    side:THREE.DoubleSide,transparent:true
+});
+
+const cloudMesh=new THREE.Mesh(new THREE.BoxGeometry(80,20,80),cloudMat);
+cloudMesh.position.y=12;
+scene.add(cloudMesh);
+
+let moving=false;
+window.addEventListener('mousedown',()=>moving=true);
+window.addEventListener('mouseup',()=>moving=false);
+window.addEventListener('mousemove',e=>{
+    if(moving){
+        camera.position.x+=(e.movementX)*0.05;
+        camera.position.y-=(e.movementY)*0.05;
+        camera.lookAt(0,5,0);
+    }
+});
+
+function animate(){
+    requestAnimationFrame(animate);
+    cloudMat.uniforms.uTime.value+=0.008;
+    cloudMat.uniforms.cameraPos.value.copy(camera.position);
+    composer.render();
+}
+animate();
+window.addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
