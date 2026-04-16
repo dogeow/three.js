@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **slot-canyon-erosion-hydraulic** — [3995](./3995-slot-canyon-erosion-hydraulic/index.html)
+- **go-board-game-3d** — [3996](./3996-go-board-game-3d/index.html)
+- **space-elevator-climber-tether** — [3997](./3997-space-elevator-climber-tether/index.html)
+- **bplus-tree-index-visualization-3d** — [3998](./3998-bplus-tree-index-visualization-3d/index.html)
+- **stirling-engine-thermodynamic** — [3999](./3999-stirling-engine-thermodynamic/index.html)
+- **zen-garden-stone-arrangement** — [4000](./4000-zen-garden-stone-arrangement/index.html)
+- **thunderstorm-lightning-discharge** — [4001](./4001-thunderstorm-lightning-discharge/index.html)
+
 - **table-tennis-3d-physics-rally** — [3989](./3989-table-tennis-3d-physics-rally/index.html)
 - **rubiks-cube-3d-mechanical** — [3990](./3990-rubiks-cube-3d-mechanical/index.html)
 - **sokoban-3d-box-puzzle** — [3991](./3991-sokoban-3d-box-puzzle/index.html)
