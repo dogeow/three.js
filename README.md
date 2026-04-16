@@ -101,3 +101,7 @@
 - 完成时间：2026-04-16 22:13
 - 文件：advanced.html
 - 描述：发光球体 + Bloom后处理 + 雾效 + GLTF加载尝试
+
+## 自定义着色器示例
+- [ ] [自定义着色器] 03-custom-shader.html - GLSL 自定义着色器：波纹置换+渐变色彩
+- [ ] [地形生成] 02-terrain-generation.html - 程序化地形生成：噪声驱动高度图地形
