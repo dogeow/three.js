@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **bioluminescent-deep-sea-ecosystem** — [3618](./3618-bioluminescent-deep-sea-ecosystem/index.html)
+- **ferromagnetic-ising-domain-evolution** — [3619](./3619-ferromagnetic-ising-domain-evolution/index.html)
+- **parametric-tensegrity-structure-sim** — [3620](./3620-parametric-tensegrity-structure-sim/index.html)
+- **quantum-quantum-dot-electron-shell** — [3621](./3621-quantum-quantum-dot-electron-shell/index.html)
+- **kohonen-self-organizing-map-3d** — [3622](./3622-kohonen-self-organizing-map-3d/index.html)
+- **procedural-gothic-cathedral-architecture** — [3623](./3623-procedural-gothic-cathedral-architecture/index.html)
+- **traffic-ring-road-flow-simulation** — [3624](./3624-traffic-ring-road-flow-simulation/index.html)
+
 - **piano-roll-sequencer** — [3608](./3608-piano-roll-sequencer/index.html)
 - **epidemic-sir-spatial-spread** — [3609](./3609-epidemic-sir-spatial-spread/index.html)
 - **neural-network-graph-viz** — [3610](./3610-neural-network-graph-viz/index.html)
