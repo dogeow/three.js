@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **crystal-lattice-vibration-phonon** — [3662](./3662-crystal-lattice-vibration-phonon/index.html)
+- **tessellation-escher-impossible** — [3663](./3663-tessellation-escher-impossible/index.html)
+- **stellar-atmosphere-spectrum-simulation** — [3664](./3664-stellar-atmosphere-spectrum-simulation/index.html)
+- **fracture-ice-shelf-calving-glacial** — [3665](./3665-fracture-ice-shelf-calving-glacial/index.html)
+- **morphogen-concentration-gradient-pattern** — [3666](./3666-morphogen-concentration-gradient-pattern/index.html)
+- **quantum-walk-interference-visualizer** — [3667](./3667-quantum-walk-interference-visualizer/index.html)
+- **vortex-ring-pair-dynamics-simulation** — [3668](./3668-vortex-ring-pair-dynamics-simulation/index.html)
+
 - **holographic-optical-element** — [3657](./3657-holographic-optical-element/index.html)
 - **quantum-error-correction** — [3658](./3658-quantum-error-correction/index.html)
 - **point-cloud-heritage-scan** — [3659](./3659-point-cloud-heritage-scan/index.html)
