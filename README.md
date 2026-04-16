@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **fluid-structure-interaction-flag** — [3842](./3842-fluid-structure-interaction-flag/index.html)
+- **cnc-milling-toolpath-sim** — [3843](./3843-cnc-milling-toolpath-sim/index.html)
+- **predator-prey-lotka-volterra-ecosystem** — [3844](./3844-predator-prey-lotka-volterra-ecosystem/index.html)
+- **crane-construction-physics** — [3845](./3845-crane-construction-physics/index.html)
+- **supply-chain-logistics-network** — [3846](./3846-supply-chain-logistics-network/index.html)
+- **surgical-robot-kinematics-sim** — [3847](./3847-surgical-robot-kinematics-sim/index.html)
+- **sailboat-aerodynamics-sim** — [3848](./3848-sailboat-aerodynamics-sim/index.html)
+- **watercolor-paint-shader** — [3849](./3849-watercolor-paint-shader/index.html)
+
 - **knot-theory-3d-visualization** — [3836](./3836-knot-theory-3d-visualization/index.html)
 - **marching-squares-isoline-terrain** — [3837](./3837-marching-squares-isoline-terrain/index.html)
 - **tangram-puzzle-simulation** — [3838](./3838-tangram-puzzle-simulation/index.html)
