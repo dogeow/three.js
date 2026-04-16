@@ -745,6 +745,13 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **cloth-simulation-physics** — [3593](./3593-cloth-simulation-physics/index.html)
+- **sound-wave-3d-propagation** — [3594](./3594-sound-wave-3d-propagation/index.html)
+- **boids-flocking-simulation** — [3595](./3595-boids-flocking-simulation/index.html)
+- **sand-dune-aeolian-erosion** — [3596](./3596-sand-dune-aeolian-erosion/index.html)
+- **tda-persistence-landscape** — [3597](./3597-tda-persistence-landscape/index.html)
+- **nebula-volumetric-render** — [3598](./3598-nebula-volumetric-render/index.html)
+
 - **volumetric-fluid** — [3584](./3584-volumetric-fluid/index.html)
 - **rayleigh-atmosphere** — [3585](./3585-rayleigh-atmosphere/index.html)
 - **dla-crystal-growth** — [3586](./3586-dla-crystal-growth/index.html)
