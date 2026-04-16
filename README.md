@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **stellar-nursery-gas-collapse** — [3897](./3897-stellar-nursery-gas-collapse/index.html)
+- **asteroid-mining-sim** — [4307](./4307-asteroid-mining-sim/index.html)
+- **biomechanical-leg-motion** — [4308](./4308-biomechanical-leg-motion/index.html)
+- **parametric-architecture-facade** — [4309](./4309-parametric-architecture-facade/index.html)
+- **fingerprint-recognition-sift** — [4310](./4310-fingerprint-recognition-sift/index.html)
+- **music-sequencer-3d-grid** — [4311](./4311-music-sequencer-3d-grid/index.html)
+- **volumetric-cloud-atmosphere** — [4312](./4312-volumetric-cloud-atmosphere/index.html)
+- **traffic-signal-timing-optimization** — [4313](./4313-traffic-signal-timing-optimization/index.html)
+
 - **game-theory-nash-equilibrium** — [4299](./4299-game-theory-nash-equilibrium/index.html)
 - **mcts-game-tree-search** — [4300](./4300-mcts-game-tree-search/index.html)
 - **petri-net-workflow-simulation** — [4301](./4301-petri-net-workflow-simulation/index.html)
