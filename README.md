@@ -745,6 +745,12 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **l-system-plant-growth** — [3565](./3565-l-system-plant-growth/index.html)
+- **raymarched-sdf-fractal-art** — [3566](./3566-raymarched-sdf-fractal-art/index.html)
+- **ambient-occlusion-comparison** — [3567](./3567-ambient-occlusion-comparison/index.html)
+- **fractal-noise-erosion-terrain** — [3569](./3569-fractal-noise-erosion-terrain/index.html)
+- **gpu-compute-particles-fbo** — [3570](./3570-gpu-compute-particles-fbo/index.html)
+
 - **saffman-taylor-fingering** — [3551](./3551-saffman-taylor-fingering/index.html)
 - **spinodal-decomposition-sim** — [3552](./3552-spinodal-decomposition-sim/index.html)
 - **langton-ant-cellular** — [3553](./3553-langton-ant-cellular/index.html)
