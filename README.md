@@ -745,6 +745,14 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **climate-data-stream** — [3670](./3670-climate-data-stream/index.html)
+- **autonomous-drone-swarm** — [3671](./3671-autonomous-drone-swarm/index.html)
+- **medical-ultrasound-simulation** — [3672](./3672-medical-ultrasound-simulation/index.html)
+- **solar-panel-efficiency** — [3673](./3673-solar-panel-efficiency/index.html)
+- **optical-fiber-telecom** — [3674](./3674-optical-fiber-telecom/index.html)
+- **holographic-3d-display** — [3675](./3675-holographic-3d-display/index.html)
+- **fermentation-biology-sim** — [3676](./3676-fermentation-biology-sim/index.html)
+
 - **crystal-lattice-vibration-phonon** — [3662](./3662-crystal-lattice-vibration-phonon/index.html)
 - **tessellation-escher-impossible** — [3663](./3663-tessellation-escher-impossible/index.html)
 - **stellar-atmosphere-spectrum-simulation** — [3664](./3664-stellar-atmosphere-spectrum-simulation/index.html)
