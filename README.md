@@ -745,6 +745,15 @@ animate()
 
 ## 附录：全部示例索引
 - **dendritic-crystal-growth** — [3041](./3041-dendritic-crystal-growth/index.html)
+- **tidal-force-moon-earth-sim** — [3515](./3515-tidal-force-moon-earth-sim/index.html)
+- **epigenetic-cell-differentiation** — [3516](./3516-epigenetic-cell-differentiation/index.html)
+- **fire-particle-sim** — [3517](./3517-fire-particle-sim/index.html)
+- **antikythera-mechanism-ancient** — [3518](./3518-antikythera-mechanism-ancient/index.html)
+- **financial-network-risk-sim** — [3519](./3519-financial-network-risk-sim/index.html)
+- **autonomous-driving-decision-tree** — [3520](./3520-autonomous-driving-decision-tree/index.html)
+- **lattice-boltzmann-3d-fluid** — [3521](./3521-lattice-boltzmann-3d-fluid/index.html)
+- **holographic-architecture-sculpture** — [3522](./3522-holographic-architecture-sculpture/index.html)
+
 - **3d-wave-interference** — [3508](./3508-3d-wave-interference/index.html)
 - **3d-agent-simulation** — [3510](./3510-3d-agent-simulation/index.html)
 - **3d-fractal-terrain** — [3511](./3511-3d-fractal-terrain/index.html)
