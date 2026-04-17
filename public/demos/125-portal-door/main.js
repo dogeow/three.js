@@ -316,16 +316,15 @@ import * as THREE from 'three';
       requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
 
-      // Player movement
-      if (controls.isLocked) {
-        player.direction.set(0, 0, 0);
-        if (keys.w) player.direction.z -= 1;
-        if (keys.s) player.direction.z += 1;
-        if (keys.a) player.direction.x -= 1;
-        if (keys.d) player.direction.x += 1;
-        player.direction.normalize();
+      // Player movement (WASD 总是响应，不再要求指针锁定）
+      player.direction.set(0, 0, 0);
+      if (keys.w) player.direction.z -= 1;
+      if (keys.s) player.direction.z += 1;
+      if (keys.a) player.direction.x -= 1;
+      if (keys.d) player.direction.x += 1;
+      if (player.direction.lengthSq() > 0) player.direction.normalize();
 
-        // Apply movement relative to camera facing
+      if (player.direction.lengthSq() > 0) {
         const camDir = new THREE.Vector3();
         camera.getWorldDirection(camDir);
         camDir.y = 0;
@@ -341,12 +340,12 @@ import * as THREE from 'three';
         camera.position.add(move);
         camera.position.y = player.height;
         clampToRoom(camera.position);
-
-        // Animate portal light pulse
-        const t = clock.elapsedTime;
-        pLight1.intensity = 2 + Math.sin(t * 2) * 0.5;
-        pLight2.intensity = 2 + Math.sin(t * 2 + Math.PI) * 0.5;
       }
+
+      // Animate portal light pulse
+      const t = clock.elapsedTime;
+      pLight1.intensity = 2 + Math.sin(t * 2) * 0.5;
+      pLight2.intensity = 2 + Math.sin(t * 2 + Math.PI) * 0.5;
 
       teleportCooldown -= delta;
 

@@ -165,6 +165,27 @@ snapPad.position.y = 0.02
 snapPad.visible = false
 scene.add(snapPad)
 
+// ── 十字准星：两条跨整个地面的辅助线 ──
+const CROSS_LEN = 40
+const crossMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.55 })
+const crossXGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-CROSS_LEN, 0.03, 0),
+  new THREE.Vector3( CROSS_LEN, 0.03, 0),
+])
+const crossZGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(0, 0.03, -CROSS_LEN),
+  new THREE.Vector3(0, 0.03,  CROSS_LEN),
+])
+const crossX = new THREE.Line(crossXGeo, crossMat)
+const crossZ = new THREE.Line(crossZGeo, crossMat.clone())
+crossX.visible = false
+crossZ.visible = false
+scene.add(crossX); scene.add(crossZ)
+
+// ── 吸附动画状态：记录上次吸附到的格点，不同时触发 pop 动画 ──
+let lastSnapCell = { x: null, z: null }
+let snapPulse = 0
+
 function setSelected(mesh) {
   if (selected && selected.material?.emissive) {
     selected.material.emissive.set(0x000000)
@@ -200,6 +221,18 @@ function showSnapPreview(x, z) {
   snapPad.position.set(x, 0.02, z)
   snapPad.scale.set(gridSize, gridSize, 1)
 
+  // 十字准星对齐
+  crossX.visible = true
+  crossZ.visible = true
+  crossX.position.set(0, 0, z)
+  crossZ.position.set(x, 0, 0)
+
+  // 进入新格子触发吸附脚本动画
+  if (lastSnapCell.x !== x || lastSnapCell.z !== z) {
+    lastSnapCell = { x, z }
+    snapPulse = 1
+  }
+
   if (!selected) {
     ghostMesh.visible = false
     return
@@ -215,6 +248,9 @@ function showSnapPreview(x, z) {
 function hideSnapPreview() {
   snapPad.visible = false
   ghostMesh.visible = false
+  crossX.visible = false
+  crossZ.visible = false
+  lastSnapCell = { x: null, z: null }
 }
 
 // ─── Raycaster ──────────────────────────────────────────────────────────────
@@ -398,7 +434,24 @@ function animate() {
   }
 
   if (snapPad.visible) {
-    snapPad.material.opacity = 0.12 + (Math.sin(t * 6) + 1) * 0.04
+    // 吸附动画：跺入新格子时 pop 放大 + 高亮，然后缓落
+    const pulseScale = 1 + snapPulse * 0.45
+    snapPad.scale.set(gridSize * pulseScale, gridSize * pulseScale, 1)
+    snapPad.material.opacity = 0.18 + snapPulse * 0.35 + (Math.sin(t * 6) + 1) * 0.04
+    snapPulse = Math.max(0, snapPulse - 0.08)
+
+    // Ghost box 同步点弹
+    if (ghostMesh.visible) {
+      const gp = 1 + snapPulse * 0.12
+      ghostMesh.scale.multiplyScalar(gp / ghostMesh.userData._lastPulse || 1)
+      ghostMesh.userData._lastPulse = gp
+    }
+  }
+
+  if (crossX.visible) {
+    const fade = 0.35 + Math.sin(t * 4) * 0.18 + snapPulse * 0.35
+    crossX.material.opacity = fade
+    crossZ.material.opacity = fade
   }
 
   controls.update()

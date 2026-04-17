@@ -418,15 +418,17 @@ function buildTerrain() {
   terrainMesh = new THREE.Mesh(geo, mat);
   terrainMesh.receiveShadow = true;
   terrainMesh.castShadow = false;
+  geo.attributes.position.needsUpdate = true;
+  geo.computeBoundingSphere();
   scene.add(terrainMesh);
 
   // Water plane
-  const waterGeo = new THREE.PlaneGeometry(params.terrainSize * 2, params.terrainSize * 2, 1, 1);
+  const waterGeo = new THREE.PlaneGeometry(params.terrainSize * 1.05, params.terrainSize * 1.05, 1, 1);
   waterGeo.rotateX(-Math.PI / 2);
   const waterMat = new THREE.MeshPhongMaterial({
     color: 0x0a4a7a,
     transparent: true,
-    opacity: 0.72,
+    opacity: 0.55,
     shininess: 100,
     specular: 0x4488bb,
   });

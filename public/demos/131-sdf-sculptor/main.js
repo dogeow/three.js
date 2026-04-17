@@ -204,7 +204,9 @@ const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
 controls.enablePan = false
 // 左键拖拽 = 旋转（单击仍会触发雕刻），右键也旋转，滚轮/中键缩放
+controls.enablePan = false // 明确禁止平移
 controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault())
 
 let sculptMode = 'add' // add | sub | smooth
 let brushRadius = 0.5

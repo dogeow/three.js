@@ -352,6 +352,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   if (e.button === 0 && !e.shiftKey) {
     isBrushDown = true;
     pointerMoved = false;
+    // 雕刻过程中禁用 OrbitControls，避免左键拖拽时地形随视角运动
+    controls.enabled = false;
     const pt = getTerrainIntersection(e);
     if (pt) {
       applyBrushAt(pt);
@@ -374,6 +376,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerup', () => {
   isBrushDown = false;
   lastBrushPos = null;
+  controls.enabled = true;
 });
 
 renderer.domElement.addEventListener('pointerleave', () => {
@@ -381,6 +384,7 @@ renderer.domElement.addEventListener('pointerleave', () => {
   innerMesh.visible = false;
   isBrushDown = false;
   lastBrushPos = null;
+  controls.enabled = true;
 });
 
 document.addEventListener('keydown', (e) => {

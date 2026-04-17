@@ -247,53 +247,48 @@ function getTargetVoxel(clientX, clientY) {
 }
 
 // ── Event handlers ────────────────────────────────────────
-let isMouseDown = false;
-let mouseButton = -1;
+// 禁用 OrbitControls 的右键平移，并将右键专门用于删除体素
+controls.enablePan = false;
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
+
+let downX = 0, downY = 0, downBtn = -1;
 let shifted = false;
 
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('contextmenu', e => e.preventDefault());
 
-window.addEventListener('pointerdown', e => {
-  isMouseDown = true;
-  mouseButton = e.button;
+renderer.domElement.addEventListener('pointerdown', e => {
+  downX = e.clientX; downY = e.clientY; downBtn = e.button;
   shifted = e.shiftKey;
 });
 
-window.addEventListener('pointerup', () => { isMouseDown = false; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (e.button !== downBtn) return;
+  const dx = e.clientX - downX, dy = e.clientY - downY;
+  if (dx*dx + dy*dy > 16) return; // 拖拽不触发放/删
 
-window.addEventListener('pointermove', e => {
-  if (isMouseDown) {
-    shifted = e.shiftKey;
-    handlePaint(e.clientX, e.clientY);
-  } else {
-    updateHover(e.clientX, e.clientY);
-  }
-});
-
-window.addEventListener('click', e => {
-  if (e.button !== 0) return;
-  shifted = e.shiftKey;
-  handlePaint(e.clientX, e.clientY);
-});
-
-function handlePaint(cx, cy) {
-  const target = getTargetVoxel(cx, cy);
+  const target = getTargetVoxel(e.clientX, e.clientY);
   if (!target) return;
+  const key = `${target.x},${target.y},${target.z}`;
 
-  if (mouseButton === 2 || (mouseButton === 0 && !isMouseDown)) {
-    // Right-click or standalone click remove (if we clicked an existing voxel)
-    // We'll check: if there's a voxel at target, remove it; else add
-  }
-
-  if (mouseButton === 0 || mouseButton === 2) {
-    const key = `${target.x},${target.y},${target.z}`;
+  if (e.button === 0) {
+    // 左键：有体素则删除，无体素则放置
     if (voxels.has(key)) {
       removeVoxel(target.x, target.y, target.z);
-    } else if (mouseButton === 0) {
+    } else {
       addVoxel(target.x, target.y, target.z, activeColor);
     }
+  } else if (e.button === 2) {
+    // 右键：仅删除
+    if (voxels.has(key)) {
+      removeVoxel(target.x, target.y, target.z);
+    }
   }
-}
+});
+
+window.addEventListener('pointermove', e => {
+  updateHover(e.clientX, e.clientY);
+});
 
 function updateHover(cx, cy) {
   pointer.set(
@@ -317,14 +312,8 @@ function updateHover(cx, cy) {
   }
 }
 
-// Right-click to remove
-window.addEventListener('contextmenu', e => {
-  e.preventDefault();
-  const target = getTargetVoxel(e.clientX, e.clientY);
-  if (!target) return;
-  const key = `${target.x},${target.y},${target.z}`;
-  if (voxels.has(key)) removeVoxel(target.x, target.y, target.z);
-});
+// Right-click to remove (已在 pointerup 中处理，这里只阻止默认菜单)
+window.addEventListener('contextmenu', e => e.preventDefault());
 
 // ── UI ───────────────────────────────────────────────────
 const paletteEl = document.getElementById('palette');

@@ -1,7 +1,6 @@
 import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { VRButton } from 'three/addons/webxr/VRButton.js';
-    import { XRHandSpaceMode, XRHandMeshModel } from 'three/addons/webxr/XRHandMeshModel.js';
     import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
     // ─── Scene Setup ──────────────────────────────────────────────────────────
@@ -113,16 +112,20 @@ import * as THREE from 'three';
     async function checkXRSupport() {
       const status = document.getElementById('status');
       if (!isXRSupported) {
-        status.textContent = 'WebXR not supported in this browser';
+        status.textContent = '桌面预览模式· WebXR 不可用· 鼠标拖拽旋转视角';
         return;
       }
-      const supported = await navigator.xr.isSessionSupported('immersive-vr');
-      if (supported) {
-        document.getElementById('vrButton').style.display = 'block';
-        status.textContent = 'WebXR VR detected — button enabled';
-        setupXR();
-      } else {
-        status.textContent = 'WebXR immersive-vr not supported';
+      try {
+        const supported = await navigator.xr.isSessionSupported('immersive-vr');
+        if (supported) {
+          document.getElementById('vrButton').style.display = 'block';
+          status.textContent = '检测到 WebXR VR· 点击按钮进入';
+          setupXR();
+        } else {
+          status.textContent = '桌面预览模式· 当前设备不支持 immersive-vr';
+        }
+      } catch (err) {
+        status.textContent = '桌面预览模式· XR 检测失败: ' + (err.message || err);
       }
     }
 

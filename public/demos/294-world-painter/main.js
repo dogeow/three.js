@@ -7,7 +7,7 @@ import * as THREE from 'three';
         // ============================================================
         const CONFIG = {
             terrainSize: 200,
-            segments: 256,
+            segments: 128,
             brushSize: 15,
             brushStrength: 0.5,
             brushType: 'raise',

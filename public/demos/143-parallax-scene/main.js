@@ -77,12 +77,7 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, '#1e3a5f');
-      grad.addColorStop(1, '#2d4a6e');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
-
+      ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#1e3a5f';
       _drawMountainRange(ctx, w, h, 0.55, 0.72, 8, 180);
       ctx.fillStyle = '#1a3354';
@@ -96,12 +91,7 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, '#16213e');
-      grad.addColorStop(1, '#1f3460');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
-
+      ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#1f3460';
       _drawMountainRange(ctx, w, h, 0.58, 0.76, 10, 220);
       ctx.fillStyle = '#1a2d50';
@@ -115,12 +105,7 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, '#0d1b2a');
-      grad.addColorStop(1, '#1b2838');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
-
+      ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#1b2838';
       _drawMountainRange(ctx, w, h, 0.68, 0.82, 12, 260);
       ctx.fillStyle = '#162230';
@@ -134,9 +119,7 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      ctx.fillStyle = '#0a1520';
-      ctx.fillRect(0, 0, w, h);
-
+      ctx.clearRect(0, 0, w, h);
       const rng = mulberry32(99);
       for (let i = 0; i < 28; i++) {
         const tx = (rng() * w * 1.5) % w;
@@ -153,20 +136,19 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      const grad = ctx.createLinearGradient(0, h * 0.80, 0, h);
-      grad.addColorStop(0, '#0f1f0f');
+      ctx.clearRect(0, 0, w, h);
+      // 基底仅限底部
+      const grad = ctx.createLinearGradient(0, h * 0.75, 0, h);
+      grad.addColorStop(0, 'rgba(15,31,15,0)');
       grad.addColorStop(0.3, '#0a1a0a');
       grad.addColorStop(1, '#050f05');
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(0, h * 0.75, w, h * 0.25);
 
-      // Grass blades foreground
       ctx.fillStyle = '#1a3a1a';
       _drawGrassField(ctx, w, h, 0.78, 40);
-
       ctx.fillStyle = '#152e15';
       _drawGrassField(ctx, w, h, 0.83, 60);
-
       ctx.fillStyle = '#0f250f';
       _drawGrassField(ctx, w, h, 0.88, 80);
     }

@@ -220,9 +220,16 @@ for (let i = 0; i < 5; i++) {
 
 // Compass
 const compassDiv = document.createElement('div')
-compassDiv.style.cssText = 'position:fixed;top:20px;right:20px;width:60px;height:60px;pointer-events:none;'
+compassDiv.style.cssText = 'position:fixed;top:20px;right:20px;width:60px;height:60px;pointer-events:none;transition:transform 0.08s linear;'
 compassDiv.innerHTML = '<svg viewBox="0 0 60 60" width="60" height="60"><circle cx="30" cy="30" r="28" fill="rgba(0,0,0,0.5)" stroke="#aaa" stroke-width="1"/><polygon points="30,5 34,30 30,25 26,30" fill="#ff4444"/><polygon points="30,55 34,30 30,35 26,30" fill="#ffffff"/><text x="30" y="12" text-anchor="middle" fill="#ff4444" font-size="8" font-family="monospace">N</text></svg>'
 document.body.appendChild(compassDiv)
+
+// 根据相机 azimuth 旋转指南针（OrbitControls 的 azimuthAngle）
+function updateCompass() {
+  const azimuth = controls.getAzimuthalAngle()
+  // SVG 顺时针为正，orbit azimuth 逆时针为正，取负值
+  compassDiv.style.transform = 'rotate(' + (-azimuth * 180 / Math.PI).toFixed(1) + 'deg)'
+}
 
 // Stats panel
 const statsDiv = document.createElement('div')
@@ -263,6 +270,7 @@ function animate() {
   lastTime = now
   updateMap(delta)
   controls.update()
+  updateCompass()
   renderer.render(scene, camera)
   labelRenderer.render(scene, camera)
 }

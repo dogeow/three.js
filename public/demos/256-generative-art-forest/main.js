@@ -301,14 +301,14 @@ let leafInstances = [];
 let windOffsets = [];
 
 // Global time
-let timeOfDay = 0.3;
+let timeOfDay = 0.6;
 let daySpeed = 0.0;
 
 // ─── GUI ─────────────────────────────────────────────────────────────────────
 const params = {
   treeCount: 60,
   regenerate: () => regenerateForest(true),
-  timeOfDay: 0.3,
+  timeOfDay: 0.6,
   daySpeed: 0.0,
   windStrength: 0.3,
   fogDensity: 1.0,

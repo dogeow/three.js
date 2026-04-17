@@ -7,7 +7,6 @@ import * as THREE from 'three';
         // ================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87ceeb);  // 天空蓝背景
-        scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
 
         // 渲染器设置
         const renderer = new THREE.WebGLRenderer({ antialias: true });

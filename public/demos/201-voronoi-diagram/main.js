@@ -35,8 +35,8 @@ scene.add(floor);
 
 // ── Parameters ──────────────────────────────────────────────────────────────
 const params = {
-  seedCount: 25,
-  animationSpeed: 0.3,
+  seedCount: 12,
+  animationSpeed: 0,
   cellOpacity: 0.55,
   showEdges: true,
   showSeeds: true,
@@ -538,8 +538,8 @@ function animate() {
     if (Math.abs(seeds[i].z) > b) { driftVelocities[i].z *= -1; seeds[i].z = Math.sign(seeds[i].z) * b; }
   }
 
-  // Slowly rebuild cells every ~0.5s
-  if (Math.floor(t * 2) !== Math.floor((t - dt) * 2)) {
+  // 性能保护：只有开启动画时才定期重建
+  if (params.animationSpeed > 0.001 && Math.floor(t * 1.2) !== Math.floor((t - dt) * 1.2)) {
     buildCells();
     buildSeedSpheres();
   }
