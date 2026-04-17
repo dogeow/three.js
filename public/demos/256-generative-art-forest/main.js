@@ -42,7 +42,8 @@ function buildLSystem(ls, rng) {
 
 function interpretLSystem(str, angleDeg, scale, rng) {
   const stack = [];
-  let x = 0, y = 0, dir = -90;
+  // dir = 90 让树向上生长（cos(90)=0, sin(90)=1 → +Y 方向）
+  let x = 0, y = 0, dir = 90;
   const pitch = rng.range(-8, 8);
   const segments = [];
 
@@ -250,7 +251,7 @@ function getSkyColors(t) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a1a);
-scene.fog = new THREE.Fog(0x050510, 40, 180);
+scene.fog = new THREE.Fog(0x88aadd, 80, 260);
 
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500);
 camera.position.set(30, 20, 50);
@@ -269,11 +270,11 @@ controls.dampingFactor = 0.05;
 controls.maxPolarAngle = Math.PI * 0.48;
 controls.target.set(0, 3, 0);
 
-// Lights
-const ambientLight = new THREE.AmbientLight(0x111122, 1.0);
+// Lights (提高基础亮度)
+const ambientLight = new THREE.AmbientLight(0x8899bb, 1.2);
 scene.add(ambientLight);
 
-const sunLight = new THREE.DirectionalLight(0xffddaa, 2.0);
+const sunLight = new THREE.DirectionalLight(0xfff5e0, 3.0);
 sunLight.castShadow = true;
 sunLight.shadow.camera.near = 0.5;
 sunLight.shadow.camera.far = 300;
@@ -409,7 +410,7 @@ function animate() {
   const sunHeight = Math.sin(timeOfDay * Math.PI);
   sunLight.position.set(Math.cos(sunAngle) * 80, 30 + sunHeight * 60, Math.sin(sunAngle) * 80);
   sunLight.color.copy(sunColor);
-  sunLight.intensity = Math.max(0, sunHeight) * 2.5 + 0.1;
+  sunLight.intensity = Math.max(0, sunHeight) * 3.5 + 0.4;
 
   // Update fill light
   fillLight.intensity = 0.1 + Math.max(0, -sunHeight) * 0.5;

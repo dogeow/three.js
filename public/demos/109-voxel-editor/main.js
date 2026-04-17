@@ -181,44 +181,44 @@ function raycast(e) {
   return hits.length > 0 ? hits[0] : null
 }
 
-// 记录按下位置，避免旋转后释放时误触发放置/删除
-let _placeDownX = 0, _placeDownY = 0, _placeBtn = -1
+// 左键放置需要区分点击 vs 拖拽（交给 OrbitControls 旋转）；
+// 右键 OrbitControls 已设为 null，直接按下即处理，避免阈值误判导致无法删除。
+let _placeDownX = 0, _placeDownY = 0, _leftDown = false
 renderer.domElement.addEventListener('mousedown', e => {
-  _placeDownX = e.clientX; _placeDownY = e.clientY; _placeBtn = e.button
-})
-renderer.domElement.addEventListener('mouseup', e => {
-  if (e.button !== _placeBtn) return
-  const dx = e.clientX - _placeDownX, dy = e.clientY - _placeDownY
-  if (dx*dx + dy*dy > 25) return // 拖拽而非点击→交给 OrbitControls
-
-  if (e.button === 1) return
-  const hit = raycast(e)
-  if (!hit) return
-
-  const color = PALETTE[currentColorIdx]
-  const normal = hit.face.normal.clone()
-
+  if (e.button === 0) {
+    _leftDown = true
+    _placeDownX = e.clientX; _placeDownY = e.clientY
+    return
+  }
   if (e.button === 2) {
-    // 右键删除：直接读 hit.object 上的 voxelKey（仅对体素有效）
+    e.preventDefault()
+    const hit = raycast(e)
+    if (!hit) return
     const key = hit.object.userData && hit.object.userData.voxelKey
     if (key) {
       const [x, y, z] = key.split(',').map(Number)
       removeVoxel(x, y, z)
-      brushIndicator.textContent = '✕ 删除模式'
+      brushIndicator.textContent = '✕ 删除方块'
     }
-    return
   }
+})
+renderer.domElement.addEventListener('mouseup', e => {
+  if (e.button !== 0 || !_leftDown) return
+  _leftDown = false
+  const dx = e.clientX - _placeDownX, dy = e.clientY - _placeDownY
+  if (dx*dx + dy*dy > 25) return // 拖拽→旋转，不放置
 
-  if (e.button !== 0) return
+  const hit = raycast(e)
+  if (!hit) return
+  const color = PALETTE[currentColorIdx]
+  const normal = hit.face.normal.clone()
 
-  // 左键放置
   if (hit.object.name === 'ground') {
     const bx = Math.round(hit.point.x - 0.5)
     const bz = Math.round(hit.point.z - 0.5)
     placeVoxel(bx, 0, bz, color)
     if (isMirrored) placeVoxel(-bx - 1, 0, bz, color)
   } else {
-    // 在已有体素表面放置：沿法线方向偏移半格
     const pt = hit.point.clone().add(normal.clone().multiplyScalar(0.5))
     const bx = Math.floor(pt.x)
     const by = Math.floor(pt.y)
@@ -226,7 +226,7 @@ renderer.domElement.addEventListener('mouseup', e => {
     placeVoxel(bx, by, bz, color)
     if (isMirrored) placeVoxel(-bx - 1, by, bz, color)
   }
-  brushIndicator.textContent = '● 放置模式'
+  brushIndicator.textContent = '● 放置方块'
 })
 
 // 滚轮保留给 OrbitControls 进行缩放，颜色通过键盘 [ / ] 或点击调色板切换

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-    import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     // ─── Scene ───────────────────────────────────────────────────────────────
     const scene = new THREE.Scene();
@@ -242,23 +242,28 @@ import * as THREE from 'three';
     makePillar(6, 8);
 
     // ─── Player Controller ───────────────────────────────────────────────────
-    const controls = new PointerLockControls(camera, renderer.domElement);
-    scene.add(controls.getObject());
+    // 改用 OrbitControls：鼠标拖动=旋转视角，WASD=平移；避免 iframe 中 PointerLock 被拦截导致无响应。
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.minDistance = 0.1;
+    controls.maxDistance = 0.1; // 锁定距离，相机与 target 紧贴，相当于第一人称
+    controls.target.set(camera.position.x, camera.position.y, camera.position.z - 0.1);
 
     const overlay = document.getElementById('overlay');
-    overlay.addEventListener('click', () => controls.lock());
-
-    controls.addEventListener('lock', () => { overlay.style.display = 'none'; });
-    controls.addEventListener('unlock', () => { overlay.style.display = 'flex'; });
+    if (overlay) {
+      overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+    }
 
     const keys = { w: false, a: false, s: false, d: false };
-    document.addEventListener('keydown', e => {
+    window.addEventListener('keydown', e => {
       if (e.code === 'KeyW') keys.w = true;
       if (e.code === 'KeyA') keys.a = true;
       if (e.code === 'KeyS') keys.s = true;
       if (e.code === 'KeyD') keys.d = true;
     });
-    document.addEventListener('keyup', e => {
+    window.addEventListener('keyup', e => {
       if (e.code === 'KeyW') keys.w = false;
       if (e.code === 'KeyA') keys.a = false;
       if (e.code === 'KeyS') keys.s = false;
@@ -340,7 +345,13 @@ import * as THREE from 'three';
         camera.position.add(move);
         camera.position.y = player.height;
         clampToRoom(camera.position);
+        // OrbitControls target 需要跟随相机
+        controls.target.add(move);
+        controls.target.y = player.height;
+        clampToRoom(controls.target);
       }
+
+      controls.update();
 
       // Animate portal light pulse
       const t = clock.elapsedTime;

@@ -402,11 +402,11 @@ function triangulate3D(points) {
     }
   }
 
-  // Add tetrahedra: connect each triangle to opposite points
-  for (let i = 0; i < tris.length; i++) {
+  // Add tetrahedra: 用初始长度避免向 tris 追加后陷入死循环
+  const initialLen = tris.length;
+  for (let i = 0; i < initialLen; i++) {
     const t = tris[i];
     const mid = new THREE.Vector3().addVectors(t.a, t.b).add(t.c).divideScalar(3);
-    // Find point farthest from mid within the set
     let farthest = null, maxD = 0;
     for (const p of points) {
       const d = mid.distanceTo(p);

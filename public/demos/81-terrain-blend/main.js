@@ -196,7 +196,8 @@ const vertexShader = `
     vRock   = vertexColor.b;
     vSnow   = vertexColor.a * 0.6;
     vForest = vertexColor.a * 0.4;
-    vNormal = normalMatrix * normal;
+    // world-space normal (与 uLightDir 所在坐标系一致)
+    vNormal = normalize(mat3(modelMatrix) * normal);
     vHeight = position.y;
     vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
 
@@ -422,18 +423,20 @@ function buildTerrain() {
   geo.computeBoundingSphere();
   scene.add(terrainMesh);
 
-  // Water plane
-  const waterGeo = new THREE.PlaneGeometry(params.terrainSize * 1.05, params.terrainSize * 1.05, 1, 1);
+  // Water plane - 只覆盖低于水位的区域，体积更小、透明度更高，避免挡住地形
+  const waterGeo = new THREE.PlaneGeometry(params.terrainSize * 0.98, params.terrainSize * 0.98, 1, 1);
   waterGeo.rotateX(-Math.PI / 2);
   const waterMat = new THREE.MeshPhongMaterial({
-    color: 0x0a4a7a,
+    color: 0x2288cc,
     transparent: true,
-    opacity: 0.55,
-    shininess: 100,
-    specular: 0x4488bb,
+    opacity: 0.4,
+    shininess: 120,
+    specular: 0x88bbdd,
+    depthWrite: false, // 避免水面写入深度挡住后面地形
   });
   waterMesh = new THREE.Mesh(waterGeo, waterMat);
   waterMesh.position.y = params.waterLevel;
+  waterMesh.renderOrder = 1; // 水面最后画
   waterMesh.receiveShadow = true;
   scene.add(waterMesh);
 

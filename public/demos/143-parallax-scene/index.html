@@ -146,15 +146,11 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, '#1e3a5f');
-      grad.addColorStop(1, '#2d4a6e');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
+      ctx.clearRect(0, 0, w, h);
 
-      ctx.fillStyle = '#1e3a5f';
+      ctx.fillStyle = '#4a6aa0';
       _drawMountainRange(ctx, w, h, 0.55, 0.72, 8, 180);
-      ctx.fillStyle = '#1a3354';
+      ctx.fillStyle = '#3a5a90';
       _drawMountainRange(ctx, w, h, 0.60, 0.75, 6, 140);
     }
   },
@@ -165,15 +161,11 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, '#16213e');
-      grad.addColorStop(1, '#1f3460');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
+      ctx.clearRect(0, 0, w, h);
 
-      ctx.fillStyle = '#1f3460';
+      ctx.fillStyle = '#2d4878';
       _drawMountainRange(ctx, w, h, 0.58, 0.76, 10, 220);
-      ctx.fillStyle = '#1a2d50';
+      ctx.fillStyle = '#213a68';
       _drawMountainRange(ctx, w, h, 0.64, 0.80, 7, 160);
     }
   },
@@ -184,15 +176,11 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, '#0d1b2a');
-      grad.addColorStop(1, '#1b2838');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
+      ctx.clearRect(0, 0, w, h);
 
-      ctx.fillStyle = '#1b2838';
+      ctx.fillStyle = '#1d3250';
       _drawMountainRange(ctx, w, h, 0.68, 0.82, 12, 260);
-      ctx.fillStyle = '#162230';
+      ctx.fillStyle = '#142540';
       _drawMountainRange(ctx, w, h, 0.72, 0.86, 8, 180);
     }
   },
@@ -203,8 +191,7 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
-      ctx.fillStyle = '#0a1520';
-      ctx.fillRect(0, 0, w, h);
+      ctx.clearRect(0, 0, w, h);
 
       const rng = mulberry32(99);
       for (let i = 0; i < 28; i++) {
@@ -222,12 +209,13 @@ const layerDefs = [
     width: 2048,
     height: 1024,
     draw(ctx, w, h) {
+      ctx.clearRect(0, 0, w, h);
       const grad = ctx.createLinearGradient(0, h * 0.80, 0, h);
       grad.addColorStop(0, '#0f1f0f');
       grad.addColorStop(0.3, '#0a1a0a');
       grad.addColorStop(1, '#050f05');
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(0, h * 0.75, w, h * 0.25);
 
       // Grass blades foreground
       ctx.fillStyle = '#1a3a1a';
@@ -270,12 +258,12 @@ function _drawMountainRange(ctx, w, h, baseY, peakY, peaks, amp) {
 function _drawTree(ctx, x, y, height, rng) {
   const trunkW = height * 0.06;
   const trunkH = height * 0.25;
-  ctx.fillStyle = `rgb(${20 + rng() * 15|0},${12 + rng() * 8|0},${8 + rng() * 5|0})`;
+  ctx.fillStyle = `rgb(${60 + rng() * 20|0},${35 + rng() * 15|0},${20 + rng() * 10|0})`;
   ctx.fillRect(x - trunkW / 2, y, trunkW, trunkH);
 
   const leafY = y - height * 0.1;
   const leafR = height * 0.45;
-  const leafColors = ['#0d2b0d', '#102e10', '#0a240a', '#142a14'];
+  const leafColors = ['#0a0a0a', '#0d0d15', '#050510', '#101020'];
   const col = leafColors[rng() * leafColors.length | 0];
   ctx.fillStyle = col;
 
@@ -319,6 +307,16 @@ function mulberry32(seed) {
 }
 
 // ─── Build Layers ─────────────────────────────────────────────────────────────
+function getPlaneSizeAtDepth(z) {
+  const distance = camera.position.z - z;
+  const visibleHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * distance;
+  const visibleWidth = visibleHeight * camera.aspect;
+  return {
+    width: visibleWidth * 1.04,
+    height: visibleHeight * 1.04,
+  };
+}
+
 const layers = layerDefs.map(def => {
   const canvas = makeCanvas(def.width, def.height);
   const ctx = canvas.getContext('2d');
@@ -327,7 +325,8 @@ const layers = layerDefs.map(def => {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
 
-  const geo = new THREE.PlaneGeometry(2 * (innerWidth / innerHeight) * 3, 2 * 3);
+  const planeSize = getPlaneSizeAtDepth(def.z);
+  const geo = new THREE.PlaneGeometry(planeSize.width, planeSize.height);
   const isOpaque = def.name === 'sky';
   const mat = new THREE.MeshBasicMaterial({
     map: texture,
@@ -335,10 +334,10 @@ const layers = layerDefs.map(def => {
     opacity: isOpaque ? 1 : 0.999,
     depthWrite: false,
     depthTest: false,
-    renderOrder: -def.z,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.z = def.z;
+  mesh.renderOrder = 100 + def.z;
 
   scene.add(mesh);
 
@@ -392,6 +391,12 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+  layers.forEach((layer, index) => {
+    const { width, height } = getPlaneSizeAtDepth(layerDefs[index].z);
+    layer.mesh.geometry.dispose();
+    layer.mesh.geometry = new THREE.PlaneGeometry(width, height);
+  });
 });
 
 // ─── UI ───────────────────────────────────────────────────────────────────────

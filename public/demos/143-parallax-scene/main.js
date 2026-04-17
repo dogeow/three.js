@@ -78,9 +78,9 @@ const layerDefs = [
     height: 1024,
     draw(ctx, w, h) {
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = '#1e3a5f';
+      ctx.fillStyle = '#4a6aa0';
       _drawMountainRange(ctx, w, h, 0.55, 0.72, 8, 180);
-      ctx.fillStyle = '#1a3354';
+      ctx.fillStyle = '#3a5a90';
       _drawMountainRange(ctx, w, h, 0.60, 0.75, 6, 140);
     }
   },
@@ -92,9 +92,9 @@ const layerDefs = [
     height: 1024,
     draw(ctx, w, h) {
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = '#1f3460';
+      ctx.fillStyle = '#2d4878';
       _drawMountainRange(ctx, w, h, 0.58, 0.76, 10, 220);
-      ctx.fillStyle = '#1a2d50';
+      ctx.fillStyle = '#213a68';
       _drawMountainRange(ctx, w, h, 0.64, 0.80, 7, 160);
     }
   },
@@ -106,9 +106,9 @@ const layerDefs = [
     height: 1024,
     draw(ctx, w, h) {
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = '#1b2838';
+      ctx.fillStyle = '#1d3250';
       _drawMountainRange(ctx, w, h, 0.68, 0.82, 12, 260);
-      ctx.fillStyle = '#162230';
+      ctx.fillStyle = '#142540';
       _drawMountainRange(ctx, w, h, 0.72, 0.86, 8, 180);
     }
   },
@@ -183,12 +183,12 @@ function _drawMountainRange(ctx, w, h, baseY, peakY, peaks, amp) {
 function _drawTree(ctx, x, y, height, rng) {
   const trunkW = height * 0.06;
   const trunkH = height * 0.25;
-  ctx.fillStyle = `rgb(${20 + rng() * 15|0},${12 + rng() * 8|0},${8 + rng() * 5|0})`;
+  ctx.fillStyle = `rgb(${60 + rng() * 20|0},${35 + rng() * 15|0},${20 + rng() * 10|0})`;
   ctx.fillRect(x - trunkW / 2, y, trunkW, trunkH);
 
   const leafY = y - height * 0.1;
   const leafR = height * 0.45;
-  const leafColors = ['#0d2b0d', '#102e10', '#0a240a', '#142a14'];
+  const leafColors = ['#0a0a0a', '#0d0d15', '#050510', '#101020'];
   const col = leafColors[rng() * leafColors.length | 0];
   ctx.fillStyle = col;
 
@@ -232,6 +232,10 @@ function mulberry32(seed) {
 }
 
 // ─── Build Layers ─────────────────────────────────────────────────────────────
+// 所有层使用相同的 plane 尺寸，靠 z 深度 + renderOrder 进行视差层叠
+const PLANE_W = 2 * (innerWidth / innerHeight) * 3;
+const PLANE_H = 2 * 3;
+
 const layers = layerDefs.map(def => {
   const canvas = makeCanvas(def.width, def.height);
   const ctx = canvas.getContext('2d');
@@ -240,11 +244,18 @@ const layers = layerDefs.map(def => {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
 
-  const geo = new THREE.PlaneGeometry(2 * (innerWidth / innerHeight) * 3, 2 * 3);
-  const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: def.name !== 'sky', depthWrite: def.name === 'sky' });
+  const geo = new THREE.PlaneGeometry(PLANE_W, PLANE_H);
+  const isSky = def.name === 'sky';
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: !isSky,       // sky 不透明，作为最底层背景
+    depthWrite: isSky,         // 只有 sky 写深度
+    depthTest: true,
+  });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.z = def.z;
-
+  // 从远到近依次绘制：sky renderOrder=0, 依次递增
+  mesh.renderOrder = 100 + def.z; // z=-50→50, z=0→100，数值越大越后画
   scene.add(mesh);
 
   return {

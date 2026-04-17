@@ -348,12 +348,20 @@ function applyBrushAt(point) {
 // Track mouse for drag painting
 let pointerMoved = false;
 
+// 左键永远不触发 OrbitControls（避免一边操作地形一边旋转视角）
+// 右键=旋转，中键=缩放
+controls.mouseButtons = {
+  LEFT: null,
+  MIDDLE: THREE.MOUSE.DOLLY,
+  RIGHT: THREE.MOUSE.ROTATE,
+};
+controls.enablePan = false;
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (e.button === 0 && !e.shiftKey) {
     isBrushDown = true;
     pointerMoved = false;
-    // 雕刻过程中禁用 OrbitControls，避免左键拖拽时地形随视角运动
-    controls.enabled = false;
     const pt = getTerrainIntersection(e);
     if (pt) {
       applyBrushAt(pt);
