@@ -41,6 +41,11 @@ const chartCtx = chartCanvas.getContext('2d')
 const hS = [S], hI = [I], hR = [Rcount]
 const INFECT_RADIUS = 2.5
 const RECOVER_TIME = 6000
+
+function sirMeaningHtml() {
+  return 'S = <span style="color:#4488ff">Susceptible 易感者</span><br>I = <span style="color:#ff2222">Infected 感染者</span><br>R = <span style="color:#22cc44">Recovered 康复/移除者</span>'
+}
+
 function updateChart() {
   const ctx = chartCtx; ctx.fillStyle = '#111'; ctx.fillRect(0, 0, 280, 110)
   const len = hS.length
@@ -49,7 +54,7 @@ function updateChart() {
     d.forEach((v, i) => { const x = i / len * 280; const y = 100 - v / N * 90; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
     ctx.stroke()
   })
-  ctx.fillStyle = '#888'; ctx.font = '10px monospace'; ctx.fillText('Blue=S  Red=I  Green=R', 4, 108)
+  ctx.fillStyle = '#888'; ctx.font = '10px monospace'; ctx.fillText('S: 易感  I: 感染  R: 康复/移除', 4, 108)
 }
 function update() {
   const now = performance.now()
@@ -73,7 +78,7 @@ function update() {
   }
   hS.push(S); hI.push(I); hR.push(Rcount)
   if (hS.length > 280) { hS.shift(); hI.shift(); hR.shift() }
-  statsDiv.innerHTML = '<b>3085 - SIR Epidemic</b><br>S: <b style="color:#4488ff">'+S+'</b><br>I: <b style="color:#ff2222">'+I+'</b><br>R: <b style="color:#22cc44">'+Rcount+'</b><br><br>Click to add infections'
+  statsDiv.innerHTML = '<b>3085 - SIR Epidemic</b><br>' + sirMeaningHtml() + '<br><br>S: <b style="color:#4488ff">'+S+'</b><br>I: <b style="color:#ff2222">'+I+'</b><br>R: <b style="color:#22cc44">'+Rcount+'</b><br><br>点击地面可增加局部感染'
   updateChart()
 }
 const raycaster = new THREE.Raycaster()

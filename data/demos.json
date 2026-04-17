@@ -32,14 +32,34 @@
     "autoRegistered": true
   },
   {
-    "slug": "002-rotating-cube",
-    "name": "002-rotating-cube",
-    "title": "Rotating Cube",
-    "desc": "第一个 3D 动画场景：光照 + 立方体旋转 + OrbitControls 鼠标交互。",
+    "slug": "002-animation-loop",
+    "name": "002-animation-loop",
+    "title": "Animation Loop",
+    "desc": "从静态场景迈向动态场景：加入 requestAnimationFrame，让立方体持续旋转，但仍使用无光照材质。",
     "categories": [
       "入门基础"
     ],
     "index": 2,
+    "features": [
+      "BoxGeometry",
+      "Mesh",
+      "MeshBasicMaterial",
+      "PerspectiveCamera",
+      "Scene",
+      "WebGLRenderer",
+      "requestAnimationFrame"
+    ],
+    "extraCount": 0
+  },
+  {
+    "slug": "003-lit-cube",
+    "name": "003-lit-cube",
+    "title": "Lit Cube",
+    "desc": "在动画场景里引入受光材质与第一组灯光：MeshStandardMaterial + AmbientLight + DirectionalLight。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 3,
     "features": [
       "AmbientLight",
       "BoxGeometry",
@@ -50,6 +70,249 @@
       "Scene",
       "WebGLRenderer"
     ],
+    "extraCount": 0
+  },
+  {
+    "slug": "004-orbit-controls",
+    "name": "004-orbit-controls",
+    "title": "Orbit Controls",
+    "desc": "在受光立方体场景中加入 OrbitControls，实现鼠标拖拽旋转、滚轮缩放和阻尼。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 4,
+    "features": [
+      "AmbientLight",
+      "BoxGeometry",
+      "DirectionalLight",
+      "Mesh",
+      "MeshStandardMaterial",
+      "OrbitControls",
+      "PerspectiveCamera",
+      "Scene",
+      "WebGLRenderer"
+    ],
+    "extraCount": 0
+  },
+  {
+    "slug": "005-rotating-cube",
+    "name": "005-rotating-cube",
+    "title": "Rotating Cube",
+    "desc": "把动画、光照和 OrbitControls 组合起来，形成第一个完整可交互的 3D 旋转立方体场景。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 5,
+    "features": [
+      "AmbientLight",
+      "BoxGeometry",
+      "DirectionalLight",
+      "Mesh",
+      "MeshStandardMaterial",
+      "OrbitControls",
+      "PerspectiveCamera",
+      "Scene",
+      "WebGLRenderer",
+      "requestAnimationFrame"
+    ],
+    "extraCount": 0
+  },
+  {
+    "slug": "006-basic-lights",
+    "name": "006-basic-lights",
+    "title": "Basic Lights",
+    "desc": "沿用上一个旋转立方体场景，只额外切换四种光源：AmbientLight、DirectionalLight、PointLight、SpotLight。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 6,
+    "features": [
+      "AmbientLight",
+      "BoxGeometry",
+      "DirectionalLight",
+      "Mesh",
+      "MeshStandardMaterial",
+      "OrbitControls",
+      "PlaneGeometry",
+      "PerspectiveCamera",
+      "PointLight",
+      "Scene",
+      "SpotLight",
+      "WebGLRenderer",
+      "requestAnimationFrame"
+    ],
+    "extraCount": 0
+  },
+  {
+    "slug": "007-geometry-types",
+    "name": "007-geometry-types",
+    "title": "Geometry Types",
+    "desc": "常用几何体一览：Box、Sphere、Cylinder、Cone、Torus、TorusKnot、Icosahedron、Octahedron、Plane、Circle、Ring、Capsule 等。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 7,
+    "features": [
+      "AmbientLight",
+      "BoxGeometry",
+      "CapsuleGeometry",
+      "CircleGeometry",
+      "ConeGeometry",
+      "CylinderGeometry",
+      "DirectionalLight",
+      "DodecahedronGeometry",
+      "IcosahedronGeometry",
+      "Mesh",
+      "MeshStandardMaterial",
+      "OctahedronGeometry"
+    ],
+    "extraCount": 8
+  },
+  {
+    "slug": "008-material-showcase",
+    "name": "008-material-showcase",
+    "title": "Material Showcase",
+    "desc": "四种材质对比：MeshBasicMaterial（无光照）、MeshLambertMaterial（漫反射）、MeshPhongMaterial（高光）、MeshStandardMaterial（PBR）。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 8,
+    "features": [
+      "AmbientLight",
+      "BoxGeometry",
+      "DirectionalLight",
+      "Mesh",
+      "MeshBasicMaterial",
+      "MeshLambertMaterial",
+      "MeshPhongMaterial",
+      "MeshStandardMaterial",
+      "PerspectiveCamera",
+      "PointLight",
+      "Scene",
+      "SphereGeometry"
+    ],
+    "extraCount": 1
+  },
+  {
+    "slug": "009-camera-controls",
+    "name": "009-camera-controls",
+    "title": "Camera Controls",
+    "desc": "OrbitControls 相机交互：鼠标拖拽旋转、滚轮缩放、右键平移、阻尼效果、自动旋转。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 9,
+    "features": [
+      "AmbientLight",
+      "BoxGeometry",
+      "Clock",
+      "CylinderGeometry",
+      "DirectionalLight",
+      "FogExp2",
+      "GridHelper",
+      "HemisphereLight",
+      "Mesh",
+      "MeshBasicMaterial",
+      "MeshStandardMaterial",
+      "PerspectiveCamera"
+    ],
+    "extraCount": 3
+  },
+  {
+    "slug": "010-texture-basics",
+    "name": "010-texture-basics",
+    "title": "Texture Basics",
+    "desc": "纹理贴图基础：TextureLoader 加载外部图片、Canvas 程序化生成纹理、纹理重复与 UV 偏移动画。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 10,
+    "features": [
+      "AmbientLight",
+      "BoxGeometry",
+      "CanvasTexture",
+      "DirectionalLight",
+      "Mesh",
+      "MeshStandardMaterial",
+      "PerspectiveCamera",
+      "PlaneGeometry",
+      "Scene",
+      "SphereGeometry",
+      "TextureLoader",
+      "WebGLRenderer"
+    ],
+    "extraCount": 0
+  },
+  {
+    "slug": "011-animation-basics",
+    "name": "011-animation-basics",
+    "title": "Animation Basics",
+    "desc": "动画基础：requestAnimationFrame 动画循环、基于时间的运动（而非帧数）、正弦波动、轨道运动、脉冲缩放。",
+    "categories": [
+      "入门基础"
+    ],
+    "index": 11,
+    "features": [
+      "AmbientLight",
+      "CylinderGeometry",
+      "DirectionalLight",
+      "Mesh",
+      "MeshBasicMaterial",
+      "MeshStandardMaterial",
+      "PerspectiveCamera",
+      "PlaneGeometry",
+      "Scene",
+      "SphereGeometry",
+      "WebGLRenderer"
+    ],
+    "extraCount": 0
+  },
+  {
+    "slug": "07-orbit-controls",
+    "name": "07-orbit-controls",
+    "title": "Orbit Controls",
+    "desc": "实现 3D 场景的轨道相机控制，支持鼠标拖拽旋转、滚轮缩放和平移查看。",
+    "categories": [
+      "交互与控制"
+    ],
+    "index": 12,
+    "features": [],
+    "extraCount": 0
+  },
+  {
+    "slug": "08-raycaster",
+    "name": "08-raycaster",
+    "title": "Raycaster",
+    "desc": "使用 Raycaster 实现 3D 场景中的鼠标拾取、对象选择和交互检测。",
+    "categories": [
+      "交互与控制"
+    ],
+    "index": 13,
+    "features": [],
+    "extraCount": 0
+  },
+  {
+    "slug": "09-gltf-loader",
+    "name": "09-gltf-loader",
+    "title": "Gltf Loader",
+    "desc": "加载 GLTF/GLB 格式的 3D 模型，学习如何导入 Blender 等工具导出的场景。",
+    "categories": [
+      "交互与控制"
+    ],
+    "index": 14,
+    "features": [],
+    "extraCount": 0
+  },
+  {
+    "slug": "10-loading-manager",
+    "name": "10-loading-manager",
+    "title": "Loading Manager",
+    "desc": "使用 LoadingManager 统一管理多个资源的加载进度，实现加载界面。",
+    "categories": [
+      "交互与控制"
+    ],
+    "index": 15,
+    "features": [],
     "extraCount": 0
   },
   {
@@ -80,31 +343,6 @@
     "autoRegistered": true
   },
   {
-    "slug": "003-basic-lights",
-    "name": "003-basic-lights",
-    "title": "Basic Lights",
-    "desc": "四种光源对比：AmbientLight（环境光）、DirectionalLight（平行光）、PointLight（点光源）、SpotLight（聚光灯）。",
-    "categories": [
-      "入门基础"
-    ],
-    "index": 3,
-    "features": [
-      "AmbientLight",
-      "DirectionalLight",
-      "Mesh",
-      "MeshBasicMaterial",
-      "MeshStandardMaterial",
-      "PerspectiveCamera",
-      "PlaneGeometry",
-      "PointLight",
-      "Scene",
-      "SphereGeometry",
-      "SpotLight",
-      "WebGLRenderer"
-    ],
-    "extraCount": 0
-  },
-  {
     "slug": "03-lights-shadows",
     "name": "03-lights-shadows",
     "title": "Lights Shadows",
@@ -130,31 +368,6 @@
     "autoRegistered": true
   },
   {
-    "slug": "004-geometry-types",
-    "name": "004-geometry-types",
-    "title": "Geometry Types",
-    "desc": "常用几何体一览：Box、Sphere、Cylinder、Cone、Torus、TorusKnot、Icosahedron、Octahedron、Plane、Circle、Ring、Capsule 等。",
-    "categories": [
-      "入门基础"
-    ],
-    "index": 4,
-    "features": [
-      "AmbientLight",
-      "BoxGeometry",
-      "CapsuleGeometry",
-      "CircleGeometry",
-      "ConeGeometry",
-      "CylinderGeometry",
-      "DirectionalLight",
-      "DodecahedronGeometry",
-      "IcosahedronGeometry",
-      "Mesh",
-      "MeshStandardMaterial",
-      "OctahedronGeometry"
-    ],
-    "extraCount": 8
-  },
-  {
     "slug": "04-textures",
     "name": "04-textures",
     "title": "Textures",
@@ -165,31 +378,6 @@
     "index": 55,
     "features": [],
     "extraCount": 0
-  },
-  {
-    "slug": "005-material-showcase",
-    "name": "005-material-showcase",
-    "title": "Material Showcase",
-    "desc": "四种材质对比：MeshBasicMaterial（无光照）、MeshLambertMaterial（漫反射）、MeshPhongMaterial（高光）、MeshStandardMaterial（PBR）。",
-    "categories": [
-      "入门基础"
-    ],
-    "index": 5,
-    "features": [
-      "AmbientLight",
-      "BoxGeometry",
-      "DirectionalLight",
-      "Mesh",
-      "MeshBasicMaterial",
-      "MeshLambertMaterial",
-      "MeshPhongMaterial",
-      "MeshStandardMaterial",
-      "PerspectiveCamera",
-      "PointLight",
-      "Scene",
-      "SphereGeometry"
-    ],
-    "extraCount": 1
   },
   {
     "slug": "05-canvas-texture",
@@ -204,31 +392,6 @@
     "extraCount": 0
   },
   {
-    "slug": "006-camera-controls",
-    "name": "006-camera-controls",
-    "title": "Camera Controls",
-    "desc": "OrbitControls 相机交互：鼠标拖拽旋转、滚轮缩放、右键平移、阻尼效果、自动旋转。",
-    "categories": [
-      "入门基础"
-    ],
-    "index": 6,
-    "features": [
-      "AmbientLight",
-      "BoxGeometry",
-      "Clock",
-      "CylinderGeometry",
-      "DirectionalLight",
-      "FogExp2",
-      "GridHelper",
-      "HemisphereLight",
-      "Mesh",
-      "MeshBasicMaterial",
-      "MeshStandardMaterial",
-      "PerspectiveCamera"
-    ],
-    "extraCount": 3
-  },
-  {
     "slug": "06-video-texture",
     "name": "06-video-texture",
     "title": "Video Texture",
@@ -237,103 +400,6 @@
       "粒子系统"
     ],
     "index": 206,
-    "features": [],
-    "extraCount": 0
-  },
-  {
-    "slug": "007-texture-basics",
-    "name": "007-texture-basics",
-    "title": "Texture Basics",
-    "desc": "纹理贴图基础：TextureLoader 加载外部图片、Canvas 程序化生成纹理、纹理重复与 UV 偏移动画。",
-    "categories": [
-      "入门基础"
-    ],
-    "index": 7,
-    "features": [
-      "AmbientLight",
-      "BoxGeometry",
-      "CanvasTexture",
-      "DirectionalLight",
-      "Mesh",
-      "MeshStandardMaterial",
-      "PerspectiveCamera",
-      "PlaneGeometry",
-      "Scene",
-      "SphereGeometry",
-      "TextureLoader",
-      "WebGLRenderer"
-    ],
-    "extraCount": 0
-  },
-  {
-    "slug": "07-orbit-controls",
-    "name": "07-orbit-controls",
-    "title": "Orbit Controls",
-    "desc": "实现 3D 场景的轨道相机控制，支持鼠标拖拽旋转、滚轮缩放和平移查看。",
-    "categories": [
-      "交互与控制"
-    ],
-    "index": 2,
-    "features": [],
-    "extraCount": 0
-  },
-  {
-    "slug": "008-animation-basics",
-    "name": "008-animation-basics",
-    "title": "Animation Basics",
-    "desc": "动画基础：requestAnimationFrame 动画循环、基于时间的运动（而非帧数）、正弦波动、轨道运动、脉冲缩放。",
-    "categories": [
-      "入门基础"
-    ],
-    "index": 8,
-    "features": [
-      "AmbientLight",
-      "CylinderGeometry",
-      "DirectionalLight",
-      "Mesh",
-      "MeshBasicMaterial",
-      "MeshStandardMaterial",
-      "PerspectiveCamera",
-      "PlaneGeometry",
-      "Scene",
-      "SphereGeometry",
-      "WebGLRenderer"
-    ],
-    "extraCount": 0
-  },
-  {
-    "slug": "08-raycaster",
-    "name": "08-raycaster",
-    "title": "Raycaster",
-    "desc": "使用 Raycaster 实现 3D 场景中的鼠标拾取、对象选择和交互检测。",
-    "categories": [
-      "交互与控制"
-    ],
-    "index": 3,
-    "features": [],
-    "extraCount": 0
-  },
-  {
-    "slug": "09-gltf-loader",
-    "name": "09-gltf-loader",
-    "title": "Gltf Loader",
-    "desc": "加载 GLTF/GLB 格式的 3D 模型，学习如何导入 Blender 等工具导出的场景。",
-    "categories": [
-      "交互与控制"
-    ],
-    "index": 4,
-    "features": [],
-    "extraCount": 0
-  },
-  {
-    "slug": "10-loading-manager",
-    "name": "10-loading-manager",
-    "title": "Loading Manager",
-    "desc": "使用 LoadingManager 统一管理多个资源的加载进度，实现加载界面。",
-    "categories": [
-      "交互与控制"
-    ],
-    "index": 5,
     "features": [],
     "extraCount": 0
   },
@@ -1582,7 +1648,7 @@
     "categories": [
       "交互与控制"
     ],
-    "index": 6,
+    "index": 16,
     "features": [
       "AmbientLight",
       "BoxGeometry",
@@ -1607,7 +1673,7 @@
     "categories": [
       "交互与控制"
     ],
-    "index": 7,
+    "index": 17,
     "features": [
       "AmbientLight",
       "BoxGeometry",
@@ -1632,7 +1698,7 @@
     "categories": [
       "交互与控制"
     ],
-    "index": 8,
+    "index": 18,
     "features": [
       "AmbientLight",
       "BoxGeometry",
@@ -1658,7 +1724,7 @@
       "几何体与建模",
       "交互与控制"
     ],
-    "index": 9,
+    "index": 19,
     "features": [
       "AmbientLight",
       "BoxGeometry",
@@ -2213,7 +2279,7 @@
       "几何体与建模",
       "交互与控制"
     ],
-    "index": 10,
+    "index": 20,
     "features": [
       "AmbientLight",
       "BoxGeometry",
@@ -3929,7 +3995,7 @@
     "categories": [
       "交互与控制"
     ],
-    "index": 11,
+    "index": 21,
     "features": [
       "AmbientLight",
       "CatmullRomCurve3",
@@ -4398,7 +4464,7 @@
     "categories": [
       "交互与控制"
     ],
-    "index": 12,
+    "index": 22,
     "features": [
       "AmbientLight",
       "BoxGeometry",
@@ -4726,7 +4792,7 @@
       "几何体与建模",
       "交互与控制"
     ],
-    "index": 13,
+    "index": 23,
     "features": [
       "AmbientLight",
       "BufferGeometry",
@@ -5923,7 +5989,7 @@
     "categories": [
       "交互与控制"
     ],
-    "index": 14,
+    "index": 24,
     "features": [
       "AmbientLight",
       "BoxGeometry",
@@ -7341,7 +7407,7 @@
     "categories": [
       "交互与控制"
     ],
-    "index": 15,
+    "index": 25,
     "features": [],
     "extraCount": 0
   },

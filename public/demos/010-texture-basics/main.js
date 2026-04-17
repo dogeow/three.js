@@ -1,4 +1,4 @@
-// 007. Texture Basics — 纹理贴图基础
+// 010. Texture Basics — 纹理贴图基础
 // 演示加载外部图片纹理、Canvas 生成的纹理、重复平铺等
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

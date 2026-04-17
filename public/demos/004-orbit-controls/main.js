@@ -1,29 +1,23 @@
-// 002. Rotating Cube — 旋转的立方体（Three.js 第一个 3D 动画场景）
-// 入门第一个完整示例：场景 + 光照 + 动画循环
+// 004. Orbit Controls — 给静态受光立方体加上鼠标控制
+// 新技术点：OrbitControls，实现旋转、缩放和平移
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
-// 场景
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x1a1a2e)
+scene.background = new THREE.Color(0x111111)
 
-// 相机
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000)
 camera.position.set(3, 3, 5)
-camera.lookAt(0, 0, 0)
 
-// 渲染器
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(devicePixelRatio)
 document.body.appendChild(renderer.domElement)
 
-// 轨道控制器（鼠标拖拽旋转、滚轮缩放）
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
-controls.dampingFactor = 0.05
+controls.target.set(0, 0, 0)
 
-// 光照：环境光（柔和照亮）+ 方向光（产生立体感）
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
 scene.add(ambientLight)
 
@@ -31,24 +25,19 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
 directionalLight.position.set(5, 5, 5)
 scene.add(directionalLight)
 
-// 立方体
 const geometry = new THREE.BoxGeometry(2, 2, 2)
-const material = new THREE.MeshStandardMaterial({ color: 0x00ffcc, roughness: 0.3, metalness: 0.2 })
+const material = new THREE.MeshStandardMaterial({ color: 0x00ffcc, roughness: 0.35, metalness: 0.15 })
 const cube = new THREE.Mesh(geometry, material)
 scene.add(cube)
 
-// 动画循环：每帧旋转一点点
 function animate() {
   requestAnimationFrame(animate)
-  // 旋转：绕 X 轴和 Y 轴持续旋转
-  cube.rotation.x += 0.01
-  cube.rotation.y += 0.01
-  controls.update()  // 更新轨道控制器
+  controls.update()
   renderer.render(scene, camera)
 }
+
 animate()
 
-// 窗口缩放
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight
   camera.updateProjectionMatrix()

@@ -76,9 +76,10 @@
     <span class="key">指向</span> — 仅伸出食指<br>
     <br>
     在 <span class="key">immersive-ar</span> 模式下运行。<br>
-    桌面预览: 鼠标旋转视角。
+    需要支持 WebXR 手部追踪的真机设备。<br>
+    桌面预览仅显示演示手势，鼠标可旋转视角。
   </p>
-  <button id="xrBtn">正在加载 XR…</button>
+  <button id="xrBtn">检查 XR 支持中…</button>
   <div id="errorMsg"></div>
 </div>
 
@@ -98,7 +99,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
-renderer.xr.setSessionreferenceSpaceType('local-floor');
+renderer.xr.setReferenceSpaceType('local-floor');
 document.body.appendChild(renderer.domElement);
 
 const scene  = new THREE.Scene();
@@ -373,11 +374,11 @@ const errorMsg  = document.getElementById('errorMsg');
   try {
     const supported = await navigator.xr.isSessionSupported('immersive-ar');
     if (supported) {
-      xrBtn.textContent  = 'Enter AR + Hand Tracking';
+      xrBtn.textContent  = '进入 AR 手部追踪（需真机）';
       xrBtn.disabled     = false;
       xrBtn.addEventListener('click', startXR);
     } else {
-      showUnsupported('不支持 immersive-ar。请尝试 Android 版 Chrome 或 Meta Quest。');
+      showUnsupported('当前设备不支持 immersive-ar 手部追踪。通常需要 Android AR 设备或 Meta Quest。');
     }
   } catch(e) {
     showUnsupported('WebXR 检查失败: ' + e.message);
@@ -387,7 +388,7 @@ const errorMsg  = document.getElementById('errorMsg');
 function showUnsupported(msg) {
   errorMsg.textContent = msg;
   errorMsg.style.display = 'block';
-  xrBtn.textContent  = 'WebXR 不可用';
+  xrBtn.textContent  = '当前设备无法进入 XR';
   xrBtn.disabled     = true;
 }
 
@@ -398,7 +399,7 @@ async function startXR() {
       optionalFeatures: ['dom-overlay', 'local-floor'],
     });
     renderer.xr.setSession(xrSession);
-    xrBtn.textContent = 'Connected…';
+    xrBtn.textContent = 'XR 已连接';
     xrBtn.disabled    = true;
     overlay.classList.add('hidden');
 
@@ -409,7 +410,7 @@ async function startXR() {
       xrSession    = null;
       xrRefSpace   = null;
       overlay.classList.remove('hidden');
-      xrBtn.textContent = '进入 AR + 手部追踪';
+      xrBtn.textContent = '进入 AR 手部追踪（需真机）';
       xrBtn.disabled    = false;
       // hide gesture effects
       pinchRing.visible = false;

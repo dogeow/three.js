@@ -52,6 +52,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(devicePixelRatio)
 renderer.shadowMap.enabled = true
+renderer.outputColorSpace = THREE.SRGBColorSpace
 document.body.appendChild(renderer.domElement)
 
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -86,9 +87,6 @@ loader.load(
   // 加载成功
   (gltf) => {
     const model = gltf.scene
-    // 模型自带尺寸不一，缩到合适大小并放到地面上
-    model.scale.set(0.02, 0.02, 0.02)
-    model.position.y = 0
     // 让所有子网格都投阴影
     model.traverse((child) => {
       if (child.isMesh) {
@@ -96,8 +94,27 @@ loader.load(
         child.receiveShadow = true
       }
     })
+
+    const rawBox = new THREE.Box3().setFromObject(model)
+    const rawSize = rawBox.getSize(new THREE.Vector3())
+    const targetHeight = 2.2
+    const scale = targetHeight / Math.max(rawSize.y, 0.001)
+    model.scale.setScalar(scale)
+
+    const fittedBox = new THREE.Box3().setFromObject(model)
+    const fittedSize = fittedBox.getSize(new THREE.Vector3())
+    const fittedCenter = fittedBox.getCenter(new THREE.Vector3())
+
+    model.position.x -= fittedCenter.x
+    model.position.y -= fittedBox.min.y
+    model.position.z -= fittedCenter.z
+
     scene.add(model)
     window.duck = model
+    controls.target.set(0, fittedSize.y * 0.45, 0)
+    camera.position.set(fittedSize.x * 1.8, fittedSize.y * 1.1, fittedSize.z * 2.8)
+    camera.lookAt(controls.target)
+    controls.update()
     status.textContent = '✅ 加载完成 · 模型节点数：' + countNodes(gltf.scene)
 
     // 让鸭子缓慢自转

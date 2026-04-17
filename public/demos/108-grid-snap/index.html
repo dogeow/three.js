@@ -55,7 +55,7 @@
 </div>
 
 <div class="tip">
-  <b>拖拽</b> 移动 · <b>右键</b> 旋转视角 · 双击地面添加物体
+  <b>拖拽</b> 移动 · <b>右键</b> 旋转视角 · <b>蓝色高亮</b> 是当前吸附位置
 </div>
 
 <script type="importmap">
@@ -156,10 +156,26 @@ let outlineMesh = null
 const outlineGeo = new THREE.BoxGeometry(1, 1, 1)
 const outlineMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.9 })
 
+const snapPad = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.16, side: THREE.DoubleSide })
+)
+snapPad.rotation.x = -Math.PI / 2
+snapPad.position.y = 0.02
+snapPad.visible = false
+scene.add(snapPad)
+
 function setSelected(mesh) {
+  if (selected && selected.material?.emissive) {
+    selected.material.emissive.set(0x000000)
+    selected.material.emissiveIntensity = 0
+  }
   if (outlineMesh) { scene.remove(outlineMesh); outlineMesh = null }
   selected = mesh
   if (mesh) {
+    mesh.material.emissive = mesh.material.emissive || new THREE.Color(0x000000)
+    mesh.material.emissive.set(0x38bdf8)
+    mesh.material.emissiveIntensity = 0.18
     const b = new THREE.Box3().setFromObject(mesh)
     const s = new THREE.Vector3()
     b.getSize(s)
@@ -178,6 +194,28 @@ const ghostMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: tru
 const ghostMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), ghostMat)
 ghostMesh.visible = false
 scene.add(ghostMesh)
+
+function showSnapPreview(x, z) {
+  snapPad.visible = true
+  snapPad.position.set(x, 0.02, z)
+  snapPad.scale.set(gridSize, gridSize, 1)
+
+  if (!selected) {
+    ghostMesh.visible = false
+    return
+  }
+
+  const b = new THREE.Box3().setFromObject(selected)
+  const s = b.getSize(new THREE.Vector3())
+  ghostMesh.visible = true
+  ghostMesh.position.set(x, selected.position.y, z)
+  ghostMesh.scale.copy(s)
+}
+
+function hideSnapPreview() {
+  snapPad.visible = false
+  ghostMesh.visible = false
+}
 
 // ─── Raycaster ──────────────────────────────────────────────────────────────
 const raycaster = new THREE.Raycaster()
@@ -238,6 +276,16 @@ renderer.domElement.addEventListener('mousedown', e => {
 })
 
 renderer.domElement.addEventListener('mousemove', e => {
+  const groundHits = hitGround(e)
+  if (groundHits.length > 0) {
+    const p = groundHits[0].point
+    const sx = Math.round(p.x / gridSize) * gridSize
+    const sz = Math.round(p.z / gridSize) * gridSize
+    showSnapPreview(sx, sz)
+  } else if (!dragging) {
+    hideSnapPreview()
+  }
+
   // Hover highlight
   const hits = hitObjects(e)
   if (!dragging) {
@@ -264,6 +312,7 @@ renderer.domElement.addEventListener('mousemove', e => {
 
   selected.position.x = sx
   selected.position.z = sz
+  showSnapPreview(sx, sz)
 
   // Update outline
   if (outlineMesh) {
@@ -276,6 +325,10 @@ renderer.domElement.addEventListener('mouseup', e => {
   dragging = false
   controls.enabled = true
   renderer.domElement.style.cursor = 'default'
+})
+
+renderer.domElement.addEventListener('mouseleave', () => {
+  if (!dragging) hideSnapPreview()
 })
 
 // Double-click: add new box
@@ -316,6 +369,7 @@ document.getElementById('btnSnap').addEventListener('click', () => {
   selected.position.x = Math.round(selected.position.x / gridSize) * gridSize
   selected.position.z = Math.round(selected.position.z / gridSize) * gridSize
   if (outlineMesh) outlineMesh.position.set(selected.position.x, selected.position.y, selected.position.z)
+  showSnapPreview(selected.position.x, selected.position.z)
 })
 
 document.getElementById('btnDel').addEventListener('click', () => {
@@ -339,10 +393,12 @@ function animate() {
   requestAnimationFrame(animate)
   t += 0.016
 
-  // Selected box gentle pulse
-  if (selected) {
-    const pulse = 1 + Math.sin(t * 4) * 0.02
-    selected.scale.setScalar(pulse)
+  if (outlineMesh) {
+    outlineMat.opacity = 0.7 + Math.sin(t * 5) * 0.18
+  }
+
+  if (snapPad.visible) {
+    snapPad.material.opacity = 0.12 + (Math.sin(t * 6) + 1) * 0.04
   }
 
   controls.update()

@@ -101,7 +101,7 @@ function removeVoxel(x, y, z) {
   const mesh = voxelMap.get(key)
   if (!mesh) return
   scene.remove(mesh)
-  voxelMesh.dispose()
+  mesh.material.dispose()
   voxelMap.delete(key)
   rebuildInstanced()
 }
@@ -220,13 +220,14 @@ renderer.domElement.addEventListener('mousedown', e => {
   }
 })
 
-// Scroll to change color
-renderer.domElement.addEventListener('wheel', e => {
-  e.preventDefault()
-  if (e.deltaY < 0) {
+// 滚轮保留给 OrbitControls 进行缩放，颜色通过键盘 [ / ] 或点击调色板切换
+window.addEventListener('keydown', e => {
+  if (e.code === 'BracketRight') {
     currentColorIdx = (currentColorIdx + 1) % PALETTE.length
-  } else {
+  } else if (e.code === 'BracketLeft') {
     currentColorIdx = (currentColorIdx - 1 + PALETTE.length) % PALETTE.length
+  } else {
+    return
   }
   document.querySelectorAll('.swatch').forEach((s, i) => {
     s.classList.toggle('active', i === currentColorIdx)

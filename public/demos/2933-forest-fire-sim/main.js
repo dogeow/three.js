@@ -110,6 +110,18 @@ function ignite(x, y) {
   }
 }
 
+function toggleBurning(x, y) {
+  const idx = y * GRID + x
+  if (grid[idx] === 1) {
+    grid[idx] = 2
+  } else if (grid[idx] === 2) {
+    grid[idx] = 1
+  } else {
+    return
+  }
+  rebuildMesh(idx)
+}
+
 // Click to ignite
 window.addEventListener('click', e => {
   const raycaster = new THREE.Raycaster()
@@ -124,7 +136,7 @@ window.addEventListener('click', e => {
     if (idx >= 0) {
       const gx = idx % GRID
       const gy = Math.floor(idx / GRID)
-      ignite(gx, gy)
+      toggleBurning(gx, gy)
     }
   }
 })

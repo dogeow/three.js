@@ -1,4 +1,4 @@
-// 005. Material Showcase — 四种材质对比演示
+// 008. Material Showcase — 四种材质对比演示
 // MeshBasicMaterial：不收光照影响 | MeshLambertMaterial：漫反射
 // MeshPhongMaterial：镜面高光 | MeshStandardMaterial：PBR 材质
 import * as THREE from 'three'

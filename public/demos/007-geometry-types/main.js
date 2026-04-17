@@ -1,4 +1,4 @@
-// 004. Geometry Types — 常用几何体一览
+// 007. Geometry Types — 常用几何体一览
 // 演示 Three.js 内置的各种 3D 几何体形状
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

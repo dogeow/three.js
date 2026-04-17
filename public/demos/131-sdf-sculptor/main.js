@@ -203,7 +203,8 @@ function updateVoxelUniforms() {
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
 controls.enablePan = false
-controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+// 左键拖拽 = 旋转（单击仍会触发雕刻），右键也旋转，滚轮/中键缩放
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
 
 let sculptMode = 'add' // add | sub | smooth
 let brushRadius = 0.5
@@ -275,7 +276,18 @@ const raycaster = new THREE.Raycaster()
 const boxGeo = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE)
 const boxCenter = new THREE.Vector3()
 
-renderer.domElement.addEventListener('click', e => {
+// 左键按下→抬起，若未发生明显拖拽则触发雕刻；拖拽则交给 OrbitControls 旋转
+let _downX = 0, _downY = 0, _downTime = 0
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return
+  _downX = e.clientX; _downY = e.clientY; _downTime = performance.now()
+})
+renderer.domElement.addEventListener('pointerup', e => {
+  if (e.button !== 0) return
+  const dx = e.clientX - _downX, dy = e.clientY - _downY
+  if (dx*dx + dy*dy > 25) return // 拖拽而非点击
+  if (performance.now() - _downTime > 400) return
+
   const ndc = new THREE.Vector2(
     (e.clientX / innerWidth) * 2 - 1,
     -(e.clientY / innerHeight) * 2 + 1

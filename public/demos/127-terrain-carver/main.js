@@ -25,6 +25,8 @@ controls.maxPolarAngle = Math.PI * 0.48;
 controls.minDistance = 5;
 controls.maxDistance = 120;
 controls.target.set(0, 0, 0);
+// 左键用来雕刻地形，右键旋转视角，中键缩放；避免左键拖动时相机跟随移动
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 
 // ─── Lighting ─────────────────────────────────────────────────────────────────
 

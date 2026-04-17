@@ -256,17 +256,17 @@ beam.position.set(0, 43, 0)
 scene.add(beam)
 
 // ─── Particles ────────────────────────────────────────────────────────
-const pCount = 3000
+const pCount = 0
 const pPos = new Float32Array(pCount * 3)
 for (let i = 0; i < pCount; i++) {
-  pPos[i*3]   = (Math.random() - 0.5) * 120
-  pPos[i*3+1] = Math.random() * 40
-  pPos[i*3+2] = (Math.random() - 0.5) * 120
+  pPos[i*3]   = (Math.random() - 0.5) * 140
+  pPos[i*3+1] = 42 + Math.random() * 42
+  pPos[i*3+2] = (Math.random() - 0.5) * 140
 }
 const pGeo = new THREE.BufferGeometry()
 pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3))
 const pMesh = new THREE.Points(pGeo, new THREE.PointsMaterial({
-  color: 0x60a5fa, size: 0.06, transparent: true, opacity: 0.5, depthWrite: false
+  color: 0xcbd5e1, size: 0.008, transparent: true, opacity: 0.08, depthWrite: false
 }))
 scene.add(pMesh)
 

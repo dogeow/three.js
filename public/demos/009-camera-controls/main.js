@@ -7,21 +7,26 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.45;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
-scene.fog = new THREE.FogExp2(0x111111, 0.025);
+scene.background = new THREE.Color(0x151821);
+scene.fog = new THREE.FogExp2(0x151821, 0.01);
 
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
 camera.position.set(0, 8, 20);
 
 // Lights
-scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-const dir = new THREE.DirectionalLight(0xffeebb, 1.8);
-dir.position.set(20, 30, 20);
+scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+const dir = new THREE.DirectionalLight(0xffe0ad, 3.2);
+dir.position.set(22, 34, 16);
 scene.add(dir);
-scene.add(new THREE.HemisphereLight(0x224466, 0x221100, 0.5));
+scene.add(new THREE.HemisphereLight(0x8dc7ff, 0x2b2115, 0.9));
+const fillSun = new THREE.DirectionalLight(0xfff3d6, 1.6);
+fillSun.position.set(-18, 18, -10);
+scene.add(fillSun);
 
 // Sun marker
 const sunMarker = new THREE.Mesh(
@@ -38,13 +43,20 @@ const haloMarker = new THREE.Mesh(
 haloMarker.position.copy(sunMarker.position);
 scene.add(haloMarker);
 
+const sunGlow = new THREE.Sprite(
+  new THREE.SpriteMaterial({ color: 0xfff0c8, transparent: true, opacity: 0.45 })
+);
+sunGlow.position.copy(sunMarker.position);
+sunGlow.scale.setScalar(9);
+scene.add(sunGlow);
+
 // Scene objects
-const grid = new THREE.GridHelper(200, 40, 0x224466, 0x112233);
+const grid = new THREE.GridHelper(200, 40, 0x31557a, 0x182434);
 scene.add(grid);
 
-const mat1 = new THREE.MeshStandardMaterial({ color: 0x334466, roughness: 0.6, metalness: 0.3 });
-const mat2 = new THREE.MeshStandardMaterial({ color: 0x663344, roughness: 0.5, metalness: 0.3 });
-const mat3 = new THREE.MeshStandardMaterial({ color: 0x336644, roughness: 0.6, metalness: 0.3 });
+const mat1 = new THREE.MeshStandardMaterial({ color: 0x607aa3, roughness: 0.55, metalness: 0.22 });
+const mat2 = new THREE.MeshStandardMaterial({ color: 0xa95f73, roughness: 0.5, metalness: 0.22 });
+const mat3 = new THREE.MeshStandardMaterial({ color: 0x5a9a74, roughness: 0.55, metalness: 0.22 });
 const mats = [mat1, mat2, mat3];
 
 for (let i = 0; i < 20; i++) {

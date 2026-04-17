@@ -1,4 +1,4 @@
-// 008. Animation Basics — 动画基础
+// 011. Animation Basics — 动画基础
 // 演示 requestAnimationFrame、基于时间的动画、简单运动效果
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

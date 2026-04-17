@@ -56,7 +56,7 @@
     在支持 WebXR 的浏览器中打开以使用手部追踪。<br>
     桌面: 鼠标旋转视角 | VR: 用手抓取物体
   </div>
-  <div id="status">正在初始化…</div>
+  <div id="status">桌面预览模式 · 检测 WebXR…</div>
   <button id="vrButton">进入 VR</button>
 
   <script type="importmap">
@@ -72,7 +72,7 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { VRButton } from 'three/addons/webxr/VRButton.js';
-    import { XRHandSpaceMode, XRHandMeshModel } from 'three/addons/webxr/XRHandMeshModel.js';
+    import { XRHandMeshModel } from 'three/addons/webxr/XRHandMeshModel.js';
     import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
     // ─── Scene Setup ──────────────────────────────────────────────────────────
@@ -184,16 +184,16 @@
     async function checkXRSupport() {
       const status = document.getElementById('status');
       if (!isXRSupported) {
-        status.textContent = '此浏览器不支持 WebXR';
+        status.textContent = '桌面预览模式 · 当前浏览器不支持 WebXR（可用鼠标观看场景）';
         return;
       }
       const supported = await navigator.xr.isSessionSupported('immersive-vr');
       if (supported) {
         document.getElementById('vrButton').style.display = 'block';
-        status.textContent = '检测到 WebXR VR — 按钮已启用';
+        status.textContent = '桌面预览模式 · 已检测到 WebXR VR，点击下方按钮进入';
         setupXR();
       } else {
-        status.textContent = '不支持 WebXR immersive-vr';
+        status.textContent = '桌面预览模式 · 本设备不支持 immersive-vr（需头显/手势设备真机体验抓取）';
       }
     }
 
