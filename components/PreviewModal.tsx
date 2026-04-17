@@ -77,9 +77,14 @@ function createDraftStorageKey(slug: string): string {
 }
 
 export default function PreviewModal({ demo, siblings = [], onNavigate, onClose }: Props) {
-  const currentIndex = siblings.findIndex((d) => d.slug === demo.slug);
-  const prev = currentIndex > 0 ? siblings[currentIndex - 1] : null;
-  const next = currentIndex >= 0 && currentIndex < siblings.length - 1 ? siblings[currentIndex + 1] : null;
+  const { currentIndex, prev, next } = useMemo(() => {
+    const idx = siblings.findIndex((d) => d.slug === demo.slug);
+    return {
+      currentIndex: idx,
+      prev: idx > 0 ? siblings[idx - 1] : null,
+      next: idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null,
+    };
+  }, [siblings, demo.slug]);
   const [codeOpen, setCodeOpen] = useState(false);
   const [codeFiles, setCodeFiles] = useState<Record<string, string>>({});
   const [originalFiles, setOriginalFiles] = useState<Record<string, string>>({});
@@ -104,17 +109,21 @@ export default function PreviewModal({ demo, siblings = [], onNavigate, onClose 
     previewUrlsRef.current = [];
   }, []);
 
+  const resetRightPaneWidth = useCallback(() => {
+    if (paneRightRef.current) paneRightRef.current.style.width = '';
+    splitRef.current?.style.removeProperty('--right-w');
+  }, []);
+
   const goTo = useCallback(
     (d: Demo | null) => {
       if (!d || !onNavigate) return;
       clearPreviewUrls();
-      if (paneRightRef.current) paneRightRef.current.style.width = '';
-      splitRef.current?.style.removeProperty('--right-w');
+      resetRightPaneWidth();
       setDraftPreviewActive(false);
       setCodeOpen(false);
       onNavigate(d);
     },
-    [clearPreviewUrls, onNavigate],
+    [clearPreviewUrls, onNavigate, resetRightPaneWidth],
   );
 
   const candidateFiles = useMemo<CodeFile[]>(
@@ -296,20 +305,16 @@ export default function PreviewModal({ demo, siblings = [], onNavigate, onClose 
 
   const closeCodePanel = useCallback(() => {
     setCodeOpen(false);
-    if (paneRightRef.current) paneRightRef.current.style.width = '';
-    splitRef.current?.style.removeProperty('--right-w');
-  }, []);
+    resetRightPaneWidth();
+  }, [resetRightPaneWidth]);
 
   const toggleCodePanel = useCallback(() => {
     setCodeOpen((visible) => {
       const nextVisible = !visible;
-      if (!nextVisible) {
-        if (paneRightRef.current) paneRightRef.current.style.width = '';
-        splitRef.current?.style.removeProperty('--right-w');
-      }
+      if (!nextVisible) resetRightPaneWidth();
       return nextVisible;
     });
-  }, []);
+  }, [resetRightPaneWidth]);
 
   const dragStateRef = useRef({ dragging: false, startX: 0, startW: 0, pendingW: 0, raf: 0 });
 

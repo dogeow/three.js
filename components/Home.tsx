@@ -132,7 +132,13 @@ export default function Home({ demos, categories }: Props) {
           <div className="empty-state">未找到匹配的示例</div>
         ) : (
           <div className="cards-grid">
-            {visible.map((d) => (
+            {visible.map((d) => {
+              const idx = displayIndex.get(d.slug);
+              const primaryCat = d.categories[0] || '';
+              const primaryColor = catColor.get(primaryCat);
+              const gradientStart = primaryColor || '#888';
+              const gradientEnd = primaryColor || '#555';
+              return (
               <a
                 key={d.slug}
                 href={`/demos/${d.slug}/index.html`}
@@ -141,12 +147,12 @@ export default function Home({ demos, categories }: Props) {
                 onClick={(e) => handleOpen(d, e)}
               >
                 <div className="card-header">
-                  {displayIndex.get(d.slug) !== undefined && (
+                  {idx !== undefined && (
                     <span
                       className="card-index"
-                      style={{ background: `linear-gradient(135deg, ${catColor.get(d.categories[0] || '') || '#888'}, ${catColor.get(d.categories[0] || '') || '#555'})` }}
+                      style={{ background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})` }}
                     >
-                      {displayIndex.get(d.slug)}
+                      {idx}
                     </span>
                   )}
                   <span className="card-tags-row">
@@ -164,7 +170,8 @@ export default function Home({ demos, categories }: Props) {
                   <span className="card-arrow">→</span>
                 </div>
               </a>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

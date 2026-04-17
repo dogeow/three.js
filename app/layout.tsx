@@ -7,9 +7,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const themeScript = `(function(){try{var t=localStorage.getItem('threejs-gallery-theme')||'dark';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='dark';}})();`;
+  const themeScript = `(function(){try{var t=localStorage.getItem('threejs-gallery-theme')||'dark';if(t==='dark')document.documentElement.classList.add('dark');}catch(e){document.documentElement.classList.add('dark');}})();`;
   return (
-    <html lang="zh-CN" data-theme="dark">
+    <html lang="zh-CN" className="dark">
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

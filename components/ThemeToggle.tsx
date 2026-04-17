@@ -4,19 +4,27 @@ import { useEffect, useState, useCallback } from 'react';
 
 const KEY = 'threejs-gallery-theme';
 
+function readInitialTheme(): 'dark' | 'light' {
+  if (typeof document === 'undefined') return 'dark';
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+}
+
+function applyTheme(theme: 'dark' | 'light'): void {
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+}
+
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>(readInitialTheme);
 
   useEffect(() => {
-    const saved = (localStorage.getItem(KEY) as 'dark' | 'light' | null) || 'dark';
-    setTheme(saved);
-    document.documentElement.dataset.theme = saved;
-  }, []);
+    const current = readInitialTheme();
+    if (current !== theme) setTheme(current);
+  }, [theme]);
 
   const toggle = useCallback(() => {
     setTheme((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark';
-      document.documentElement.dataset.theme = next;
+      applyTheme(next);
       localStorage.setItem(KEY, next);
       return next;
     });
