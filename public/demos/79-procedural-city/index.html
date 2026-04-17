@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>79 · 程序化城市 Procedural City</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0f; overflow: hidden; font-family: 'Helvetica Neue', Arial, sans-serif; }
+    canvas { display: block; }
+    #tip {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      background: rgba(10, 10, 20, 0.82);
+      border: 1px solid rgba(80, 120, 200, 0.25);
+      border-left: 3px solid #4a90d9;
+      color: rgba(200, 210, 230, 0.88);
+      padding: 12px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.7;
+      max-width: 280px;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      z-index: 10;
+    }
+    #tip strong { color: #7ab4f5; display: block; margin-bottom: 4px; font-size: 13px; }
+    #tip span { color: rgba(160, 175, 205, 0.72); font-size: 11.5px; }
+    #loading {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #0a0a0f; color: #4a90d9;
+      font-size: 18px; z-index: 100;
+      transition: opacity 0.6s;
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading">正在生成城市...</div>
+
+<div id="tip">
+  <strong>程序化城市 Procedural City</strong>
+  <span>InstancedMesh 高效渲染 · LOD 视锥剔除</span><br/>
+  <span>程序化建筑生成 · 街道网格布局</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+
+// ─── Seeded Random ───────────────────────────────────────────────────────────
+class SeededRandom {
+  constructor(seed = 42) {
+    this.seed = seed
+  }
+  next() {
+    this.seed = (this.seed * 1664525 + 1013904223) >>> 0
+    return this.seed / 4294967296
+  }
+  range(min, max) { return min + this.next() * (max - min) }
+  int(min, max) { return Math.floor(this.range(min, max + 1)) }
+  bool(p = 0.5) { return this.next() < p }
+  pick(arr) { return arr[this.int(0, arr.length - 1)] }
+}
+
+// ─── Scene Setup ─────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.8
+document.body.appendChild(renderer.domElement)
+
+const scene = new THREE.Scene()
+scene.fog = new THREE.FogExp2(0x0a0a14, 0.018)
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 2000)
+camera.position.set(55, 65, 85)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.06
+controls.maxPolarAngle = Math.PI * 0.48
+controls.target.set(0, 5, 0)
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(window.innerWidth, window.innerHeight)
+})
+
+// ─── Lighting ────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x8899bb, 1.0)
+scene.add(ambientLight)
+
+const hemiLight = new THREE.HemisphereLight(0x88aadd, 0x445566, 0.8)
+scene.add(hemiLight)
+
+const sunLight = new THREE.DirectionalLight(0xfff5e0, 3.0)
+sunLight.position.set(60, 100, 40)
+sunLight.castShadow = true
+sunLight.shadow.mapSize.set(2048, 2048)
+sunLight.shadow.camera.near = 1
+sunLight.shadow.camera.far = 500
+sunLight.shadow.camera.left = -150
+sunLight.shadow.camera.right = 150
+sunLight.shadow.camera.top = 150
+sunLight.shadow.camera.bottom = -150
+sunLight.shadow.bias = -0.0003
+scene.add(sunLight)
+
+const moonLight = new THREE.DirectionalLight(0x4466aa, 0.0)
+moonLight.position.set(-40, 80, -30)
+scene.add(moonLight)
+
+// Street lamps group
+const streetLights = []
+const streetLightOnColor = new THREE.Color(0xffcc66)
+const streetLightOffColor = new THREE.Color(0x333344)
+
+// ─── Ground & Streets ────────────────────────────────────────────────────────
+let streetMesh = null
+let sidewalkMesh = null
+let groundMesh = null
+
+function createStreetTexture(cellSize, totalSize) {
+  const canvas = document.createElement('canvas')
+  const res = 512
+  canvas.width = res
+  canvas.height = res
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = '#1a1a22'
+  ctx.fillRect(0, 0, res, res)
+
+  // Road markings
+  ctx.strokeStyle = '#3a3a4a'
+  ctx.lineWidth = 2
+  ctx.setLineDash([12, 18])
+  ctx.beginPath()
+  ctx.moveTo(res / 2, 0)
+  ctx.lineTo(res / 2, res)
+  ctx.moveTo(0, res / 2)
+  ctx.lineTo(res, res / 2)
+  ctx.stroke()
+
+  // Sidewalk edges
+  ctx.strokeStyle = '#2a2a38'
+  ctx.lineWidth = 4
+  ctx.setLineDash([])
+  ctx.strokeRect(4, 4, res - 8, res - 8)
+
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(totalSize / cellSize, totalSize / cellSize)
+  return tex
+}
+
+function createGroundTexture(totalSize) {
+  const canvas = document.createElement('canvas')
+  const res = 256
+  canvas.width = res
+  canvas.height = res
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = '#0d0d14'
+  ctx.fillRect(0, 0, res, res)
+
+  // subtle grid
+  ctx.strokeStyle = 'rgba(60,70,100,0.15)'
+  ctx.lineWidth = 1
+  for (let i = 0; i <= 8; i++) {
+    const v = (i / 8) * res
+    ctx.beginPath(); ctx.moveTo(v, 0); ctx.lineTo(v, res); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(0, v); ctx.lineTo(res, v); ctx.stroke()
+  }
+
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(totalSize * 0.5, totalSize * 0.5)
+  return tex
+}
+
+// ─── Building Color Palette ──────────────────────────────────────────────────
+const buildingColors = [
+  { r: 0.60, g: 0.65, b: 0.75 }, // light slate blue
+  { r: 0.72, g: 0.68, b: 0.60 }, // warm beige
+  { r: 0.55, g: 0.62, b: 0.70 }, // sky blue
+  { r: 0.78, g: 0.72, b: 0.65 }, // sand
+  { r: 0.50, g: 0.55, b: 0.60 }, // cool gray
+  { r: 0.82, g: 0.76, b: 0.68 }, // light tan
+  { r: 0.48, g: 0.58, b: 0.68 }, // steel blue
+  { r: 0.68, g: 0.60, b: 0.55 }, // warm brown
+  { r: 0.75, g: 0.70, b: 0.65 }, // cream gray
+  { r: 0.60, g: 0.55, b: 0.70 }, // lavender gray
+]
+
+const windowColors = [
+  0xddeeff, 0xffeedd, 0xeeeeff, 0xffffff, 0xffd080,
+  0xaaccff, 0xffeeaa, 0xeef5ff
+]
+
+// ─── City Generation ─────────────────────────────────────────────────────────
+let cityGroup = new THREE.Group()
+scene.add(cityGroup)
+
+let landmarkBuildings = []
+let params = {
+  citySize: 22,
+  buildingDensity: 0.75,
+  maxHeight: 18,
+  buildingStyle: 'varied',
+  showStreets: true,
+  dayNight: 'day',
+  regenerate: () => generateCity()
+}
+
+function getStyleParams(style, rng) {
+  switch (style) {
+    case 'uniform':
+      return { heightMult: 1.0, variance: 0.15 }
+    case 'tall-city':
+      return { heightMult: 2.5, variance: 0.5 }
+    case 'varied':
+    default:
+      return { heightMult: 1.0 + rng.next() * 1.5, variance: 0.4 + rng.next() * 0.4 }
+  }
+}
+
+function generateCity() {
+  // Clear old city
+  while (cityGroup.children.length) cityGroup.remove(cityGroup.children[0])
+  landmarkBuildings = []
+  streetLights.length = 0
+
+  const seed = Math.floor(Math.random() * 99999)
+  const rng = new SeededRandom(seed)
+
+  const { citySize, buildingDensity, maxHeight, buildingStyle } = params
+  const cellSize = 4
+  const totalSize = citySize * cellSize
+
+  // ── Ground ──────────────────────────────────────────────────────────────
+  const groundGeo = new THREE.PlaneGeometry(totalSize * 2, totalSize * 2)
+  const groundMat = new THREE.MeshStandardMaterial({
+    map: createGroundTexture(totalSize),
+    color: 0x0d0d14,
+    roughness: 0.95,
+    metalness: 0.0,
+  })
+  groundMesh = new THREE.Mesh(groundGeo, groundMat)
+  groundMesh.rotation.x = -Math.PI / 2
+  groundMesh.receiveShadow = true
+  groundMesh.position.y = -0.02
+  cityGroup.add(groundMesh)
+
+  // ── Street grid ─────────────────────────────────────────────────────────
+  if (params.showStreets) {
+    const streetTex = createStreetTexture(cellSize, totalSize)
+    const streetMat = new THREE.MeshStandardMaterial({
+      map: streetTex,
+      color: 0x1a1a22,
+      roughness: 0.9,
+      metalness: 0.0,
+    })
+    const streetGeo = new THREE.PlaneGeometry(totalSize, totalSize)
+    streetMesh = new THREE.Mesh(streetGeo, streetMat)
+    streetMesh.rotation.x = -Math.PI / 2
+    streetMesh.position.y = 0.01
+    streetMesh.receiveShadow = true
+    cityGroup.add(streetMesh)
+
+    // Sidewalk layer
+    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x252530, roughness: 0.85 })
+    const swGeo = new THREE.PlaneGeometry(totalSize * 1.02, totalSize * 1.02)
+    sidewalkMesh = new THREE.Mesh(swGeo, sidewalkMat)
+    sidewalkMesh.rotation.x = -Math.PI / 2
+    sidewalkMesh.position.y = 0.005
+    sidewalkMesh.receiveShadow = true
+    cityGroup.add(sidewalkMesh)
+  }
+
+  // ── Collect building data ────────────────────────────────────────────────
+  const styleParams = getStyleParams(buildingStyle, rng)
+  const buildings = []
+
+  // Central landmark zone
+  const centerX = 0
+  const centerZ = 0
+  const landmarkRadius = citySize * 0.15
+
+  for (let xi = 0; xi < citySize; xi++) {
+    for (let zi = 0; zi < citySize; zi++) {
+      const wx = (xi - citySize / 2) * cellSize + cellSize / 2
+      const wz = (zi - citySize / 2) * cellSize + cellSize / 2
+      const dist = Math.sqrt(wx * wx + wz * wz)
+
+      // Street lanes every 4 cells
+      const isMainStreet = xi % 5 === 2 || zi % 5 === 2
+
+      if (isMainStreet && params.showStreets) continue
+
+      // Probability of building
+      if (rng.next() > buildingDensity) continue
+
+      // Landmark zone - special tall building
+      if (dist < landmarkRadius && rng.next() < 0.7) {
+        // Central skyscraper
+        const isCenter = dist < landmarkRadius * 0.3
+        const h = isCenter ? maxHeight * 3.5 + rng.range(5, 15) : maxHeight * 2 + rng.range(0, 8)
+        const w = isCenter ? cellSize * 0.55 : cellSize * 0.5
+        buildings.push({
+          type: 'skyscraper',
+          x: wx, z: wz,
+          w, d: w,
+          h,
+          floors: Math.floor(h / 3.5),
+          colorIdx: rng.int(0, buildingColors.length - 1),
+          isCenter,
+        })
+        continue
+      }
+
+      // Regular building
+      const bw = rng.range(cellSize * 0.35, cellSize * 0.75)
+      const bd = rng.range(cellSize * 0.35, cellSize * 0.75)
+      const baseH = rng.range(4, maxHeight)
+      const h = baseH * styleParams.heightMult
+      const variance = (rng.next() - 0.5) * styleParams.variance * baseH
+      const fh = Math.max(3, h + variance)
+
+      // Stepped or dome chance
+      const roll = rng.next()
+      let type = 'box'
+      if (roll < 0.08 && fh > 8) type = 'cylinder'
+      else if (roll < 0.18 && fh > 10) type = 'stepped'
+      else if (roll < 0.22 && fh > 6) type = 'pyramid'
+
+      buildings.push({
+        type,
+        x: wx, z: wz,
+        w: bw, d: bd,
+        h: fh,
+        floors: Math.floor(fh / 3.5),
+        colorIdx: rng.int(0, buildingColors.length - 1),
+        isCenter: false,
+      })
+    }
+  }
+
+  // ── Instanced Mesh ────────────────────────────────────────────────────────
+  if (buildings.length > 0) {
+    // Separate by type for instancing
+    const boxBuildings = buildings.filter(b => b.type === 'box' || b.type === 'stepped' || b.type === 'pyramid')
+
+    // Box buildings instanced
+    if (boxBuildings.length > 0) {
+      const geo = new THREE.BoxGeometry(1, 1, 1)
+      const mat = new THREE.MeshStandardMaterial({
+        roughness: 0.75,
+        metalness: 0.12,
+        vertexColors: true,
+      })
+
+      const mesh = new THREE.InstancedMesh(geo, mat, boxBuildings.length)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+
+      const dummy = new THREE.Object3D()
+      const colors = new Float32Array(boxBuildings.length * 3)
+
+      boxBuildings.forEach((b, i) => {
+        const col = buildingColors[b.colorIdx]
+        const heightRatio = b.h / (maxHeight * 3.5)
+
+        dummy.position.set(b.x, b.h / 2, b.z)
+        dummy.scale.set(b.w, b.h, b.d)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(i, dummy.matrix)
+
+        // Color: dark at base, lighter at top (more glass/reflection)
+        const brightFactor = 0.5 + heightRatio * 0.6
+        colors[i * 3] = col.r * brightFactor
+        colors[i * 3 + 1] = col.g * brightFactor
+        colors[i * 3 + 2] = col.b * brightFactor
+      })
+
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
+      cityGroup.add(mesh)
+    }
+
+    // Cylinder buildings instanced
+    const cylBuildings = buildings.filter(b => b.type === 'cylinder')
+    if (cylBuildings.length > 0) {
+      const geo = new THREE.CylinderGeometry(0.45, 0.45, 1, 16)
+      const mat = new THREE.MeshStandardMaterial({
+        roughness: 0.6,
+        metalness: 0.2,
+        vertexColors: true,
+      })
+      const mesh = new THREE.InstancedMesh(geo, mat, cylBuildings.length)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+
+      const dummy = new THREE.Object3D()
+      const colors = new Float32Array(cylBuildings.length * 3)
+
+      cylBuildings.forEach((b, i) => {
+        const col = buildingColors[b.colorIdx]
+        const hRatio = b.h / (maxHeight * 3.5)
+        const r = Math.min(b.w, b.d) * 0.45
+
+        dummy.position.set(b.x, b.h / 2, b.z)
+        dummy.scale.set(r, b.h, r)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(i, dummy.matrix)
+
+        colors[i * 3] = col.r * (0.5 + hRatio * 0.6)
+        colors[i * 3 + 1] = col.g * (0.5 + hRatio * 0.6)
+        colors[i * 3 + 2] = col.b * (0.5 + hRatio * 0.6)
+      })
+
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
+      cityGroup.add(mesh)
+    }
+
+    // ── Landmark Buildings (special, non-instanced) ─────────────────────
+    const skyscrapers = buildings.filter(b => b.type === 'skyscraper')
+    skyscrapers.forEach(b => {
+      createSkyscraper(b, rng)
+    })
+
+    // ── Stepped / Pyramid tops as separate meshes ──────────────────────
+    const steppedBuildings = buildings.filter(b => b.type === 'stepped' || b.type === 'pyramid')
+    if (steppedBuildings.length > 0) {
+      const topGeo = new THREE.BoxGeometry(1, 1, 1)
+      const topMat = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.15, vertexColors: true })
+      const topMesh = new THREE.InstancedMesh(topGeo, topMat, steppedBuildings.length)
+      topMesh.castShadow = true
+
+      const dummy = new THREE.Object3D()
+      const colors = new Float32Array(steppedBuildings.length * 3)
+
+      steppedBuildings.forEach((b, i) => {
+        const col = buildingColors[b.colorIdx]
+        const reduction = b.type === 'stepped' ? 0.5 : 0.3
+        const topH = b.h * 0.25
+        const topW = b.w * reduction
+        const topD = b.d * reduction
+
+        dummy.position.set(b.x, b.h + topH / 2, b.z)
+        dummy.scale.set(topW, topH, topD)
+        dummy.updateMatrix()
+        topMesh.setMatrixAt(i, dummy.matrix)
+
+        const bright = 0.6 + (b.h / maxHeight) * 0.5
+        colors[i * 3] = col.r * bright
+        colors[i * 3 + 1] = col.g * bright
+        colors[i * 3 + 2] = col.b * bright
+      })
+
+      topMesh.instanceMatrix.needsUpdate = true
+      topMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
+      cityGroup.add(topMesh)
+    }
+
+    // ── Windows (emissive planes on building sides) ──────────────────────
+    addWindows(buildings.filter(b => b.type === 'box' || b.type === 'skyscraper'), rng)
+
+    // ── Street Lamps ────────────────────────────────────────────────────
+    addStreetLamps(citySize, cellSize, rng)
+  }
+
+  // ── Update Fog ────────────────────────────────────────────────────────────
+  const fogDensity = 0.010 + (1 - buildingDensity) * 0.012
+  scene.fog.density = fogDensity
+
+  // ── Hide loading ──────────────────────────────────────────────────────────
+  const loadingEl = document.getElementById('loading')
+  loadingEl.style.opacity = '0'
+  setTimeout(() => { loadingEl.style.display = 'none' }, 600)
+}
+
+function createSkyscraper(b, rng) {
+  const group = new THREE.Group()
+  group.position.set(b.x, 0, b.z)
+
+  // Main body
+  const bodyH = b.h * 0.85
+  const bodyGeo = new THREE.BoxGeometry(b.w, bodyH, b.d)
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: b.isCenter ? 0x334466 : buildingColors[b.colorIdx],
+    roughness: 0.5,
+    metalness: 0.3,
+  })
+  const body = new THREE.Mesh(bodyGeo, bodyMat)
+  body.position.y = bodyH / 2
+  body.castShadow = true
+  body.receiveShadow = true
+  group.add(body)
+
+  // Mid section (if tall enough)
+  if (b.h > 40) {
+    const midH = b.h * 0.15
+    const midGeo = new THREE.BoxGeometry(b.w * 0.7, midH, b.d * 0.7)
+    const midMesh = new THREE.Mesh(midGeo, bodyMat)
+    midMesh.position.y = bodyH + midH / 2
+    midMesh.castShadow = true
+    group.add(midMesh)
+  }
+
+  // Antenna on center building
+  if (b.isCenter) {
+    const antennaH = 8 + rng.range(0, 6)
+    const antennaGeo = new THREE.CylinderGeometry(0.05, 0.08, antennaH, 6)
+    const antennaMat = new THREE.MeshStandardMaterial({ color: 0x888899, roughness: 0.3, metalness: 0.7 })
+    const antenna = new THREE.Mesh(antennaGeo, antennaMat)
+    antenna.position.y = b.h + antennaH / 2
+    antenna.castShadow = true
+    group.add(antenna)
+
+    // Antenna light
+    const lightGeo = new THREE.SphereGeometry(0.15, 8, 8)
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xff2222 })
+    const lightMesh = new THREE.Mesh(lightGeo, lightMat)
+    lightMesh.position.y = b.h + antennaH + 0.1
+    group.add(lightMesh)
+
+    // Blinking beacon
+    const beacon = { mesh: lightMesh, mat: lightMat, phase: 0 }
+    landmarkBuildings.push(beacon)
+
+    // Spire
+    const spireGeo = new THREE.ConeGeometry(0.12, 3, 6)
+    const spire = new THREE.Mesh(spireGeo, antennaMat)
+    spire.position.y = b.h + antennaH + 1.5
+    group.add(spire)
+  }
+
+  // Dome for some buildings
+  if (!b.isCenter && rng.bool(0.3)) {
+    const domeR = b.w * 0.35
+    const domeGeo = new THREE.SphereGeometry(domeR, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.55)
+    const domeMat = new THREE.MeshStandardMaterial({
+      color: 0x8899bb,
+      roughness: 0.3,
+      metalness: 0.4,
+      transparent: true,
+      opacity: 0.85,
+    })
+    const dome = new THREE.Mesh(domeGeo, domeMat)
+    dome.position.y = b.h
+    dome.castShadow = true
+    group.add(dome)
+  }
+
+  // Crown / top section
+  const crownGeo = new THREE.BoxGeometry(b.w * 1.05, 1.5, b.d * 1.05)
+  const crownMat = new THREE.MeshStandardMaterial({
+    color: b.isCenter ? 0x445577 : 0x556677,
+    roughness: 0.4,
+    metalness: 0.35,
+  })
+  const crown = new THREE.Mesh(crownGeo, crownMat)
+  crown.position.y = b.h - 0.75
+  crown.castShadow = true
+  group.add(crown)
+
+  cityGroup.add(group)
+  landmarkBuildings.push(group)
+}
+
+function addWindows(buildings, rng) {
+  const winGeo = new THREE.PlaneGeometry(0.4, 0.5)
+  const windowMeshes = []
+
+  buildings.forEach(b => {
+    const numFloors = Math.max(1, Math.floor(b.h / 3.5))
+    const floorsX = Math.max(1, Math.floor(b.w / 1.2))
+    const floorsZ = Math.max(1, Math.floor(b.d / 1.2))
+    const isNight = params.dayNight === 'night'
+
+    const winColor = new THREE.Color(windowColors[rng.int(0, windowColors.length - 1)])
+    const winMat = new THREE.MeshBasicMaterial({ color: winColor, transparent: true, opacity: isNight ? 0.9 : 0.35 })
+
+    // Two sides (front/back)
+    for (let side = 0; side < 2; side++) {
+      for (let f = 0; f < numFloors; f++) {
+        for (let fx = 0; fx < floorsX; fx++) {
+          const mesh = new THREE.Mesh(winGeo, winMat.clone())
+          const offsetX = (fx - floorsX / 2 + 0.5) * (b.w / floorsX)
+          const posY = f * 3.5 + 1.8
+          mesh.position.set(b.x + offsetX, posY, b.z + (side === 0 ? b.d / 2 + 0.01 : -b.d / 2 - 0.01))
+          if (side === 1) mesh.rotation.y = Math.PI
+          windowMeshes.push(mesh)
+          cityGroup.add(mesh)
+        }
+      }
+    }
+
+    // Two sides (left/right)
+    for (let side = 0; side < 2; side++) {
+      for (let f = 0; f < numFloors; f++) {
+        for (let fz = 0; fz < floorsZ; fz++) {
+          const mesh = new THREE.Mesh(winGeo, winMat.clone())
+          const offsetZ = (fz - floorsZ / 2 + 0.5) * (b.d / floorsZ)
+          const posY = f * 3.5 + 1.8
+          mesh.position.set(b.x + (side === 0 ? b.w / 2 + 0.01 : -b.w / 2 - 0.01), posY, b.z + offsetZ)
+          mesh.rotation.y = side === 0 ? Math.PI / 2 : -Math.PI / 2
+          windowMeshes.push(mesh)
+          cityGroup.add(mesh)
+        }
+      }
+    }
+  })
+
+  // Store windows for day/night toggle
+  windowMeshes.forEach(m => {
+    landmarkBuildings.push(m)
+  })
+}
+
+function addStreetLamps(citySize, cellSize, rng) {
+  const poleGeo = new THREE.CylinderGeometry(0.06, 0.08, 5, 6)
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.5, metalness: 0.6 })
+  const headGeo = new THREE.SphereGeometry(0.2, 8, 8)
+  const headMat = new THREE.MeshBasicMaterial({ color: 0xffcc66 })
+
+  const lampSpacing = 5
+
+  for (let xi = 0; xi < citySize; xi += lampSpacing) {
+    for (let zi = 0; zi < citySize; zi += lampSpacing) {
+      const isStreet = xi % 5 === 2 || zi % 5 === 2
+      if (!isStreet) continue
+
+      const wx = (xi - citySize / 2) * cellSize + cellSize / 2
+      const wz = (zi - citySize / 2) * cellSize + cellSize / 2
+
+      // Place lamps at corners of intersections
+      for (let ox = -1; ox <= 1; ox += 2) {
+        for (let oz = -1; oz <= 1; oz += 2) {
+          const pole = new THREE.Mesh(poleGeo, poleMat)
+          pole.position.set(wx + ox * 1.2, 2.5, wz + oz * 1.2)
+          pole.castShadow = true
+          cityGroup.add(pole)
+
+          const head = new THREE.Mesh(headGeo, headMat)
+          head.position.set(wx + ox * 1.2, 5.1, wz + oz * 1.2)
+          cityGroup.add(head)
+
+          const pointLight = new THREE.PointLight(0xffcc66, 0.8, 8, 2)
+          pointLight.position.set(wx + ox * 1.2, 5, wz + oz * 1.2)
+          cityGroup.add(pointLight)
+
+          streetLights.push({ head, pointLight, baseIntensity: 0.8 })
+        }
+      }
+    }
+  }
+}
+
+// ─── Day / Night ─────────────────────────────────────────────────────────────
+function setDayNight(mode) {
+  const isNight = mode === 'night'
+
+  sunLight.intensity = isNight ? 0.05 : 2.2
+  sunLight.color.set(isNight ? 0x223355 : 0xfff4e0)
+  ambientLight.intensity = isNight ? 0.12 : 0.6
+  ambientLight.color.set(isNight ? 0x1a2240 : 0x8899bb)
+  moonLight.intensity = isNight ? 0.4 : 0.0
+
+  renderer.toneMappingExposure = isNight ? 0.5 : 1.2
+  scene.fog.color.set(isNight ? 0x050510 : 0x1a2030)
+
+  streetLights.forEach(l => {
+    l.pointLight.intensity = isNight ? l.baseIntensity : 0.0
+    l.head.material.color.set(isNight ? 0xffcc66 : 0x444455)
+    l.head.material.opacity = isNight ? 1 : 0.3
+  })
+
+  // Update window opacity
+  landmarkBuildings.forEach(obj => {
+    if (obj.material) {
+      obj.material.opacity = isNight ? 0.85 : 0.08
+    }
+  })
+}
+
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '程序化城市 Procedural City' })
+gui.add(params, 'citySize', 8, 40, 1).name('城市规模 City Size').onChange(() => regenerate())
+gui.add(params, 'buildingDensity', 0.3, 1.0, 0.05).name('建筑密度 Density').onChange(() => regenerate())
+gui.add(params, 'maxHeight', 5, 40, 1).name('最大高度 Max Height').onChange(() => regenerate())
+gui.add(params, 'buildingStyle', ['varied', 'uniform', 'tall-city']).name('建筑风格 Style').onChange(() => regenerate())
+gui.add(params, 'showStreets').name('显示街道 Streets').onChange(() => regenerate())
+gui.add(params, 'dayNight', ['day', 'night']).name('昼夜 Day/Night').onChange(v => setDayNight(v))
+gui.add(params, 'regenerate').name('重新生成 Regenerate')
+
+function regenerate() {
+  document.getElementById('loading').style.display = 'flex'
+  document.getElementById('loading').style.opacity = '1'
+  generateCity()
+}
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+
+  const t = clock.getElapsedTime()
+
+  // Blink antenna beacon
+  landmarkBuildings.forEach(obj => {
+    if (obj && obj.mesh && obj.mat) {
+      const blink = Math.sin(t * 3 + obj.phase) > 0.5 ? 1.0 : 0.1
+      obj.mat.color.setRGB(blink, 0, 0)
+    }
+  })
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+// ─── Start ───────────────────────────────────────────────────────────────────
+generateCity()
+animate()
+</script>
+
+</body>
+</html>

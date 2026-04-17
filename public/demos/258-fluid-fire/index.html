@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU 流体火焰模拟 - Three.js</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #888;
+            font-family: monospace;
+            font-size: 13px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+<div id="info">点击鼠标左键生成火焰 | 拖拽旋转视角 | 滚轮缩放</div>
+
+    <!-- 顶点着色器：GPU 粒子位置计算 -->
+    <script id="vertexShader" type="x-shader/x-vertex">
+        uniform float uTime;           // 全局时间，用于驱动噪声动画
+        uniform float uIntensity;      // 火焰强度因子
+        uniform float uPixelRatio;    // 设备像素比
+
+        attribute float aScale;        // 粒子初始大小（随机）
+        attribute float aSeed;         // 随机种子，用于个体差异化运动
+        attribute float aLifetime;     // 粒子生命周期（0~1之间循环）
+        attribute float aSpeed;        // 上升速度随机因子
+
+        varying float vLife;           // 生命周期阶段，传递给片元着色器用于颜色插值
+        varying float vSeed;           // 随机种子，用于噪声采样差异化
+
+        // 简化 3D Simplex 噪声函数
+        vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+        vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+        float snoise(vec3 v) {
+            const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+            const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+            vec3 i  = floor(v + dot(v, C.yyy));
+            vec3 x0 = v - i + dot(i, C.xxx);
+            vec3 g = step(x0.yzx, x0.xyz);
+            vec3 l = 1.0 - g;
+            vec3 i1 = min(g.xyz, l.zxy);
+            vec3 i2 = max(g.xyz, l.zxy);
+            vec3 x1 = x0 - i1 + C.xxx;
+            vec3 x2 = x0 - i2 + C.yyy;
+            vec3 x3 = x0 - D.yyy;
+            i = mod289(i);
+            vec4 p = permute(permute(permute(
+                i.z + vec4(0.0, i1.z, i2.z, 1.0))
+                + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+                + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+            float n_ = 0.142857142857;
+            vec3 ns = n_ * D.wyz - D.xzx;
+            vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+            vec4 x_ = floor(j * ns.z);
+            vec4 y_ = floor(j - 7.0 * x_);
+            vec4 x = x_ *ns.x + ns.yyyy;
+            vec4 y = y_ *ns.x + ns.yyyy;
+            vec4 h = 1.0 - abs(x) - abs(y);
+            vec4 b0 = vec4(x.xy, y.xy);
+            vec4 b1 = vec4(x.zw, y.zw);
+            vec4 s0 = floor(b0)*2.0 + 1.0;
+            vec4 s1 = floor(b1)*2.0 + 1.0;
+            vec4 sh = -step(h, vec4(0.0));
+            vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+            vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+            vec3 p0 = vec3(a0.xy, h.x);
+            vec3 p1 = vec3(a0.zw, h.y);
+            vec3 p2 = vec3(a1.xy, h.z);
+            vec3 p3 = vec3(a1.zw, h.w);
+            vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+            p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+            vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+            m = m * m;
+            return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+        }
+
+        void main() {
+            // 计算粒子生命周期阶段（0=刚出生，1=将死亡）
+            vLife = mod(aLifetime + uTime * 0.3 * aSpeed, 1.0);
+            vSeed = aSeed;
+
+            // 基于生命周期计算粒子上升高度
+            // 靠近地面的粒子集中在 y=0，随生命周期向上扩散
+            float height = vLife * 4.0 * uIntensity;
+
+            // 多层噪声叠加产生湍流效果
+            // 第一层：中尺度噪声，主管整体形态
+            float noise1 = snoise(vec3(position.x * 2.0, position.y * 2.0 + uTime * 1.5, aSeed));
+            // 第二层：高频细节噪声，产生火焰边缘抖动
+            float noise2 = snoise(vec3(position.x * 5.0, position.y * 4.0 + uTime * 3.0, aSeed + 100.0)) * 0.4;
+            // 第三层：低频大尺度波动，模拟火风中左右摇摆
+            float noise3 = snoise(vec3(uTime * 0.5, position.y * 0.8 + uTime * 0.8, aSeed + 200.0)) * 0.6;
+
+            // 水平扩散：随高度增加扩散范围，同时受噪声调制
+            float spread = vLife * 1.8 * uIntensity;
+            vec3 pos = vec3(
+                position.x + (noise1 + noise3) * spread,
+                height,
+                position.z + (noise2 + noise3 * 0.5) * spread
+            );
+
+            // 湍流抖动：火焰核心稳定，边缘剧烈抖动
+            pos.x += snoise(vec3(pos.x * 3.0, pos.y * 2.0 + uTime * 4.0, aSeed)) * 0.15 * vLife;
+            pos.z += snoise(vec3(pos.z * 3.0, pos.y * 2.5 + uTime * 4.5, aSeed + 50.0)) * 0.15 * vLife;
+
+            // 投影到屏幕坐标
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+
+            // 粒子大小随生命周期变化：初生大 → 中期峰值 → 消亡缩小
+            float sizeLife = sin(vLife * 3.14159); // 0->1->0 的正弦包络
+            float baseSize = 80.0 * aScale * uPixelRatio;
+            gl_PointSize = baseSize * (0.3 + sizeLife * 0.7) * (300.0 / -mvPosition.z);
+            gl_PointSize = clamp(gl_PointSize, 1.0, 256.0);
+        }
+    </script>
+
+    <!-- 片元着色器：火焰颜色与透明度渲染 -->
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        precision highp float;
+
+        varying float vLife;  // 生命周期阶段（0=新生成，1=将消亡）
+        varying float vSeed; // 随机种子
+
+        void main() {
+            // 计算粒子内 UV（从中心向外的坐标）
+            vec2 uv = gl_PointCoord - vec2(0.5);
+            float dist = length(uv);
+
+            // 超出圆形区域则丢弃
+            if (dist > 0.5) discard;
+
+            // 径向衰减：中心亮、边缘暗
+            float radialFade = 1.0 - smoothstep(0.0, 0.5, dist);
+
+            // 火焰颜色梯度：根据生命周期从白/黄（热）过渡到红/橙（冷）
+            // vLife=0 时：白黄色（最热）
+            // vLife=0.3 时：橙黄色
+            // vLife=0.6 时：橙红色
+            // vLife=1.0 时：深红色（最冷，即将熄灭）
+            vec3 colorHot  = vec3(1.0, 0.95, 0.7);   // 白黄色-核心
+            vec3 colorMid  = vec3(1.0, 0.45, 0.05); // 橙色-中层
+            vec3 colorCool = vec3(0.8, 0.1, 0.0);   // 深红色-边缘
+
+            vec3 color;
+            if (vLife < 0.4) {
+                color = mix(colorHot, colorMid, vLife / 0.4);
+            } else {
+                color = mix(colorMid, colorCool, (vLife - 0.4) / 0.6);
+            }
+
+            // 中心白色高光叠加（热核心效果）
+            float coreGlow = 1.0 - smoothstep(0.0, 0.2, dist);
+            color += vec3(1.0, 0.9, 0.7) * coreGlow * (1.0 - vLife) * 0.8;
+
+            // 透明度：边缘淡出，生命周期末端加速衰减
+            float alpha = radialFade;
+            float lifeFade = 1.0 - smoothstep(0.6, 1.0, vLife); // 后期快速消失
+            alpha *= lifeFade * 0.85;
+
+            // 随机闪烁，模拟火焰不稳定感
+            float flicker = 0.85 + 0.15 * sin(vSeed * 100.0 + vLife * 20.0);
+            alpha *= flicker;
+
+            // 最终颜色输出（预乘透明度用于加法混合）
+            gl_FragColor = vec4(color * alpha, alpha);
+        }
+    </script>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+        // ============================================================
+        // 场景初始化
+        // ============================================================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505); // 深黑背景突出火焰
+        scene.fog = new THREE.FogExp2(0x050505, 0.04); // 远处轻微雾化增加深度感
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 3, 8);
+        camera.lookAt(0, 2, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        // 轨道控制器：鼠标拖拽旋转、滚轮缩放、右键平移
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 3;
+        controls.maxDistance = 20;
+        controls.target.set(0, 1.5, 0);
+
+        // ============================================================
+        // GUI 参数控制面板
+        // ============================================================
+        const params = {
+            particleCount: 3000,  // 粒子总数
+            intensity: 1.0,       // 火焰强度（影响高度、扩散、亮度）
+            spread: 1.0,          // 水平扩散范围
+            turbulence: 1.0,      // 湍流强度
+            baseSpeed: 1.0,       // 火焰上升速度倍率
+            pointSize: 1.0,      // 粒子基础大小倍率
+        };
+
+        const gui = new GUI({ title: '🔥 火焰参数控制' });
+        gui.add(params, 'particleCount', 500, 8000, 100).name('粒子数量').onChange(rebuildFire);
+        gui.add(params, 'intensity', 0.2, 2.0, 0.1).name('火焰强度');
+        gui.add(params, 'spread', 0.2, 2.0, 0.1).name('扩散范围');
+        gui.add(params, 'turbulence', 0.0, 2.0, 0.1).name('湍流强度');
+        gui.add(params, 'baseSpeed', 0.2, 3.0, 0.1).name('上升速度');
+        gui.add(params, 'pointSize', 0.3, 2.0, 0.1).name('粒子大小');
+
+        // ============================================================
+        // 火焰粒子系统
+        // ============================================================
+        let fireGeometry, fireMaterial, firePoints;
+        let clock = new THREE.Clock();
+
+        // 火焰爆发数据（鼠标点击产生）
+        const bursts = [];
+
+        function createFire() {
+            const count = params.particleCount;
+
+            // 几何体：粒子初始分布在地面小圆范围内
+            const positions = new Float32Array(count * 3);
+            const scales = new Float32Array(count);
+            const seeds = new Float32Array(count);
+            const lifetimes = new Float32Array(count);
+            const speeds = new Float32Array(count);
+
+            for (let i = 0; i < count; i++) {
+                // 初始位置：在地面 xz 平面的小圆内随机分布
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * 0.3;
+                positions[i * 3 + 0] = Math.cos(angle) * radius;
+                positions[i * 3 + 1] = 0;
+                positions[i * 3 + 2] = Math.sin(angle) * radius;
+
+                scales[i] = 0.5 + Math.random() * 1.5;          // 粒子大小差异
+                seeds[i] = Math.random();                        // 噪声采样种子
+                lifetimes[i] = Math.random();                    // 错开生命周期相位
+                speeds[i] = 0.7 + Math.random() * 0.6;          // 上升速度差异
+            }
+
+            fireGeometry = new THREE.BufferGeometry();
+            fireGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            fireGeometry.setAttribute('aScale', new THREE.BufferAttribute(scales, 1));
+            fireGeometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+            fireGeometry.setAttribute('aLifetime', new THREE.BufferAttribute(lifetimes, 1));
+            fireGeometry.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+
+            // 材质：自定义着色器 + 加法混合产生发光叠加效果
+            fireMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uIntensity: { value: params.intensity },
+                    uPixelRatio: { value: renderer.getPixelRatio() },
+                },
+                vertexShader: document.getElementById('vertexShader').textContent,
+                fragmentShader: document.getElementById('fragmentShader').textContent,
+                transparent: true,
+                blending: THREE.AdditiveBlending,   // 加法混合：火焰叠加更亮
+                depthWrite: false,                   // 不写入深度缓冲
+                depthTest: true,
+            });
+
+            firePoints = new THREE.Points(fireGeometry, fireMaterial);
+            scene.add(firePoints);
+        }
+
+        function rebuildFire() {
+            scene.remove(firePoints);
+            fireGeometry.dispose();
+            fireMaterial.dispose();
+            createFire();
+        }
+
+        createFire();
+
+        // ============================================================
+        // 鼠标点击生成火焰爆发效果
+        // ============================================================
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // 虚拟地面平面，用于射线检测落点
+        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+        renderer.domElement.addEventListener('click', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersectPoint = new THREE.Vector3();
+            raycaster.ray.intersectPlane(groundPlane, intersectPoint);
+
+            // 在点击位置生成一个火焰爆发事件
+            bursts.push({
+                position: intersectPoint.clone(),
+                time: 0,
+                duration: 1.5,  // 爆发持续时间（秒）
+                strength: 1.0,
+            });
+        });
+
+        // ============================================================
+        // 地面网格（辅助参考，非必需）
+        // ============================================================
+        const gridHelper = new THREE.GridHelper(20, 20, 0x222222, 0x111111);
+        gridHelper.position.y = -0.01;
+        scene.add(gridHelper);
+
+        // 微弱的点光源，防止场景全黑（仅辅助可视化，火焰本身是自发光）
+        const ambientLight = new THREE.AmbientLight(0x111111);
+        scene.add(ambientLight);
+
+        // ============================================================
+        // 动画循环
+        // ============================================================
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const elapsed = clock.getElapsedTime();
+            const delta = clock.getDelta();
+
+            // 更新着色器时间uniform
+            if (fireMaterial) {
+                fireMaterial.uniforms.uTime.value = elapsed * params.baseSpeed;
+                fireMaterial.uniforms.uIntensity.value = params.intensity;
+            }
+
+            // 更新爆发效果（为简单起见，通过额外几何体实现）
+            // 这里我们可以动态调整 fireGeometry 中部分粒子的位置
+            // 简化处理：爆发时整体强度提升
+            let burstIntensity = 0;
+            for (let i = bursts.length - 1; i >= 0; i--) {
+                bursts[i].time += 0.016; // 约 60fps
+                if (bursts[i].time > bursts[i].duration) {
+                    bursts.splice(i, 1);
+                } else {
+                    const t = bursts[i].time / bursts[i].duration;
+                    burstIntensity += Math.sin(t * Math.PI) * bursts[i].strength;
+                }
+            }
+
+            // 临时增强强度模拟爆发感
+            if (burstIntensity > 0 && fireMaterial) {
+                fireMaterial.uniforms.uIntensity.value = params.intensity * (1.0 + burstIntensity * 2.0);
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // ============================================================
+        // 响应窗口大小变化
+        // ============================================================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            if (fireMaterial) {
+                fireMaterial.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+            }
+        });
+    </script>
+</body>
+</html>

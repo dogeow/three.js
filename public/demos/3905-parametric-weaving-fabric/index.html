@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>PARAMETRIC WEAVING FABRIC</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#080808}
+canvas{display:block}
+#info{position:fixed;bottom:14px;left:14px;color:#888;font-size:12px}
+</style>
+</head>
+<body>
+<div id="info">参数化编织 — L-System 织物图案，RGB 线程层</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x080808);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,200);
+camera.position.set(0,0,18);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.6,0.4,0.7));
+
+scene.add(new THREE.AmbientLight(0x444455,2));
+const dl=new THREE.DirectionalLight(0xffffff,1.5);
+dl.position.set(5,10,5);scene.add(dl);
+
+const COLS=28,ROWS=22;
+const CELL=0.65;
+const ox=-COLS*CELL*0.5,oz=-ROWS*CELL*0.5;
+const threads=[];
+const WARP=0,WEFT=1,PATTERN=2;
+const colors={warp:[0xcc3344,0xcc3344],weft:[0x3344cc,0x3344cc],pattern:[0x44cc88,0xffcc33]};
+
+function isWoven(x,y){
+    const v=(x+y)%5;
+    return v===0?WARP:v===1?WEFT:v===2?PATTERN:v===3?WARP:WEFT;
+}
+
+function createThread(x,y,type){
+    const isHoriz=type===WEFT;
+    const col=(x+y)%2===0?colors[type][0]:colors[type][1];
+    const mat=new THREE.MeshStandardMaterial({color:col,metalness:0.3,roughness:0.6,emissive:col,emissiveIntensity:0.05});
+    const geo=new THREE.CylinderGeometry(0.06,0.06,CELL*1.4,8);
+    const mesh=new THREE.Mesh(geo,mat);
+    mesh.position.set(x*CELL+ox,0,y*CELL+oz);
+    if(isHoriz){mesh.rotation.z=Math.PI/2;}
+    else{mesh.rotation.y=Math.PI/2;}
+    mesh.userData={bx:x*CELL+ox,by:y*CELL+oz,type,isHoriz,phase:(x+y)%3};
+    scene.add(mesh);
+    threads.push(mesh);
+}
+
+for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+        createThread(x,y,isWoven(x,y));
+    }
+}
+
+let t=0;
+function animate(){
+    requestAnimationFrame(animate);
+    t+=0.01;
+    threads.forEach(th=>{
+        const ud=th.userData;
+        const wave=Math.sin(t*1.5+ud.phase*1.2)*0.15;
+        th.position.y=wave;
+        th.rotation.x=t*0.3+ud.phase*0.5;
+    });
+    controls.update();
+    composer.render();
+}
+animate();
+window.addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

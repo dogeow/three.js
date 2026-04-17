@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web Audio FFT 3D Visualizer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: Arial, sans-serif; }
+    canvas { display: block; }
+    #controls {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #controls button, #controls label {
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.3);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    #controls input[type="file"] {
+      display: none;
+    }
+    #controls button:hover, #controls label:hover {
+      background: rgba(50,50,50,0.8);
+    }
+    #status {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      color: rgba(255,255,255,0.6);
+      font-size: 12px;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+<!--
+  Audio Technique Explanation:
+  ============================================================
+  This example uses the Web Audio API (AudioContext + AnalyserNode)
+  to perform real-time Fast Fourier Transform (FFT) on audio data.
+
+  Key concepts:
+  - AudioContext: The main entry point for all Web Audio operations.
+  - AnalyserNode: Provides real-time frequency and time-domain analysis.
+    We use getByteFrequencyData() to retrieve a Uint8Array where each
+    element (0-255) represents the amplitude of a frequency bin.
+  - requestAnimationFrame: We drive the animation loop in sync with
+    the display refresh rate, reading new FFT data every frame.
+  - Audio sources can be:
+    (1) A user-loaded audio file decoded via decodeAudioData() and played
+        through an AudioBufferSourceNode, or
+    (2) A synthesized demo using OscillatorNode + GainNode to produce
+        rhythmic beats without any external file.
+
+  Bar visualization:
+  - We map the first N frequency bins to bar heights, creating a classic
+    spectrum analyzer look in 3D. Bars are arranged in an 8x8 grid.
+  - MeshStandardMaterial gives us physically-based rendering with lighting
+    response, and we color each bar based on its frequency index using
+    an HSL gradient (low frequencies = warm/red, high = cool/blue).
+  ============================================================
+-->
+
+<div id="controls">
+  <label for="audioFile">🎵 加载音频文件</label>
+  <input type="file" id="audioFile" accept="audio/*" />
+  <button id="demoBtn">🎶 播放合成演示</button>
+  <button id="stopBtn">⏹ 停止</button>
+</div>
+<div id="status">状态: 未播放</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.js';
+
+// ─── Scene Setup ────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+scene.fog = new THREE.FogExp2(0x050510, 0.02);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 12, 20);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ─── Lights ─────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x223366, 0.5);
+scene.add(ambientLight);
+
+const pointLight1 = new THREE.PointLight(0x00aaff, 2, 50);
+pointLight1.position.set(10, 15, 10);
+pointLight1.castShadow = true;
+scene.add(pointLight1);
+
+const pointLight2 = new THREE.PointLight(0xff00aa, 1.5, 50);
+pointLight2.position.set(-10, 10, -10);
+scene.add(pointLight2);
+
+const pointLight3 = new THREE.PointLight(0x00ffaa, 1, 40);
+pointLight3.position.set(0, 20, 0);
+scene.add(pointLight3);
+
+// ─── Floor / Grid ───────────────────────────────────────────────────────────
+const gridHelper = new THREE.GridHelper(40, 40, 0x222244, 0x111122);
+scene.add(gridHelper);
+
+const floorGeo = new THREE.PlaneGeometry(40, 40);
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x080818,
+  roughness: 0.9,
+  metalness: 0.1,
+  transparent: true,
+  opacity: 0.8,
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ─── Bars ────────────────────────────────────────────────────────────────────
+const BAR_COUNT = 64;
+const GRID_X = 8;
+const GRID_Z = 8;
+const BAR_SPACING = 1.8;
+
+const barMeshes = [];
+const barGeo = new THREE.BoxGeometry(1, 1, 1);
+
+function createBars(count) {
+  barMeshes.forEach(m => scene.remove(m));
+  barMeshes.length = 0;
+
+  for (let i = 0; i < count; i++) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.3,
+      metalness: 0.6,
+    });
+    const mesh = new THREE.Mesh(barGeo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    barMeshes.push(mesh);
+    scene.add(mesh);
+  }
+  updateBarPositions();
+}
+
+function updateBarPositions() {
+  const count = barMeshes.length;
+  for (let i = 0; i < count; i++) {
+    const x = (i % GRID_X) * BAR_SPACING - ((GRID_X - 1) * BAR_SPACING) / 2;
+    const z = Math.floor(i / GRID_X) * BAR_SPACING - ((GRID_Z - 1) * BAR_SPACING) / 2;
+    barMeshes[i].position.set(x, 0, z);
+  }
+}
+
+createBars(BAR_COUNT);
+
+// ─── Web Audio ───────────────────────────────────────────────────────────────
+let audioContext = null;
+let analyser = null;
+let dataArray = null;
+let sourceNode = null;
+let isPlaying = false;
+
+function initAudio() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.connect(audioContext.destination);
+  }
+  if (audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
+}
+
+// Demo synthesized beat
+function playSynthDemo() {
+  initAudio();
+  stopAll();
+
+  const bpm = 120;
+  const beatDuration = 60 / bpm;
+  const now = audioContext.currentTime;
+
+  // Kick drum (low freq oscillator with pitch envelope)
+  function playKick(time) {
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, time);
+    osc.frequency.exponentialRampToValueAtTime(30, time + 0.15);
+    gain.gain.setValueAtTime(1.2, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+    osc.connect(gain);
+    gain.connect(analyser);
+    osc.start(time);
+    osc.stop(time + 0.3);
+  }
+
+  // Hi-hat (noise)
+  function playHat(time) {
+    const bufferSize = audioContext.sampleRate * 0.05;
+    const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+    const noise = audioContext.createBufferSource();
+    noise.buffer = buffer;
+    const hpf = audioContext.createBiquadFilter();
+    hpf.type = 'highpass';
+    hpf.frequency.value = 7000;
+    const gain = audioContext.createGain();
+    gain.gain.setValueAtTime(0.3, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+    noise.connect(hpf);
+    hpf.connect(gain);
+    gain.connect(analyser);
+    noise.start(time);
+    noise.stop(time + 0.05);
+  }
+
+  // Bass line (saw wave)
+  function playBass(time, freq) {
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.4, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + beatDuration * 0.9);
+    osc.connect(gain);
+    gain.connect(analyser);
+    osc.start(time);
+    osc.stop(time + beatDuration * 0.9);
+  }
+
+  const pattern = [0, 2, 4, 5, 4, 2, 0, 0];
+  const bassNotes = [55, 55, 82.4, 55, 73.4, 55, 82.4, 55];
+
+  let t = now;
+  for (let bar = 0; bar < 8; bar++) {
+    playKick(t);
+    playHat(t + beatDuration * 0.5);
+    if (bar % 2 === 0) {
+      playKick(t + beatDuration * 2);
+    }
+    playBass(t, bassNotes[bar % bassNotes.length]);
+    t += beatDuration;
+  }
+
+  // Schedule repeating
+  const loopBeat = () => {
+    if (!isPlaying) return;
+    const scheduleAhead = 2;
+    const nextBar = audioContext.currentTime + scheduleAhead;
+    let nt = Math.ceil((nextBar - now) / (beatDuration * 8)) * (beatDuration * 8) + now;
+    for (let bar = 0; bar < 8; bar++) {
+      playKick(nt + bar * beatDuration);
+      playHat(nt + bar * beatDuration + beatDuration * 0.5);
+      if (bar % 2 === 0) playKick(nt + bar * beatDuration + beatDuration * 2);
+      playBass(nt + bar * beatDuration, bassNotes[bar % bassNotes.length]);
+    }
+    setTimeout(loopBeat, scheduleAhead * 900);
+  };
+
+  isPlaying = true;
+  document.getElementById('status').textContent = '状态: 播放合成演示';
+  loopBeat();
+}
+
+// Load and play audio file
+function loadAudioFile(file) {
+  initAudio();
+  stopAll();
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const buffer = await audioContext.decodeAudioData(e.target.result);
+    const bufSource = audioContext.createBufferSource();
+    bufSource.buffer = buffer;
+    bufSource.connect(analyser);
+    bufSource.start(0);
+    bufSource.loop = true;
+    sourceNode = bufSource;
+    isPlaying = true;
+    document.getElementById('status').textContent = '状态: 播放中 - ' + file.name;
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function stopAll() {
+  isPlaying = false;
+  if (sourceNode) {
+    try { sourceNode.stop(); } catch (_) {}
+    sourceNode.disconnect();
+    sourceNode = null;
+  }
+  document.getElementById('status').textContent = '状态: 已停止';
+}
+
+// ─── GUI Controls ───────────────────────────────────────────────────────────
+const params = {
+  barCount: BAR_COUNT,
+  colorScheme: 'Rainbow',
+  smoothing: 0.8,
+  animationSpeed: 1.0,
+};
+
+const gui = new GUI();
+gui.add(params, 'barCount', 8, 128, 1).name('Bar Count').onChange((v) => {
+  createBars(v);
+});
+gui.add(params, 'colorScheme', ['Rainbow', 'Fire', 'Ocean', 'Neon', 'Mono']).name('Color Scheme');
+gui.add(params, 'smoothing', 0.0, 0.99, 0.01).name('Smoothing').onChange((v) => {
+  if (analyser) analyser.smoothingTimeConstant = v;
+});
+gui.add(params, 'animationSpeed', 0.1, 3.0, 0.1).name('Anim Speed');
+
+// ─── Color Functions ─────────────────────────────────────────────────────────
+function getColor(index, total, scheme) {
+  const t = index / Math.max(total - 1, 1);
+  switch (scheme) {
+    case 'Fire':
+      return new THREE.Color().setHSL(0.05 - t * 0.05, 1.0, 0.4 + t * 0.3);
+    case 'Ocean':
+      return new THREE.Color().setHSL(0.55 + t * 0.15, 0.9, 0.4 + t * 0.3);
+    case 'Neon':
+      return new THREE.Color().setHSL(t * 1.0, 1.0, 0.5);
+    case 'Mono':
+      return new THREE.Color().setHSL(0.7, 0.3, 0.2 + t * 0.6);
+    case 'Rainbow':
+    default:
+      return new THREE.Color().setHSL(t * 0.8, 1.0, 0.5);
+  }
+}
+
+// ─── Controls UI Events ─────────────────────────────────────────────────────
+document.getElementById('demoBtn').addEventListener('click', playSynthDemo);
+document.getElementById('stopBtn').addEventListener('click', stopAll);
+document.getElementById('audioFile').addEventListener('change', (e) => {
+  if (e.target.files[0]) loadAudioFile(e.target.files[0]);
+});
+
+// ─── OrbitControls ───────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 2, 0);
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  // Animate lights
+  pointLight1.position.x = Math.sin(elapsed * 0.5) * 12;
+  pointLight1.position.z = Math.cos(elapsed * 0.5) * 12;
+  pointLight2.position.x = Math.cos(elapsed * 0.3) * 10;
+  pointLight2.position.z = Math.sin(elapsed * 0.3) * 10;
+
+  // Update bars from FFT data
+  if (analyser && isPlaying) {
+    analyser.getByteFrequencyData(dataArray);
+    const binCount = Math.min(dataArray.length, barMeshes.length);
+    const targetHeight = new Array(barMeshes.length).fill(0);
+
+    for (let i = 0; i < binCount; i++) {
+      const height = (dataArray[i] / 255.0) * 12 * params.animationSpeed;
+      targetHeight[i] = Math.max(height, 0.05);
+    }
+
+    for (let i = 0; i < barMeshes.length; i++) {
+      const bar = barMeshes[i];
+      const target = targetHeight[i] || 0.05;
+      // Smooth lerp
+      const current = bar.scale.y;
+      bar.scale.y = THREE.MathUtils.lerp(current, target, 0.2);
+      bar.position.y = bar.scale.y / 2;
+
+      // Update color based on frequency index and scheme
+      const color = getColor(i, barMeshes.length, params.colorScheme);
+      // Brightness variation based on height
+      const brightness = 0.3 + (bar.scale.y / 12) * 0.7;
+      bar.material.color.copy(color).multiplyScalar(brightness);
+      bar.material.emissive.copy(color).multiplyScalar(brightness * 0.2);
+    }
+  } else {
+    // Idle animation when nothing playing
+    for (let i = 0; i < barMeshes.length; i++) {
+      const bar = barMeshes[i];
+      const idle = Math.sin(elapsed * 1.5 + i * 0.2) * 0.15 + 0.15;
+      bar.scale.y = THREE.MathUtils.lerp(bar.scale.y, idle, 0.1);
+      bar.position.y = bar.scale.y / 2;
+      const color = getColor(i, barMeshes.length, params.colorScheme);
+      bar.material.color.copy(color).multiplyScalar(0.25);
+      bar.material.emissive.set(0x000000);
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

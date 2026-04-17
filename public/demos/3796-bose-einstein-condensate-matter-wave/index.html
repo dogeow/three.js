@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>BOSE-EINSTEIN CONDENSATE</title>
+<style>
+body{margin:0;overflow:hidden;background:#000010;font-family:monospace}
+canvas{display:block}
+#panel{position:fixed;top:12px;left:12px;color:#88f;font-size:12px;background:rgba(0,0,0,0.6);padding:10px;border-radius:4px;line-height:1.8}
+#info{position:fixed;bottom:12px;left:12px;color:#aaf;font-size:12px;background:rgba(0,0,0,0.6);padding:8px;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="panel"><b>玻色-爱因斯坦凝聚</b><br>温度：<span id="temp">1.0</span> T/Tc<br>相位：<span id="phase">0.00</span></div>
+<div id="info">宏观物质波 — 纳开尔文温度下的相位相干</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000010);
+const camera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,200);
+camera.position.set(0,5,20);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),1.5,0.4,0.2));
+
+const becGeo=new THREE.SphereGeometry(3,64,64);
+const becMat=new THREE.ShaderMaterial({
+    uniforms:{uTime:{value:0},uTemp:{value:1.0}},
+    vertexShader:`uniform float uTime;uniform float uTemp;varying vec3 vNormal;varying float vPhase;void main(){vNormal=normal;float noise=sin(position.x*3.0+uTime*2.0)*cos(position.y*3.0+uTime*1.5)*sin(position.z*3.0+uTime*1.8);float d=noise*0.3*uTemp;vec3 np=position+normal*d;vPhase=noise;gl_Position=projectionMatrix*modelViewMatrix*vec4(np,1.0);}`,
+    fragmentShader:`uniform float uTime;uniform float uTemp;varying vec3 vNormal;varying float vPhase;void main(){float f=pow(1.0-abs(dot(vNormal,vec3(0,0,1))),2.0);vec3 col=mix(vec3(0.2,0.3,1.0),vec3(0.5,0.1,1.0),f);col+=vec3(0.0,0.2,0.5)*(0.5+0.5*sin(vPhase*10.0+uTime*3.0))*(1.0-uTemp);float a=(0.4+0.3*f)*(2.0-uTemp);gl_FragColor=vec4(col*2.0,a);}`,
+    transparent:true,side:THREE.DoubleSide,depthWrite:false
+});
+const bec=new THREE.Mesh(becGeo,becMat);
+scene.add(bec);
+
+for(let i=0;i<5;i++){
+    const r=4+i*0.8;
+    const t=new THREE.Mesh(new THREE.TorusGeometry(r,0.02,8,64),
+        new THREE.MeshBasicMaterial({color:new THREE.Color().setHSL(0.6+i*0.05,1,0.5),transparent:true,opacity:0.4}));
+    t.rotation.x=Math.PI/2; scene.add(t);
+}
+scene.add(new THREE.GridHelper(40,40,0x0a0a30,0x050518));
+scene.add(new THREE.AmbientLight(0x111133));
+
+let t=0;
+function animate(){
+    requestAnimationFrame(animate);
+    t+=0.016;
+    becMat.uniforms.uTime.value=t;
+    const temp=0.5+0.5*Math.abs(Math.sin(t*0.1));
+    becMat.uniforms.uTemp.value=temp;
+    bec.scale.setScalar(1.0+(1.0-temp)*0.5);
+    document.getElementById('temp').textContent=temp.toFixed(2);
+    document.getElementById('phase').textContent=(t%(Math.PI*2)).toFixed(2);
+    controls.update(); composer.render();
+}
+animate();
+</script></body></html>

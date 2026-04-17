@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>沙粒模拟</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0a0f;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e0e0e0;
+    }
+    canvas { display: block; }
+    #tip {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10,10,20,0.75);
+      border: 1px solid rgba(255,200,80,0.25);
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 13px;
+      color: #c8b98a;
+      text-align: center;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+      line-height: 1.6;
+      max-width: 480px;
+      width: calc(100% - 40px);
+    }
+    #tip span { color: #ffd966; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<div id="tip">
+  <span>点击</span>任意位置生成沙粒 &nbsp;|&nbsp;
+  <span>拖动</span>旋转视角 &nbsp;|&nbsp;
+  <span>滚轮</span>缩放
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+const MAX_PARTICLES = 80000;
+const BOX_SIZE = 12;
+const HALF_BOX = BOX_SIZE / 2;
+const GROUND_Y = -HALF_BOX + 0.5;
+const SPAWN_HEIGHT = HALF_BOX - 0.5;
+const CELL_SIZE = 0.18;
+
+const params = {
+  particleCount:  30000,
+  gravity:        9.8,
+  friction:       0.82,
+  particleSize:   0.09,
+  spawnRate:      400,
+  groundEnabled:  true,
+};
+
+let spawnedCount = 0;
+let spawning = false;
+let spawnAccum = 0;
+
+// ─── Particle Data (CPU) ──────────────────────────────────────────────────────
+const posX   = new Float32Array(MAX_PARTICLES);
+const posY   = new Float32Array(MAX_PARTICLES);
+const posZ   = new Float32Array(MAX_PARTICLES);
+const velX   = new Float32Array(MAX_PARTICLES);
+const velY   = new Float32Array(MAX_PARTICLES);
+const velZ   = new Float32Array(MAX_PARTICLES);
+const alive  = new Uint8Array(MAX_PARTICLES);   // 0 = dead, 1 = alive
+
+// ─── Grid for spatial partitioning ──────────────────────────────────────────
+const GRID_W = Math.ceil(BOX_SIZE / CELL_SIZE) + 1;
+const GRID_H = Math.ceil(BOX_SIZE / CELL_SIZE) + 1;
+const grid = new Array(GRID_W * GRID_H).fill(-1);
+const next = new Int32Array(MAX_PARTICLES).fill(-1);
+
+function gridIdx(x, z) {
+  const xi = Math.floor((x + HALF_BOX) / CELL_SIZE);
+  const zi = Math.floor((z + HALF_BOX) / CELL_SIZE);
+  return zi * GRID_W + xi;
+}
+
+function insertParticle(i, x, z) {
+  const idx = gridIdx(x, z);
+  next[i] = grid[idx];
+  grid[idx] = i;
+}
+
+function nearby(x, z, callback) {
+  const xi0 = Math.floor((x + HALF_BOX - CELL_SIZE) / CELL_SIZE);
+  const xi1 = Math.floor((x + HALF_BOX + CELL_SIZE) / CELL_SIZE);
+  const zi0 = Math.floor((z + HALF_BOX - CELL_SIZE) / CELL_SIZE);
+  const zi1 = Math.floor((z + HALF_BOX + CELL_SIZE) / CELL_SIZE);
+  for (let zi = zi0; zi <= zi1; zi++) {
+    for (let xi = xi0; xi <= xi1; xi++) {
+      if (xi < 0 || xi >= GRID_W || zi < 0 || zi >= GRID_H) continue;
+      let j = grid[zi * GRID_W + xi];
+      while (j !== -1) {
+        callback(j);
+        j = next[j];
+      }
+    }
+  }
+}
+
+// ─── Scene Setup ─────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.018);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 14, 22);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+
+// ─── Lighting ────────────────────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0x334466, 0.8);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xfff5e0, 1.4);
+sun.position.set(8, 20, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 60;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -16;
+sun.shadow.camera.right = sun.shadow.camera.top = 16;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0x4466aa, 0.5);
+fill.position.set(-10, 5, -8);
+scene.add(fill);
+
+// ─── Ground ──────────────────────────────────────────────────────────────────
+const groundGeo = new THREE.BoxGeometry(BOX_SIZE, 0.4, BOX_SIZE);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x1e1e2e,
+  roughness: 0.85,
+  metalness: 0.1,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.position.y = GROUND_Y - 0.2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ─── Walls (invisible collision) ─────────────────────────────────────────────
+const wallMat = new THREE.MeshBasicMaterial({ visible: false });
+const wallGeo = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, 0.1);
+const wallBack = new THREE.Mesh(wallGeo, wallMat);
+wallBack.position.set(0, 0, -HALF_BOX);
+scene.add(wallBack);
+const wallFront = new THREE.Mesh(wallGeo, wallMat);
+wallFront.position.set(0, 0, HALF_BOX);
+scene.add(wallFront);
+
+const wallGeoX = new THREE.BoxGeometry(0.1, BOX_SIZE, BOX_SIZE);
+const wallLeft = new THREE.Mesh(wallGeoX, wallMat);
+wallLeft.position.set(-HALF_BOX, 0, 0);
+scene.add(wallLeft);
+const wallRight = new THREE.Mesh(wallGeoX, wallMat);
+wallRight.position.set(HALF_BOX, 0, 0);
+scene.add(wallRight);
+
+// ─── InstancedMesh ───────────────────────────────────────────────────────────
+const particleGeo = new THREE.SphereGeometry(params.particleSize, 5, 4);
+const particleMat = new THREE.MeshStandardMaterial({
+  color: 0xffc850,
+  roughness: 0.6,
+  metalness: 0.1,
+});
+
+const instancedMesh = new THREE.InstancedMesh(particleGeo, particleMat, MAX_PARTICLES);
+instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+instancedMesh.castShadow = true;
+instancedMesh.receiveShadow = true;
+instancedMesh.frustumCulled = false;
+scene.add(instancedMesh);
+
+const _dummy = new THREE.Object3D();
+const _color = new THREE.Color();
+
+// ─── Spawn helpers ────────────────────────────────────────────────────────────
+function spawnBurst(cx, cy, cz, count) {
+  let added = 0;
+  for (let n = 0; n < count && spawnedCount < MAX_PARTICLES; n++) {
+    const i = spawnedCount++;
+    posX[i] = cx + (Math.random() - 0.5) * 1.4;
+    posY[i] = cy;
+    posZ[i] = cz + (Math.random() - 0.5) * 1.4;
+    velX[i] = (Math.random() - 0.5) * 1.2;
+    velY[i] = Math.random() * 1.5 + 0.5;
+    velZ[i] = (Math.random() - 0.5) * 1.2;
+    alive[i] = 1;
+    added++;
+  }
+  return added;
+}
+
+function resetGrid() {
+  grid.fill(-1);
+}
+
+function buildVisibleCount() {
+  return Math.min(spawnedCount, params.particleCount);
+}
+
+// ─── Raycasting ───────────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse     = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -HALF_BOX);
+const _intersection = new THREE.Vector3();
+let mouseDown = false;
+
+renderer.domElement.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  mouseDown = true;
+  spawning = true;
+  _updateSpawn(e);
+});
+renderer.domElement.addEventListener('mousemove', e => {
+  if (!spawning) return;
+  _updateSpawn(e);
+});
+renderer.domElement.addEventListener('mouseup', () => {
+  spawning = false;
+  mouseDown = false;
+});
+renderer.domElement.addEventListener('mouseleave', () => {
+  spawning = false;
+  mouseDown = false;
+});
+
+function _updateSpawn(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(groundPlane, _intersection);
+  if (_intersection) {
+    const cx = THREE.MathUtils.clamp(_intersection.x, -HALF_BOX + 1, HALF_BOX - 1);
+    const cz = THREE.MathUtils.clamp(_intersection.z, -HALF_BOX + 1, HALF_BOX - 1);
+    spawnBurst(cx, SPAWN_HEIGHT, cz, Math.ceil(params.spawnRate * 0.016));
+  }
+}
+
+// ─── lil-gui ─────────────────────────────────────────────────────────────────
+const gui = new GUI({ title: '沙粒控制', width: 220 });
+gui.domElement.style.setProperty('--bg-color', '#0d0d18');
+gui.domElement.style.setProperty('--text-color', '#e0e0e0');
+gui.domElement.style.setProperty('--title-color', '#ffd966');
+
+gui.add(params, 'particleCount', 500, MAX_PARTICLES, 500).name('粒子数量');
+gui.add(params, 'gravity', 0, 25, 0.1).name('重力');
+gui.add(params, 'friction', 0.5, 0.99, 0.01).name('摩擦力');
+gui.add(params, 'particleSize', 0.03, 0.25, 0.01)
+  .name('Particle Size')
+  .onChange(v => {
+    const s = Math.max(0.03, v);
+    particleGeo.scale(s / params.particleSize, s / params.particleSize, s / params.particleSize);
+    particleMat.needsUpdate = true;
+  });
+gui.add(params, 'spawnRate', 50, 2000, 10).name('生成速率 / 秒');
+gui.add(params, 'groundEnabled').name('启用地面');
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Main Loop ───────────────────────────────────────────────────────────────
+let last = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt  = Math.min((now - last) / 1000, 0.033);
+  last = now;
+
+  const visible = Math.min(spawnedCount, params.particleCount);
+  const g        = params.gravity;
+  const fr       = params.friction;
+  const gnd      = GROUND_Y + 0.04;
+
+  // Gravity & integration
+  for (let i = 0; i < visible; i++) {
+    if (!alive[i]) continue;
+
+    velY[i] -= g * dt;
+    posX[i] += velX[i] * dt;
+    posY[i] += velY[i] * dt;
+    posZ[i] += velZ[i] * dt;
+
+    // Horizontal friction
+    velX[i] *= fr;
+    velZ[i] *= fr;
+
+    // Ground collision
+    if (posY[i] < gnd) {
+      posY[i] = gnd;
+      velY[i] *= -0.15;
+      velX[i] *= 0.78;
+      velZ[i] *= 0.78;
+    }
+
+    // Wall collisions
+    if (posX[i] < -HALF_BOX + 0.05) { posX[i] = -HALF_BOX + 0.05; velX[i] *= -0.4; }
+    if (posX[i] >  HALF_BOX - 0.05) { posX[i] =  HALF_BOX - 0.05; velX[i] *= -0.4; }
+    if (posZ[i] < -HALF_BOX + 0.05) { posZ[i] = -HALF_BOX + 0.05; velZ[i] *= -0.4; }
+    if (posZ[i] >  HALF_BOX - 0.05) { posZ[i] =  HALF_BOX - 0.05; velZ[i] *= -0.4; }
+
+    // Particle-particle piling via grid
+    nearby(posX[i], posZ[i], j => {
+      if (j >= i || !alive[j]) return;
+      const dx = posX[i] - posX[j];
+      const dy = posY[i] - posY[j];
+      const dz = posZ[i] - posZ[j];
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < 0.0225 && d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        const overlap = 0.15 - d;
+        const nx = dx / d;
+        const ny = dy / d;
+        const nz = dz / d;
+        posX[i] += nx * overlap * 0.5;
+        posY[i] += ny * overlap * 0.5;
+        posZ[i] += nz * overlap * 0.5;
+        posX[j] -= nx * overlap * 0.5;
+        posY[j] -= ny * overlap * 0.5;
+        posZ[j] -= nz * overlap * 0.5;
+
+        const dot = velX[i] * nx + velY[i] * ny + velZ[i] * nz;
+        if (dot < 0) {
+          const bounce = 0.25;
+          velX[i] -= bounce * dot * nx;
+          velY[i] -= bounce * dot * ny;
+          velZ[i] -= bounce * dot * nz;
+        }
+      }
+    });
+  }
+
+  // Rebuild grid
+  resetGrid();
+  for (let i = 0; i < visible; i++) {
+    if (alive[i]) insertParticle(i, posX[i], posZ[i]);
+  }
+
+  // Update InstancedMesh
+  for (let i = 0; i < visible; i++) {
+    _dummy.position.set(posX[i], posY[i], posZ[i]);
+    _dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, _dummy.matrix);
+
+    // Color variation based on height
+    const t = THREE.MathUtils.clamp((posY[i] - GROUND_Y) / BOX_SIZE, 0, 1);
+    _color.setRGB(1.0, 0.78 + t * 0.15, 0.2 + t * 0.5);
+    instancedMesh.setColorAt(i, _color);
+  }
+
+  instancedMesh.count = visible;
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+
+  // Ground visibility
+  ground.visible = params.groundEnabled;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

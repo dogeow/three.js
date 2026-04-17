@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>85 · 视差映射 Parallax Mapping</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0a; overflow: hidden; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    canvas { display: block; }
+    #tip {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 10px 20px;
+      color: #ccc;
+      font-size: 13px;
+      line-height: 1.8;
+      text-align: center;
+      pointer-events: none;
+      max-width: 90vw;
+    }
+    #tip span {
+      color: #fff;
+      font-weight: bold;
+    }
+    #labels {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-around;
+      padding: 12px 40px;
+      pointer-events: none;
+    }
+    .label {
+      color: #fff;
+      font-size: 15px;
+      font-weight: bold;
+      background: rgba(0,0,0,0.6);
+      padding: 4px 14px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .label.highlight { color: #ffd700; border-color: #ffd700; }
+  </style>
+</head>
+<body>
+
+<div id="labels">
+  <div class="label">法线贴图 <span style="color:#aaa;font-weight:normal;font-size:12px"> — 法线贴图基准</span></div>
+  <div class="label highlight">视差映射 <span style="color:#aaa;font-weight:normal;font-size:12px"> — 视差校正深度</span></div>
+  <div class="label">视差遮蔽 <span style="color:#aaa;font-weight:normal;font-size:12px"> — 视差遮蔽映射精度</span></div>
+</div>
+
+<div id="tip">
+  视差校正深度 / 视差遮蔽映射精度 / 法线贴图基准对比 / 切线空间计算
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// --- Scene Setup ---
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0a);
+
+// Subtle fog for depth
+scene.fog = new THREE.FogExp2(0x0a0a0a, 0.04);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 6);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 0, 0);
+
+// --- Lighting ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
+dirLight.position.set(3, 5, 4);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x4488ff, 0.4);
+fillLight.position.set(-3, 2, -2);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xff8844, 0.3);
+rimLight.position.set(0, -2, -4);
+scene.add(rimLight);
+
+// --- Brick Texture Generation ---
+function createBrickTextures() {
+  const size = 512;
+
+  // === ALBEDO ===
+  const albedoCanvas = document.createElement('canvas');
+  albedoCanvas.width = size; albedoCanvas.height = size;
+  const aCtx = albedoCanvas.getContext('2d');
+
+  // Base mortar color
+  aCtx.fillStyle = '#6b6b6b';
+  aCtx.fillRect(0, 0, size, size);
+
+  const brickW = 64, brickH = 32, mortar = 5;
+
+  for (let row = 0; row < size / (brickH + mortar) + 1; row++) {
+    const offset = (row % 2) * (brickW / 2);
+    for (let col = -1; col < size / (brickW + mortar) + 1; col++) {
+      const x = col * (brickW + mortar) + offset;
+      const y = row * (brickH + mortar);
+      const hue = 15 + Math.random() * 10;
+      const sat = 40 + Math.random() * 25;
+      const lit = 32 + Math.random() * 18;
+      aCtx.fillStyle = `hsl(${hue}, ${sat}%, ${lit}%)`;
+      aCtx.fillRect(x, y, brickW, brickH);
+
+      // Subtle surface variation per brick
+      const grad = aCtx.createLinearGradient(x, y, x + brickW, y + brickH);
+      grad.addColorStop(0, 'rgba(255,255,255,0.05)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.1)');
+      aCtx.fillStyle = grad;
+      aCtx.fillRect(x, y, brickW, brickH);
+    }
+  }
+
+  // === HEIGHT MAP ===
+  const heightCanvas = document.createElement('canvas');
+  heightCanvas.width = size; heightCanvas.height = size;
+  const hCtx = heightCanvas.getContext('2d');
+
+  // Bricks are high (white), mortar is low (black)
+  hCtx.fillStyle = '#000000';
+  hCtx.fillRect(0, 0, size, size);
+
+  for (let row = 0; row < size / (brickH + mortar) + 1; row++) {
+    const offset = (row % 2) * (brickW / 2);
+    for (let col = -1; col < size / (brickW + mortar) + 1; col++) {
+      const x = col * (brickW + mortar) + offset;
+      const y = row * (brickH + mortar);
+
+      // Raised brick area
+      hCtx.fillStyle = '#ffffff';
+      hCtx.fillRect(x + mortar, y + mortar, brickW, brickH);
+
+      // Slight bevel on brick edges
+      hCtx.fillStyle = '#dddddd';
+      hCtx.fillRect(x + mortar, y + mortar, brickW, 2);
+      hCtx.fillRect(x + mortar, y + mortar, 2, brickH);
+
+      hCtx.fillStyle = '#aaaaaa';
+      hCtx.fillRect(x + mortar, y + mortar + brickH - 2, brickW, 2);
+      hCtx.fillRect(x + mortar + brickW - 2, y + mortar, 2, brickH);
+    }
+  }
+
+  // === NORMAL MAP ===
+  const normalCanvas = document.createElement('canvas');
+  normalCanvas.width = size; normalCanvas.height = size;
+  const nCtx = normalCanvas.getContext('2d');
+
+  nCtx.fillStyle = '#8080ff'; // flat surface pointing toward camera
+  nCtx.fillRect(0, 0, size, size);
+
+  // Draw brick normals manually
+  for (let row = 0; row < size / (brickH + mortar) + 1; row++) {
+    const offset = (row % 2) * (brickW / 2);
+    for (let col = -1; col < size / (brickW + mortar) + 1; col++) {
+      const x = col * (brickW + mortar) + offset;
+      const y = row * (brickH + mortar);
+
+      // Brick top face (normal pointing up + z)
+      nCtx.fillStyle = '#8080ff';
+      nCtx.fillRect(x + mortar + 2, y + mortar + 2, brickW - 4, brickH - 4);
+
+      // Top edge highlight (normal pointing up-left)
+      nCtx.fillStyle = '#aaaaaa';
+      nCtx.fillRect(x + mortar, y + mortar, brickW, 2);
+      nCtx.fillStyle = '#666666';
+      nCtx.fillRect(x + mortar, y + mortar, 2, brickH);
+
+      // Bottom edge shadow
+      nCtx.fillStyle = '#444444';
+      nCtx.fillRect(x + mortar, y + mortar + brickH - 2, brickW, 2);
+      nCtx.fillStyle = '#555555';
+      nCtx.fillRect(x + mortar + brickW - 2, y + mortar, 2, brickH);
+
+      // Mortar lines (recessed, dark normals)
+      nCtx.fillStyle = '#202040';
+      // Horizontal mortar
+      nCtx.fillRect(0, y, size, mortar);
+      // Vertical mortar
+      nCtx.fillStyle = '#303050';
+      nCtx.fillRect(x, 0, mortar, size);
+    }
+  }
+
+  const albedo = new THREE.CanvasTexture(albedoCanvas);
+  albedo.wrapS = albedo.wrapT = THREE.RepeatWrapping;
+  albedo.repeat.set(2, 2);
+
+  const height = new THREE.CanvasTexture(heightCanvas);
+  height.wrapS = height.wrapT = THREE.RepeatWrapping;
+  height.repeat.set(2, 2);
+
+  const normal = new THREE.CanvasTexture(normalCanvas);
+  normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+  normal.repeat.set(2, 2);
+
+  return { albedo, height, normal };
+}
+
+const textures = createBrickTextures();
+
+// --- Shader Definitions ---
+
+// Vertex shader shared by all three techniques
+const sharedVertexShader = `
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying vec3 vWorldPos;
+  varying mat3 vTBN;
+
+  void main() {
+    vUv = uv;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPos = worldPos.xyz;
+
+    vec3 T = normalize((modelMatrix * vec4(tangent.xyz, 0.0)).xyz);
+    vec3 N = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+    vec3 B = cross(N, T) * tangent.w;
+
+    vTBN = mat3(T, B, N);
+    vNormal = N;
+
+    vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+    vViewDir = -mvPos.xyz;
+
+    gl_Position = projectionMatrix * mvPos;
+  }
+`;
+
+// Fragment shader: Normal Mapping only
+const normalMapFragmentShader = `
+  uniform sampler2D uAlbedoMap;
+  uniform sampler2D uNormalMap;
+  uniform vec3 uLightDir;
+  uniform vec3 uLightColor;
+  uniform vec3 uFillLightDir;
+  uniform vec3 uFillLightColor;
+  uniform vec3 uAmbientColor;
+  uniform float uHeightScale;
+
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying vec3 vWorldPos;
+  varying mat3 vTBN;
+
+  void main() {
+    vec3 normalMap = texture2D(uNormalMap, vUv).rgb * 2.0 - 1.0;
+    vec3 normal = normalize(vTBN * normalMap);
+
+    vec3 albedo = texture2D(uAlbedoMap, vUv).rgb;
+
+    // Diffuse lighting
+    float diff = max(dot(normal, normalize(uLightDir)), 0.0);
+    float fill = max(dot(normal, normalize(uFillLightDir)), 0.0) * 0.5;
+    float ambient = 0.15;
+
+    vec3 lighting = uAmbientColor * ambient + uLightColor * diff + uFillLightColor * fill;
+    vec3 color = albedo * lighting;
+
+    // Simple rim light
+    float rim = 1.0 - max(dot(normalize(vViewDir), normal), 0.0);
+    rim = pow(rim, 3.0) * 0.2;
+    color += vec3(rim);
+
+    // Gamma correction
+    color = pow(color, vec3(1.0 / 2.2));
+
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// Fragment shader: Parallax Mapping (approximate)
+const parallaxFragmentShader = `
+  uniform sampler2D uAlbedoMap;
+  uniform sampler2D uNormalMap;
+  uniform sampler2D uHeightMap;
+  uniform vec3 uLightDir;
+  uniform vec3 uLightColor;
+  uniform vec3 uFillLightDir;
+  uniform vec3 uFillLightColor;
+  uniform vec3 uAmbientColor;
+  uniform float uParallaxScale;
+  uniform float uHeightScale;
+
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying vec3 vWorldPos;
+  varying mat3 vTBN;
+
+  void main() {
+    // View direction in tangent space
+    vec3 viewDirTS = normalize(vTBN * normalize(vViewDir));
+
+    // Parallax offset
+    float height = texture2D(uHeightMap, vUv).r * uHeightScale;
+    vec2 parallaxOffset = viewDirTS.xy * height * uParallaxScale;
+    vec2 uv = vUv - parallaxOffset;
+
+    vec3 normalMap = texture2D(uNormalMap, uv).rgb * 2.0 - 1.0;
+    vec3 normal = normalize(vTBN * normalMap);
+
+    vec3 albedo = texture2D(uAlbedoMap, uv).rgb;
+
+    float diff = max(dot(normal, normalize(uLightDir)), 0.0);
+    float fill = max(dot(normal, normalize(uFillLightDir)), 0.0) * 0.5;
+    float ambient = 0.15;
+
+    vec3 lighting = uAmbientColor * ambient + uLightColor * diff + uFillLightColor * fill;
+    vec3 color = albedo * lighting;
+
+    float rim = 1.0 - max(dot(normalize(vViewDir), normal), 0.0);
+    rim = pow(rim, 3.0) * 0.2;
+    color += vec3(rim);
+
+    color = pow(color, vec3(1.0 / 2.2));
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// Fragment shader: Parallax Occlusion Mapping (ray-marched)
+const pomFragmentShader = `
+  uniform sampler2D uAlbedoMap;
+  uniform sampler2D uNormalMap;
+  uniform sampler2D uHeightMap;
+  uniform vec3 uLightDir;
+  uniform vec3 uLightColor;
+  uniform vec3 uFillLightDir;
+  uniform vec3 uFillLightColor;
+  uniform vec3 uAmbientColor;
+  uniform float uParallaxScale;
+  uniform float uHeightScale;
+  uniform int uPomSteps;
+
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying vec3 vWorldPos;
+  varying mat3 vTBN;
+
+  vec2 pomSample(vec2 uvCoord, vec3 viewDirTS, float parallaxScale, float heightScale, int numSteps) {
+    // Layer depth
+    float layerDepth = 1.0 / float(numSteps);
+    float currentLayerDepth = 0.0;
+
+    // Direction of each step
+    vec2 P = viewDirTS.xy * parallaxScale * heightScale;
+    vec2 deltaTexCoords = P / float(numSteps);
+
+    vec2 texCoord = uvCoord;
+    float currentDepthMapValue = 1.0 - texture2D(uHeightMap, texCoord).r * heightScale;
+
+    // Ray march until we find the surface
+    for (int i = 0; i < 64; i++) {
+      if (i >= numSteps) break;
+      if (currentLayerDepth >= currentDepthMapValue) break;
+      texCoord -= deltaTexCoords;
+      currentDepthMapValue = 1.0 - texture2D(uHeightMap, texCoord).r * heightScale;
+      currentLayerDepth += layerDepth;
+    }
+
+    // Parallax occlusion: interpolate between last two samples
+    vec2 lastTexCoord = texCoord + deltaTexCoords;
+
+    float afterDepth = currentDepthMapValue - currentLayerDepth;
+    float beforeDepth = (1.0 - texture2D(uHeightMap, lastTexCoord).r * heightScale) - currentLayerDepth + layerDepth;
+
+    float weight = afterDepth / (afterDepth - beforeDepth + 0.0001);
+    texCoord = mix(texCoord, lastTexCoord, weight);
+
+    return texCoord;
+  }
+
+  void main() {
+    vec3 viewDirTS = normalize(vTBN * normalize(vViewDir));
+
+    vec2 uv = pomSample(vUv, viewDirTS, uParallaxScale, uHeightScale, uPomSteps);
+
+    // Clamp to avoid edge artifacts
+    uv = clamp(uv, 0.001, 0.999);
+
+    vec3 normalMap = texture2D(uNormalMap, uv).rgb * 2.0 - 1.0;
+    vec3 normal = normalize(vTBN * normalMap);
+
+    vec3 albedo = texture2D(uAlbedoMap, uv).rgb;
+
+    float diff = max(dot(normal, normalize(uLightDir)), 0.0);
+    float fill = max(dot(normal, normalize(uFillLightDir)), 0.0) * 0.5;
+    float ambient = 0.15;
+
+    vec3 lighting = uAmbientColor * ambient + uLightColor * diff + uFillLightColor * fill;
+    vec3 color = albedo * lighting;
+
+    float rim = 1.0 - max(dot(normalize(vViewDir), normal), 0.0);
+    rim = pow(rim, 3.0) * 0.2;
+    color += vec3(rim);
+
+    // Self-shadowing (approximate)
+    float shadow = 1.0;
+    float stepSize = 0.002 * uParallaxScale;
+    vec2 shadowOffset = normalize(uLightDir.xy) * stepSize * 8.0;
+    for (int i = 1; i <= 8; i++) {
+      float sampleHeight = 1.0 - texture2D(uHeightMap, uv + shadowOffset * float(i)).r * uHeightScale;
+      float depth = float(i) * stepSize;
+      if (depth > sampleHeight) {
+        shadow -= 0.1;
+      }
+    }
+    shadow = clamp(shadow, 0.4, 1.0);
+    color *= shadow;
+
+    color = pow(color, vec3(1.0 / 2.2));
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// --- Wall Panel Builder ---
+const wallWidth = 2.8;
+const wallHeight = 3.0;
+const wallSpacing = 0.1;
+
+function createWall(fragmentShader, technique) {
+  const geometry = new THREE.PlaneGeometry(wallWidth, wallHeight, 64, 64);
+
+  // Compute tangents for normal/tangent space calculations
+  geometry.computeTangents();
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uAlbedoMap: { value: textures.albedo },
+      uNormalMap: { value: textures.normal },
+      uHeightMap: { value: textures.height },
+      uLightDir: { value: new THREE.Vector3(3, 5, 4).normalize() },
+      uLightColor: { value: new THREE.Color(0xffffff) },
+      uFillLightDir: { value: new THREE.Vector3(-3, 2, -2).normalize() },
+      uFillLightColor: { value: new THREE.Color(0x4488ff) },
+      uAmbientColor: { value: new THREE.Color(0x333333) },
+      uParallaxScale: { value: 0.05 },
+      uHeightScale: { value: 1.0 },
+      uPomSteps: { value: 32 },
+    },
+    vertexShader: sharedVertexShader,
+    fragmentShader: fragmentShader,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  return { mesh, material };
+}
+
+// Create three wall panels side by side
+const totalWidth = wallWidth * 3 + wallSpacing * 2;
+const startX = -totalWidth / 2 + wallWidth / 2;
+
+// Panel 1: Normal Map only
+const wall1 = createWall(normalMapFragmentShader, 'normal');
+wall1.mesh.position.set(startX, 0, 0);
+scene.add(wall1.mesh);
+
+// Panel 2: Parallax Mapping
+const wall2 = createWall(parallaxFragmentShader, 'parallax');
+wall2.mesh.position.set(startX + wallWidth + wallSpacing, 0, 0);
+scene.add(wall2.mesh);
+
+// Panel 3: Parallax Occlusion Mapping
+const wall3 = createWall(pomFragmentShader, 'pom');
+wall3.mesh.position.set(startX + (wallWidth + wallSpacing) * 2, 0, 0);
+scene.add(wall3.mesh);
+
+// --- Small decorative objects in front of the walls ---
+function createObject(x, y, z, type) {
+  let geo, mat;
+  if (type === 'sphere') {
+    geo = new THREE.SphereGeometry(0.18, 32, 32);
+    mat = new THREE.MeshStandardMaterial({
+      color: 0xddaa44,
+      metalness: 0.3,
+      roughness: 0.4,
+    });
+  } else if (type === 'box') {
+    geo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    mat = new THREE.MeshStandardMaterial({
+      color: 0x44aadd,
+      metalness: 0.5,
+      roughness: 0.3,
+    });
+  } else {
+    geo = new THREE.TorusGeometry(0.2, 0.06, 16, 32);
+    mat = new THREE.MeshStandardMaterial({
+      color: 0xaa44dd,
+      metalness: 0.4,
+      roughness: 0.35,
+    });
+  }
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// Place objects in front of each panel
+const objects = [];
+objects.push(createObject(startX, -0.6, 0.8, 'sphere'));
+objects.push(createObject(startX + 0.5, -0.9, 0.6, 'box'));
+objects.push(createObject(startX + (wallWidth + wallSpacing), -0.5, 0.7, 'torus'));
+objects.push(createObject(startX + (wallWidth + wallSpacing) - 0.4, -0.8, 0.9, 'sphere'));
+objects.push(createObject(startX + (wallWidth + wallSpacing) * 2, -0.7, 0.75, 'box'));
+objects.push(createObject(startX + (wallWidth + wallSpacing) * 2 + 0.3, -0.9, 0.85, 'torus'));
+
+objects.forEach(obj => scene.add(obj));
+
+// --- GUI ---
+const params = {
+  parallaxScale: 0.05,
+  heightScale: 1.0,
+  pomSteps: 32,
+  lightAngle: 45,
+  showObjects: true,
+};
+
+const gui = new GUI({ title: '控制 / Controls' });
+gui.domElement.style.marginRight = '0px';
+
+const pomFolder = gui.addFolder('视差参数 Parallax');
+pomFolder.add(params, 'parallaxScale', 0.01, 0.1, 0.001).name('深度 Scale').onChange(v => {
+  wall2.material.uniforms.uParallaxScale.value = v;
+  wall3.material.uniforms.uParallaxScale.value = v;
+});
+pomFolder.add(params, 'heightScale', 0.2, 2.0, 0.01).name('高度 Scale').onChange(v => {
+  wall2.material.uniforms.uHeightScale.value = v;
+  wall3.material.uniforms.uHeightScale.value = v;
+});
+pomFolder.add(params, 'pomSteps', 8, 64, 1).name('POM 步数').onChange(v => {
+  wall3.material.uniforms.uPomSteps.value = parseInt(v);
+});
+
+const lightFolder = gui.addFolder('光照 Lighting');
+lightFolder.add(params, 'lightAngle', 0, 360, 1).name('角度 Angle').onChange(v => {
+  const rad = (v * Math.PI) / 180;
+  const lightDir = new THREE.Vector3(Math.sin(rad), 0.5, Math.cos(rad)).normalize();
+  dirLight.position.copy(lightDir);
+  wall1.material.uniforms.uLightDir.value.copy(lightDir);
+  wall2.material.uniforms.uLightDir.value.copy(lightDir);
+  wall3.material.uniforms.uLightDir.value.copy(lightDir);
+});
+
+gui.add(params, 'showObjects').name('显示物体 Objects').onChange(v => {
+  objects.forEach(o => o.visible = v);
+});
+
+// --- Window Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- Animation ---
+let time = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  time += 0.016;
+
+  // Subtle wall movement to showcase depth
+  wall2.mesh.position.z = Math.sin(time * 0.5) * 0.05;
+  wall3.mesh.position.z = Math.sin(time * 0.5 + 0.3) * 0.05;
+
+  // Object bobbing
+  objects.forEach((obj, i) => {
+    obj.position.y += Math.sin(time * 2 + i) * 0.0008;
+    obj.rotation.y = time * 0.5 + i * 0.5;
+  });
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>D3.js · 力导向图</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #fafafa; font: 14px -apple-system, sans-serif; }
+  svg { display: block; cursor: grab; }
+  svg:active { cursor: grabbing; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #333; background: #fff; padding: 8px 12px;
+    border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.1);
+    pointer-events: none;
+  }
+  .node { cursor: pointer; }
+  .link { stroke: #999; stroke-opacity: 0.5; }
+</style>
+</head>
+<body>
+<div class="tip">D3.js · 力导向图（拖动节点体验物理模拟）</div>
+<svg id="svg"></svg>
+<script type="module" src="main.js"></script>
+</body>
+</html>

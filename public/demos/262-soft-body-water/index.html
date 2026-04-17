@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>软体水球模拟 — Three.js</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #060612; }
+    canvas { display: block; }
+    #info {
+      position: absolute; top: 14px; left: 16px; color: #00eeff;
+      font: 13px/1.6 'Courier New', monospace;
+      text-shadow: 0 0 10px #00eeff66;
+      pointer-events: none;
+    }
+    #hint {
+      position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+      color: #ffffff55; font: 12px/1 'Courier New', monospace; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+<div id="info">
+  <div>★ Soft Body Water Ball</div>
+  <div style="font-size:12px;color:#88aaff;margin-top:4px">拖拽球体抛出 | 点击水面起波纹</div>
+</div>
+<div id="hint">拖拽抛出 | 点击水面起波纹</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js';
+
+// ============================================================
+// 场景
+// ============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060612);
+scene.fog = new THREE.FogExp2(0x060612, 0.025);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 12, 18);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.3, 0.8
+);
+composer.addPass(bloomPass);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 1, 0);
+
+// ============================================================
+// 灯光
+// ============================================================
+const ambientLight = new THREE.AmbientLight(0x1a2a4a, 0.8);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+dirLight.position.set(10, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 50;
+dirLight.shadow.camera.left = -15;
+dirLight.shadow.camera.right = 15;
+dirLight.shadow.camera.top = 15;
+dirLight.shadow.camera.bottom = -15;
+scene.add(dirLight);
+
+const ptLight1 = new THREE.PointLight(0x00ccff, 1.2, 25);
+ptLight1.position.set(-6, 8, 4);
+scene.add(ptLight1);
+
+const ptLight2 = new THREE.PointLight(0x0088ff, 0.8, 20);
+ptLight2.position.set(6, 5, -4);
+scene.add(ptLight2);
+
+// ============================================================
+// 水面
+// ============================================================
+const WATER_SIZE = 24;
+const WATER_SEGS = 80;
+const waterGeo = new THREE.PlaneGeometry(WATER_SIZE, WATER_SIZE, WATER_SEGS, WATER_SEGS);
+waterGeo.rotateX(-Math.PI / 2);
+
+// 水面着色器
+const waterMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 },
+    uColor1: { value: new THREE.Color(0x003366) },
+    uColor2: { value: new THREE.Color(0x00aaff) },
+    uRipples: { value: [] }
+  },
+  vertexShader: `
+    uniform float uTime;
+    varying vec2 vUv;
+    varying float vElevation;
+    varying vec3 vNormal;
+    varying vec3 vPos;
+
+    void main() {
+      vUv = uv;
+      vec3 pos = position;
+      float wave = sin(pos.x * 0.8 + uTime * 1.2) * 0.06
+                 + sin(pos.z * 0.6 + uTime * 0.9) * 0.05
+                 + sin((pos.x + pos.z) * 0.4 + uTime * 1.5) * 0.03;
+      pos.y += wave;
+      vElevation = wave;
+      vPos = pos;
+      vNormal = normal;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 uColor1;
+    uniform vec3 uColor2;
+    uniform float uTime;
+    varying vec2 vUv;
+    varying float vElevation;
+    varying vec3 vPos;
+    varying vec3 vNormal;
+
+    void main() {
+      float depth = smoothstep(-0.1, 0.15, vElevation);
+      vec3 col = mix(uColor1, uColor2, depth + vElevation * 3.0);
+      // 边缘高亮
+      float rim = pow(1.0 - abs(dot(normalize(vNormal), vec3(0.0, 1.0, 0.0))), 2.0);
+      col += rim * vec3(0.0, 0.3, 0.5) * 0.5;
+      // 闪烁
+      float sparkle = sin(vPos.x * 8.0 + uTime * 3.0) * sin(vPos.z * 8.0 + uTime * 2.5);
+      col += max(0.0, sparkle) * 0.1;
+      gl_FragColor = vec4(col, 0.88);
+    }
+  `,
+  transparent: true,
+  side: THREE.DoubleSide
+});
+
+const water = new THREE.Mesh(waterGeo, waterMat);
+water.position.y = 0;
+scene.add(water);
+
+// 水底
+const bottomGeo = new THREE.PlaneGeometry(WATER_SIZE, WATER_SIZE);
+bottomGeo.rotateX(-Math.PI / 2);
+const bottomMat = new THREE.MeshStandardMaterial({
+  color: 0x001122, roughness: 0.9, metalness: 0.1
+});
+const bottom = new THREE.Mesh(bottomGeo, bottomMat);
+bottom.position.y = -0.5;
+scene.add(bottom);
+
+// 容器边界（玻璃缸）
+const tankMat = new THREE.MeshPhysicalMaterial({
+  color: 0x88aaff, transmission: 0.9, roughness: 0.05,
+  metalness: 0, transparent: true, opacity: 0.3, thickness: 0.5
+});
+const tankH = 6, tankW = 12;
+const tankGeo = new THREE.BoxGeometry(tankW, tankH, tankW);
+const tank = new THREE.Mesh(tankGeo, tankMat);
+tank.position.y = tankH / 2 - 0.5;
+tank.renderOrder = 1;
+scene.add(tank);
+
+// ============================================================
+// 软体水球 — 弹簧质点系统（SPH简化）
+// ============================================================
+const params = {
+  ballRadius: 1.2,
+  stiffness: 80,
+  damping: 4,
+  gravity: 9.8,
+  viscosity: 0.3,
+  waterSurfaceLevel: 2.5,
+  reset: resetBall
+};
+
+// 球体顶点（用于软体形变）
+let ball, ballUserData;
+const ballPos = new THREE.Vector3(0, 4, 0);
+const ballVel = new THREE.Vector3(0, 0, 0);
+const ballGeo = new THREE.SphereGeometry(params.ballRadius, 24, 24);
+const ballMat = new THREE.MeshPhysicalMaterial({
+  color: 0x00ccff,
+  transmission: 0.7,
+  roughness: 0.05,
+  metalness: 0,
+  transparent: true,
+  opacity: 0.85,
+  ior: 1.33,
+  thickness: 1.5,
+  emissive: 0x003366,
+  emissiveIntensity: 0.2
+});
+ball = new THREE.Mesh(ballGeo, ballMat);
+ball.position.copy(ballPos);
+ball.castShadow = true;
+scene.add(ball);
+
+// 存储每个顶点的原始位置和速度
+const vertexData = [];
+const origPositions = ballGeo.attributes.position.array.slice();
+for (let i = 0; i < origPositions.length / 3; i++) {
+  vertexData.push({
+    orig: new THREE.Vector3(origPositions[i*3], origPositions[i*3+1], origPositions[i*3+2]),
+    vel: new THREE.Vector3()
+  });
+}
+
+function resetBall() {
+  ballPos.set(0, 4, 0);
+  ballVel.set(0, 0, 0);
+  ball.position.copy(ballPos);
+  waterMat.uniforms.uTime.value = 0;
+}
+
+function updateSoftBody(dt) {
+  // 质心物理
+  ballVel.y -= params.gravity * dt;
+  ballVel.multiplyScalar(1 - params.viscosity * dt);
+
+  // 空气/水阻力
+  if (ballPos.y < params.waterSurfaceLevel + params.ballRadius) {
+    const depth = Math.max(0, (params.waterSurfaceLevel + params.ballRadius) - ballPos.y);
+    const buoyancy = depth * 15.0;
+    ballVel.y += buoyancy * dt;
+    // 水阻
+    ballVel.multiplyScalar(1 - 0.5 * dt);
+  }
+
+  ballPos.addScaledVector(ballVel, dt);
+  ball.position.copy(ballPos);
+
+  // 软体形变：检测与水面的碰撞，挤压顶部顶点
+  const waterLevel = params.waterSurfaceLevel;
+  const positions = ballGeo.attributes.position;
+  const worldPos = new THREE.Vector3();
+
+  for (let i = 0; i < vertexData.length; i++) {
+    const vd = vertexData[i];
+    // 局部顶点到世界顶点
+    worldPos.copy(vd.orig).applyQuaternion(ball.quaternion).add(ballPos);
+
+    // 水面波浪扰动
+    const waveY = Math.sin(worldPos.x * 0.8 + waterMat.uniforms.uTime.value * 1.2) * 0.06
+                + Math.sin(worldPos.z * 0.6 + waterMat.uniforms.uTime.value * 0.9) * 0.05;
+
+    if (worldPos.y < waterLevel + waveY) {
+      // 挤压：向上推
+      const penetration = (waterLevel + waveY) - worldPos.y;
+      const springForce = penetration * params.stiffness * dt;
+      vd.vel.y += springForce;
+    }
+
+    // 弹回中心
+    const toOrig = vd.orig.clone().sub(new THREE.Vector3(
+      positions.getX(i), positions.getY(i), positions.getZ(i)
+    ));
+    const restoreForce = toOrig.multiplyScalar(params.stiffness * 0.1 * dt);
+    vd.vel.add(restoreForce);
+
+    // 阻尼
+    vd.vel.multiplyScalar(1 - params.damping * dt);
+
+    // 更新顶点位置
+    positions.setXYZ(
+      i,
+      origPositions[i*3] + vd.vel.x,
+      origPositions[i*3+1] + vd.vel.y,
+      origPositions[i*3+2] + vd.vel.z
+    );
+  }
+  positions.needsUpdate = true;
+  ballGeo.computeVertexNormals();
+
+  // 碰撞边界
+  const bound = tankW / 2 - params.ballRadius;
+  if (ballPos.y < params.ballRadius) { ballPos.y = params.ballRadius; ballVel.y *= -0.6; }
+  if (ballPos.x > bound) { ballPos.x = bound; ballVel.x *= -0.5; }
+  if (ballPos.x < -bound) { ballPos.x = -bound; ballVel.x *= -0.5; }
+  if (ballPos.z > bound) { ballPos.z = bound; ballVel.z *= -0.5; }
+  if (ballPos.z < -bound) { ballPos.z = -bound; ballVel.z *= -0.5; }
+}
+
+// ============================================================
+// 鼠标拖拽交互
+// ============================================================
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const planeIntersect = new THREE.Vector3();
+let isDragging = false;
+let dragStart = new THREE.Vector3();
+
+window.addEventListener('mousedown', (e) => {
+  if (e.target.tagName !== 'CANVAS') return;
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  // 点击水面起波纹
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(plane, planeIntersect);
+  if (planeIntersect) {
+    const distToWater = Math.abs(planeIntersect.y - params.waterSurfaceLevel);
+    if (distToWater < 1.0) {
+      // 简单涟漪：在水面点击位置添加波浪扰动
+      emitRipple(planeIntersect.x, planeIntersect.z);
+    }
+  }
+
+  // 点击球体开始拖拽
+  const hits = raycaster.intersectObject(ball);
+  if (hits.length > 0) {
+    isDragging = true;
+    controls.enabled = false;
+    dragStart.copy(ballPos);
+  }
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -ballPos.y);
+  const intersect = new THREE.Vector3();
+  raycaster.ray.intersectPlane(dragPlane, intersect);
+  if (intersect) {
+    ballPos.copy(intersect);
+    ballVel.set(0, 0, 0);
+    ball.position.copy(ballPos);
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (isDragging) {
+    isDragging = false;
+    controls.enabled = true;
+    // 抛出：基于拖拽速度估算
+    ballVel.copy(ballPos).sub(dragStart).multiplyScalar(3);
+    ballVel.y = 0;
+  }
+});
+
+// 涟漪效果（通过顶点扰动模拟）
+const ripples = [];
+
+function emitRipple(x, z) {
+  ripples.push({ x, z, strength: 0.3, life: 1.0 });
+}
+
+// ============================================================
+// GUI
+// ============================================================
+const gui = new GUI();
+gui.add(params, 'ballRadius', 0.5, 2.5, 0.1).name('球体半径').onChange(v => {
+  ballGeo.dispose();
+  const newGeo = new THREE.SphereGeometry(v, 24, 24);
+  ball.geometry = newGeo;
+});
+gui.add(params, 'stiffness', 10, 200, 5).name('刚度');
+gui.add(params, 'damping', 0.5, 10, 0.5).name('阻尼');
+gui.add(params, 'gravity', 0, 20, 0.5).name('重力');
+gui.add(params, 'viscosity', 0, 2, 0.05).name('黏性');
+gui.add(params, 'waterSurfaceLevel', 0, 4, 0.1).name('水面高度');
+gui.add(params, 'reset').name('🔄 重置');
+
+// ============================================================
+// 响应式
+// ============================================================
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+// ============================================================
+// 动画循环
+// ============================================================
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.033);
+
+  waterMat.uniforms.uTime.value += dt;
+
+  updateSoftBody(dt);
+  controls.update();
+  composer.render();
+}
+
+animate();
+</script>
+</body>
+</html>

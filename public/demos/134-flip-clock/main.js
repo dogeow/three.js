@@ -1,0 +1,492 @@
+import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+    // ── Scene Setup ───────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0f);
+    scene.fog = new THREE.FogExp2(0x0a0a0f, 0.035);
+
+    const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+    camera.position.set(0, 8, 22);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(innerWidth, innerHeight);
+    labelRenderer.domElement.style.position = 'fixed';
+    labelRenderer.domElement.style.top = '0';
+    labelRenderer.domElement.style.left = '0';
+    labelRenderer.domElement.style.pointerEvents = 'none';
+    labelRenderer.domElement.style.zIndex = '1';
+    document.body.appendChild(labelRenderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.5;
+    controls.minDistance = 10;
+    controls.maxDistance = 50;
+
+    // ── Lighting ───────────────────────────────────────────────────────────
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    dirLight.position.set(5, 15, 10);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 50;
+    dirLight.shadow.camera.left = -20;
+    dirLight.shadow.camera.right = 20;
+    dirLight.shadow.camera.top = 10;
+    dirLight.shadow.camera.bottom = -10;
+    scene.add(dirLight);
+
+    const rimLight = new THREE.DirectionalLight(0x4488ff, 0.8);
+    rimLight.position.set(-10, 5, -5);
+    scene.add(rimLight);
+
+    // ── Floor ─────────────────────────────────────────────────────────────
+    const floorGeo = new THREE.PlaneGeometry(80, 80);
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x111118,
+      roughness: 0.15,
+      metalness: 0.8,
+    });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const gridHelper = new THREE.GridHelper(80, 40, 0x222233, 0x111122);
+    gridHelper.position.y = -1.99;
+    scene.add(gridHelper);
+
+    // ── Color Schemes ─────────────────────────────────────────────────────
+    const schemes = {
+      white:  { digit: 0xffffff, frame: 0x1a1a2e, slot: 0x0d0d1a, accent: 0x334466 },
+      amber:  { digit: 0xff8c00, frame: 0x2a1500, slot: 0x1a0f00, accent: 0x553300 },
+      green:  { digit: 0x39ff14, frame: 0x002200, slot: 0x001a00, accent: 0x003300 },
+    };
+
+    let currentScheme = 'white';
+    let fontSize = 60;
+
+    function applyScheme(name) {
+      currentScheme = name;
+      const s = schemes[name];
+      digitMeshes.forEach(dm => {
+        dm.topMesh.material.color.setHex(s.digit);
+        dm.bottomMesh.material.color.setHex(s.digit);
+        dm.flipMesh.material.color.setHex(s.digit);
+        dm.flipBackMesh.material.color.setHex(s.digit);
+      });
+      colons.forEach(c => {
+        c.element.style.color = `#${s.digit.toString(16).padStart(6, '0')}`;
+      });
+      dirLight.color.setHex(s.digit);
+    }
+
+    // ── Canvas Number Texture ─────────────────────────────────────────────
+    function createDigitTexture(digit, color, w = 256, h = 512) {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      // Background
+      ctx.fillStyle = 'transparent';
+      ctx.fillRect(0, 0, w, h);
+
+      // Number
+      ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+      ctx.font = `bold ${h * 0.75}px "SF Mono", "Courier New", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(digit, w / 2, h / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    function createCardTexture(text, color, alpha = 0.0) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, 128, 256);
+      if (alpha > 0) {
+        ctx.fillStyle = `rgba(128, 128, 128, ${alpha})`;
+        ctx.fillRect(0, 0, 128, 256);
+      }
+      ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+      ctx.font = `bold 200px "SF Mono", "Courier New", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 64, 128);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    // ── Digit Group ───────────────────────────────────────────────────────
+    function createDigit(digitValue) {
+      const group = new THREE.Group();
+      const cardW = 1.6;
+      const cardH = 0.1;
+      const cardD = 2.4;
+      const gap = 0.04;
+      const s = schemes[currentScheme];
+
+      // Frame
+      const frameGeo = new THREE.BoxGeometry(cardW + 0.3, cardH + 0.1, cardD + 0.3);
+      const frameMat = new THREE.MeshStandardMaterial({
+        color: s.frame,
+        roughness: 0.3,
+        metalness: 0.7,
+      });
+      const frame = new THREE.Mesh(frameGeo, frameMat);
+      frame.castShadow = true;
+      group.add(frame);
+
+      // Slot (inner recess)
+      const slotGeo = new THREE.BoxGeometry(cardW + 0.05, cardH + 0.02, cardD + 0.05);
+      const slotMat = new THREE.MeshStandardMaterial({
+        color: s.slot,
+        roughness: 0.5,
+        metalness: 0.3,
+      });
+      const slot = new THREE.Mesh(slotGeo, slotMat);
+      group.add(slot);
+
+      // Top half card (0 to 0, front face showing top half of digit)
+      const topGeo = new THREE.BoxGeometry(cardW, cardH, cardD / 2 - gap / 2);
+      const topMat = new THREE.MeshStandardMaterial({
+        color: s.digit,
+        roughness: 0.2,
+        metalness: 0.1,
+        emissive: new THREE.Color(s.digit).multiplyScalar(0.25),
+      });
+      const topMesh = new THREE.Mesh(topGeo, topMat);
+      topMesh.position.y = cardH / 2;
+      topMesh.position.z = cardD / 4 + gap / 4;
+      topMesh.castShadow = true;
+      group.add(topMesh);
+
+      // Bottom half card
+      const botGeo = new THREE.BoxGeometry(cardW, cardH, cardD / 2 - gap / 2);
+      const botMat = new THREE.MeshStandardMaterial({
+        color: s.digit,
+        roughness: 0.2,
+        metalness: 0.1,
+        emissive: new THREE.Color(s.digit).multiplyScalar(0.25),
+      });
+      const bottomMesh = new THREE.Mesh(botGeo, botMat);
+      bottomMesh.position.y = cardH / 2;
+      bottomMesh.position.z = -(cardD / 4 + gap / 4);
+      bottomMesh.castShadow = true;
+      group.add(bottomMesh);
+
+      // Flip card (animated, starts hidden)
+      const flipGeo = new THREE.BoxGeometry(cardW, cardH, cardD / 2 - gap / 2);
+      const flipMat = new THREE.MeshStandardMaterial({
+        color: s.digit,
+        roughness: 0.2,
+        metalness: 0.1,
+        emissive: new THREE.Color(s.digit).multiplyScalar(0.25),
+        side: THREE.FrontSide,
+      });
+      const flipMesh = new THREE.Mesh(flipGeo, flipMat);
+      flipMesh.position.set(0, cardH / 2, 0);
+      flipMesh.castShadow = true;
+      group.add(flipMesh);
+
+      // Flip card back (shows bottom half of new digit)
+      const flipBackGeo = new THREE.BoxGeometry(cardW, cardH, cardD / 2 - gap / 2);
+      const flipBackMat = new THREE.MeshStandardMaterial({
+        color: s.digit,
+        roughness: 0.2,
+        metalness: 0.1,
+        emissive: new THREE.Color(s.digit).multiplyScalar(0.25),
+        side: THREE.BackSide,
+      });
+      const flipBackMesh = new THREE.Mesh(flipBackGeo, flipBackMat);
+      flipBackMesh.rotation.x = Math.PI;
+      flipBackMesh.position.set(0, cardH / 2, 0);
+      flipBackMesh.castShadow = true;
+      group.add(flipBackMesh);
+
+      // Subtle edge bevel via small planes
+      const bevelMat = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.3, metalness: 0.5 });
+      const bevelGeo = new THREE.BoxGeometry(cardW + 0.02, 0.02, cardD + 0.02);
+      const topBevel = new THREE.Mesh(bevelGeo, bevelMat);
+      topBevel.position.y = cardH / 2 + cardH / 2;
+      group.add(topBevel);
+
+      group.userData = {
+        digitValue,
+        topMesh,
+        bottomMesh,
+        flipMesh,
+        flipBackMesh,
+        isFlipping: false,
+        flipProgress: 0,
+        fromValue: digitValue,
+        toValue: digitValue,
+      };
+
+      updateDigitDisplay(group, digitValue, true);
+      return group;
+    }
+
+    function updateDigitDisplay(digitGroup, value, immediate = false) {
+      const d = digitGroup.userData;
+      const s = schemes[currentScheme];
+      const color = s.digit;
+      const h = fontSize;
+      const w = h * 0.5;
+
+      // We use solid colored materials — the "number" is implied by the card.
+      // For visual richness, add subtle texture lines.
+      d.topMesh.material.color.setHex(color);
+      d.bottomMesh.material.color.setHex(color);
+      d.flipMesh.material.color.setHex(color);
+      d.flipBackMesh.material.color.setHex(color);
+
+      // Add subtle highlight on edges
+      d.topMesh.material.emissive.setHex(color).multiplyScalar(0.25);
+      d.bottomMesh.material.emissive.setHex(color).multiplyScalar(0.25);
+
+      d.digitValue = value;
+    }
+
+    function startFlip(digitGroup, newValue) {
+      const d = digitGroup.userData;
+      if (d.isFlipping) return;
+      d.isFlipping = true;
+      d.flipProgress = 0;
+      d.fromValue = d.digitValue;
+      d.toValue = newValue;
+
+      // At midpoint, swap the bottom card
+      d.midpointReached = false;
+    }
+
+    function updateFlip(digitGroup, delta) {
+      const d = digitGroup.userData;
+      if (!d.isFlipping) return;
+
+      const speed = delta * 3.5; // flip speed
+      d.flipProgress += speed;
+
+      const p = Math.min(d.flipProgress, 1);
+      const s = schemes[currentScheme];
+      const color = s.digit;
+
+      if (p < 0.5) {
+        // First half: flipMesh rotates from front to vertical
+        const angle = p * 2 * Math.PI; // Actually use PI for 0->PI/2
+        d.flipMesh.rotation.x = -p * 2 * Math.PI / 2;
+        d.flipBackMesh.rotation.x = Math.PI - p * 2 * Math.PI / 2;
+        d.flipMesh.position.z = Math.sin(Math.abs(d.flipMesh.rotation.x)) * (1.2) * (p < 0.5 ? 1 : -1);
+      } else {
+        d.flipMesh.rotation.x = -Math.PI / 2;
+        d.flipBackMesh.rotation.x = Math.PI / 2;
+      }
+
+      // Midpoint: update bottom card to new digit
+      if (p >= 0.5 && !d.midpointReached) {
+        d.midpointReached = true;
+        d.bottomMesh.material.color.setHex(color);
+        d.bottomMesh.position.z = -(1.2 / 2 + 0.02);
+      }
+
+      if (p >= 1) {
+        d.isFlipping = false;
+        d.flipMesh.rotation.x = 0;
+        d.flipBackMesh.rotation.x = Math.PI;
+        d.flipMesh.position.z = 0;
+        d.flipBackMesh.position.z = 0;
+        d.digitValue = d.toValue;
+        d.bottomMesh.material.color.setHex(color);
+        d.topMesh.material.color.setHex(color);
+      }
+    }
+
+    // ── Build Clock Layout ─────────────────────────────────────────────────
+    // HH : MM : SS  (6 digits + 2 colons)
+    const digitMeshes = [];
+    const colons = [];
+    const clockGroup = new THREE.Group();
+    clockGroup.position.y = 1;
+    scene.add(clockGroup);
+
+    const digitSpacing = 2.5;
+    const colonSpacing = 1.0;
+
+    function buildDigit(value, x) {
+      const dg = createDigit(value);
+      dg.position.x = x;
+      clockGroup.add(dg);
+      digitMeshes.push(dg);
+      return dg;
+    }
+
+    function buildColon(x) {
+      const colonDiv = document.createElement('div');
+      colonDiv.style.fontSize = `${fontSize * 0.8}px`;
+      colonDiv.style.fontFamily = '"SF Mono", "Courier New", monospace';
+      colonDiv.style.fontWeight = 'bold';
+      colonDiv.style.color = `#${schemes[currentScheme].digit.toString(16).padStart(6, '0')}`;
+      colonDiv.style.userSelect = 'none';
+      colonDiv.style.lineHeight = '1';
+      colonDiv.textContent = ':';
+      colonDiv.style.transition = 'opacity 0.3s';
+
+      const colonObj = new CSS2DObject(colonDiv);
+      colonObj.position.set(x, 1, 0);
+      clockGroup.add(colonObj);
+
+      colons.push({ element: colonDiv, blinkState: true });
+      return colonObj;
+    }
+
+    // Build: H H : M M : S S
+    let x = -digitSpacing * 2.5;
+    buildDigit(0, x); x += digitSpacing;
+    buildDigit(0, x); x += colonSpacing;
+    buildColon(x); x += colonSpacing + digitSpacing * 0.3;
+    buildDigit(0, x); x += digitSpacing;
+    buildDigit(0, x); x += colonSpacing;
+    buildColon(x); x += colonSpacing + digitSpacing * 0.3;
+    buildDigit(0, x); x += digitSpacing;
+    buildDigit(0, x);
+
+    // ── Time Logic ────────────────────────────────────────────────────────
+    function getTimeDigits() {
+      const now = new Date();
+      const h = now.getHours().toString().padStart(2, '0');
+      const m = now.getMinutes().toString().padStart(2, '0');
+      const s = now.getSeconds().toString().padStart(2, '0');
+      return [
+        parseInt(h[0]), parseInt(h[1]),
+        parseInt(m[0]), parseInt(m[1]),
+        parseInt(s[0]), parseInt(s[1]),
+      ];
+    }
+
+    let lastTime = getTimeDigits();
+
+    function tickFlips() {
+      const now = getTimeDigits();
+      for (let i = 0; i < 6; i++) {
+        if (now[i] !== lastTime[i]) {
+          startFlip(digitMeshes[i], now[i]);
+        }
+      }
+      lastTime = now;
+    }
+
+    // Check every 100ms for second changes
+    setInterval(tickFlips, 100);
+
+    // ── Colon Blinking ────────────────────────────────────────────────────
+    let colonBlinkTimer = 0;
+    function updateColons(delta) {
+      colonBlinkTimer += delta;
+      if (colonBlinkTimer > 0.5) {
+        colonBlinkTimer = 0;
+        colons.forEach(c => {
+          c.blinkState = !c.blinkState;
+          c.element.style.opacity = c.blinkState ? '1' : '0.15';
+        });
+      }
+    }
+
+    // ── Date Display ──────────────────────────────────────────────────────
+    const dateEl = document.getElementById('date-display');
+    function updateDate() {
+      const now = new Date();
+      const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      dateEl.textContent = now.toLocaleDateString('en-US', opts).toUpperCase();
+    }
+    updateDate();
+    setInterval(updateDate, 60000);
+
+    // ── UI Controls ───────────────────────────────────────────────────────
+    const fontSlider = document.getElementById('fontSlider');
+    const fontSizeVal = document.getElementById('fontSizeVal');
+    fontSlider.addEventListener('input', (e) => {
+      fontSize = parseInt(e.target.value);
+      fontSizeVal.textContent = fontSize;
+      // Update colon font sizes
+      colons.forEach(c => {
+        c.element.style.fontSize = `${fontSize * 0.8}px`;
+      });
+      // Slight scale of clock group based on font size
+      const scale = fontSize / 60;
+      clockGroup.scale.setScalar(scale);
+    });
+
+    document.querySelectorAll('.color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyScheme(btn.dataset.scheme);
+      });
+    });
+
+    // ── Resize ───────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      labelRenderer.setSize(innerWidth, innerHeight);
+    });
+
+    // ── Animation Loop ────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+
+      // Update flip animations
+      digitMeshes.forEach(dm => updateFlip(dm, delta));
+
+      // Colon blink
+      updateColons(delta);
+
+      controls.update();
+      renderer.render(scene, camera);
+      labelRenderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ── Attach to window ─────────────────────────────────────────────────
+    window.scene = scene;
+    window.camera = camera;
+    window.renderer = renderer;
+    window.controls = controls;
+    window.digits = digitMeshes;
+
+    // Initial flip setup — animate in from current time
+    const initial = getTimeDigits();
+    digitMeshes.forEach((dm, i) => {
+      dm.rotation.y = (Math.random() - 0.5) * 0.5;
+      dm.rotation.x = (Math.random() - 0.5) * 0.3;
+    });

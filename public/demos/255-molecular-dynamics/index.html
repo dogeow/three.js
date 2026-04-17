@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>255. 分子动力学模拟</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #0a0a0a; font-family: 'Segoe UI', system-ui, sans-serif; }
+    canvas { display: block; }
+    #intro {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(0, 0, 0, 0.82);
+      border: 1px solid rgba(136, 170, 255, 0.25);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.7;
+      max-width: 340px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      z-index: 10;
+    }
+    #intro h1 {
+      margin: 0 0 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #88aaff;
+      border-bottom: 1px solid rgba(136, 170, 255, 0.2);
+      padding-bottom: 8px;
+    }
+    #intro p {
+      margin: 0 0 6px;
+      color: #ccc;
+    }
+    #intro ul {
+      margin: 0 0 6px;
+      padding-left: 18px;
+      color: #aaa;
+    }
+    #intro li { margin-bottom: 2px; }
+    #intro .tag {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 8px;
+      background: rgba(136, 170, 255, 0.15);
+      border: 1px solid rgba(136, 170, 255, 0.3);
+      border-radius: 4px;
+      font-size: 11px;
+      color: #88aaff;
+    }
+    #loading {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      color: #88aaff; font-family: monospace; font-size: 18px; z-index: 10;
+    }
+  </style>
+</head>
+<body>
+<div id="loading">初始化模拟中...</div>
+
+  <div id="intro">
+    <h1>分子动力学 Molecular Dynamics</h1>
+    <p>模拟原子间的相互作用力与热运动，原子在边界盒内碰撞、结合、分离。</p>
+    <ul>
+      <li><strong>四种原子</strong>：C（灰）、O（红）、N（蓝）、H（白），大小与质量各异</li>
+      <li><strong>Verlet 积分</strong>：基于位置而非速度的稳定积分算法</li>
+      <li><strong>原子间力</strong>：短程排斥 + 弹簧吸引（形成化学键）</li>
+      <li>原子距离 &lt; 键距时显示连接线</li>
+      <li><strong>Unreal Bloom</strong> 后处理发光效果</li>
+    </ul>
+    <span class="tag">Verlet 积分 · 原子模拟 · 弹簧势能 · Bloom 后处理 · CSS2D</span>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

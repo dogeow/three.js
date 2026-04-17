@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>GSAP · SVG 动画</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; overflow: hidden;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    display: flex; align-items: center; justify-content: center;
+    font: 14px -apple-system, sans-serif;
+  }
+  svg { max-width: 90vw; max-height: 80vh; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; background: rgba(0,0,0,.4);
+    padding: 8px 12px; border-radius: 6px;
+    pointer-events: none;
+  }
+  button {
+    position: fixed; bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px; background: #ff6b9d; color: #fff;
+    border: none; border-radius: 20px; cursor: pointer;
+    font: 14px -apple-system, sans-serif;
+  }
+  button:hover { background: #ff85b2; }
+</style>
+</head>
+<body>
+<div class="tip">GSAP · SVG 动画（业界最强的 JS 动画库）</div>
+<svg viewBox="0 0 600 400" width="600" height="400">
+  <!-- 背景星星，用 JS 生成 -->
+  <g id="stars"></g>
+  <!-- 虚线轨道 -->
+  <circle cx="300" cy="200" r="120" fill="none" stroke="#ffffff22" stroke-dasharray="3 5" />
+  <!-- 中心恒星 -->
+  <circle id="sun" cx="300" cy="200" r="25" fill="#ffd166" />
+  <!-- 行星 -->
+  <circle id="planet" cx="420" cy="200" r="12" fill="#06aed5" />
+  <!-- 标题文字 -->
+  <text id="title" x="300" y="212" text-anchor="middle"
+        fill="#fff" font-size="0" font-family="-apple-system"
+        font-weight="bold">GSAP</text>
+</svg>
+<button id="replay">▶ 重播入场动画</button>
+<script type="module" src="main.js"></script>
+</body>
+</html>

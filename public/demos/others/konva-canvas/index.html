@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Konva · 2D 交互画布</title>
+<style>
+  body {
+    margin: 0; overflow: hidden;
+    background: #f5f5f7; font: 14px -apple-system, sans-serif;
+  }
+  #container { width: 100vw; height: 100vh; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    background: #333; color: #fff;
+    padding: 8px 12px; border-radius: 6px;
+    z-index: 10; pointer-events: none;
+  }
+  .toolbar {
+    position: fixed; top: 12px; right: 12px;
+    display: flex; gap: 6px; z-index: 10;
+    background: #fff; padding: 6px;
+    border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  .toolbar button {
+    padding: 8px 12px; background: #fff;
+    border: 1px solid #e5e5e5; border-radius: 6px;
+    cursor: pointer; font-size: 13px;
+  }
+  .toolbar button:hover { background: #f0f0f0; }
+  .toolbar .del { color: #e53935; border-color: #ffcdd2; }
+</style>
+</head>
+<body>
+<div class="tip">Konva · 2D 交互画布（点选 / 拖拽 / 缩放 / 旋转）</div>
+<div class="toolbar">
+  <button id="rect">+ 矩形</button>
+  <button id="circle">+ 圆</button>
+  <button id="star">+ 星</button>
+  <button id="text">+ 文字</button>
+  <button id="image">+ 图片</button>
+  <button id="del" class="del">删除</button>
+</div>
+<div id="container"></div>
+<script type="module" src="main.js"></script>
+</body>
+</html>

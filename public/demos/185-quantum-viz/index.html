@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<!--
+量子布洛赫球可视化器
+描述：量子比特布洛赫球的交互式 3D 可视化，包含旋转和泡利门动画。
+技术栈：Three.js r160, lil-gui, importmap (无打包工具)，自定义 GLSL 发光着色器，球坐标数学。
+如何运行：通过任意静态服务器提供文件，例如：
+  python3 -m http.server 8000
+  然后打开 http://localhost:8000/185-quantum-viz/index.html
+-->
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>量子布洛赫球</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Space+Grotesk:wght@300;400;600&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #050510;
+      --panel-bg: rgba(8, 8, 24, 0.85);
+      --border: rgba(80, 120, 255, 0.25);
+      --text: #c8d0ff;
+      --accent-x: #ff4d6a;
+      --accent-y: #4dff91;
+      --accent-z: #4db8ff;
+      --accent-0: #ff9f43;
+      --accent-1: #a55fff;
+      --glow-blue: #4466ff;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: 'Space Grotesk', sans-serif;
+      color: var(--text);
+    }
+
+    canvas { display: block; }
+
+    /* ---- Info Panel ---- */
+    #info {
+      position: fixed;
+      top: 20px; left: 20px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      max-width: 280px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 0 30px rgba(68, 102, 255, 0.12);
+      z-index: 10;
+    }
+    #info h1 {
+      font-size: 15px; font-weight: 600;
+      letter-spacing: 0.05em;
+      color: #e0e8ff;
+      margin-bottom: 6px;
+    }
+    #info p {
+      font-size: 12px; line-height: 1.6;
+      opacity: 0.75;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    #state-label {
+      margin-top: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--glow-blue);
+      letter-spacing: 0.08em;
+    }
+    #angle-display {
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: 4px;
+      opacity: 0.6;
+    }
+
+    /* ---- Probability Bars ---- */
+    #probs {
+      position: fixed;
+      bottom: 24px; left: 20px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 240px;
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+    #probs h2 {
+      font-size: 11px; letter-spacing: 0.12em;
+      text-transform: uppercase;
+      opacity: 0.5;
+      margin-bottom: 12px;
+    }
+    .prob-row {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 8px;
+    }
+    .prob-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px; width: 40px;
+    }
+    .prob-label .lbl { opacity: 0.6; }
+    .prob-label .val { font-weight: 600; }
+    .bar-track {
+      flex: 1; height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%; border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+    .bar-fill.st-0 { background: var(--accent-0); }
+    .bar-fill.st-1 { background: var(--accent-1); }
+
+    /* ---- Gate indicator ---- */
+    #gate-label {
+      position: fixed;
+      top: 20px; right: 320px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px; font-weight: 600;
+      letter-spacing: 0.1em;
+      opacity: 0;
+      transition: opacity 0.4s;
+      text-shadow: 0 0 20px currentColor;
+      z-index: 10;
+    }
+    #gate-label.visible { opacity: 1; }
+
+    /* ---- Legend ---- */
+    #legend {
+      position: fixed;
+      bottom: 24px; right: 20px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      backdrop-filter: blur(12px);
+      z-index: 10;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .leg-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 6px;
+    }
+    .leg-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .leg-row:last-child { margin-bottom: 0; }
+  </style>
+</head>
+<body>
+<div id="info">
+  <h1>⚛ 布洛赫球</h1>
+  <p>拖动旋转球体。<br/>设置量子比特状态或应用<br/>通过面板控制 Pauli 门操作。</p>
+  <div id="state-label">|ψ⟩ = α|0⟩ + β|1⟩</div>
+  <div id="angle-display">θ=0.00 rad  φ=0.00 rad</div>
+</div>
+
+<div id="probs">
+  <h2>概率振幅</h2>
+  <div class="prob-row">
+    <div class="prob-label"><span class="lbl">|0⟩</span></div>
+    <div class="bar-track"><div class="bar-fill st-0" id="bar-0" style="width:100%"></div></div>
+    <div class="prob-label"><span class="val" id="pct-0">100%</span></div>
+  </div>
+  <div class="prob-row">
+    <div class="prob-label"><span class="lbl">|1⟩</span></div>
+    <div class="bar-track"><div class="bar-fill st-1" id="bar-1" style="width:0%"></div></div>
+    <div class="prob-label"><span class="val" id="pct-1">0%</span></div>
+  </div>
+</div>
+
+<div id="gate-label">X</div>
+
+<div id="legend">
+  <div class="leg-row"><div class="leg-dot" style="background:#ff4d6a"></div> +X 轴 (X 门)</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#4dff91"></div> +Y 轴 (Y 门)</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#4db8ff"></div> +Z 轴 (Z 门)</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#a55fff"></div> |1⟩ 态</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#ff9f43"></div> |0⟩ 态</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+// ============================================================
+//  SCENE SETUP
+// ============================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+scene.fog = new THREE.FogExp2(0x050510, 0.06);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.5, 4.5);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.enablePan = false;
+controls.minDistance = 2.5;
+controls.maxDistance = 9;
+
+// ---- Lights ----
+const ambientLight = new THREE.AmbientLight(0x2233aa, 0.4);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0x8899ff, 0.8);
+dirLight.position.set(5, 8, 5);
+scene.add(dirLight);
+
+const rimLight = new THREE.PointLight(0x4466ff, 1.5, 20);
+rimLight.position.set(-4, 2, -4);
+scene.add(rimLight);
+
+// ---- Grid background ----
+const gridHelper = new THREE.GridHelper(30, 30, 0x111133, 0x0a0a22);
+gridHelper.position.y = -2.2;
+scene.add(gridHelper);
+
+// ============================================================
+//  BLOCH SPHERE MESHES
+// ============================================================
+const SPHERE_RADIUS = 1.5;
+const sphereGroup = new THREE.Group();
+scene.add(sphereGroup);
+
+// Wireframe sphere (background)
+const wireGeo = new THREE.SphereGeometry(SPHERE_RADIUS, 24, 16);
+const wireMat = new THREE.MeshBasicMaterial({
+  color: 0x2233aa, wireframe: true, transparent: true, opacity: 0.12
+});
+sphereGroup.add(new THREE.Mesh(wireGeo, wireMat));
+
+// Main translucent sphere
+const sphereGeo = new THREE.SphereGeometry(SPHERE_RADIUS, 64, 64);
+const sphereMat = new THREE.MeshPhongMaterial({
+  color: 0x0d1a44,
+  emissive: 0x060e2a,
+  emissiveIntensity: 0.4,
+  transparent: true,
+  opacity: 0.55,
+  shininess: 80,
+  specular: new THREE.Color(0x3355cc),
+});
+const mainSphere = new THREE.Mesh(sphereGeo, sphereMat);
+sphereGroup.add(mainSphere);
+
+// ---- Axis lines ----
+function makeAxis(dir, color, label) {
+  const pts = [new THREE.Vector3(0,0,0), dir.clone().multiplyScalar(SPHERE_RADIUS * 1.18)];
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({ color, linewidth: 2 });
+  const line = new THREE.Line(geo, mat);
+  sphereGroup.add(line);
+
+  // Arrow cone tip
+  const coneGeo = new THREE.ConeGeometry(0.06, 0.18, 8);
+  const cone = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({ color }));
+  cone.position.copy(dir.clone().multiplyScalar(SPHERE_RADIUS * 1.18));
+  if (label === 'Z') cone.position.y *= 1.0;
+  cone.lookAt(0, 0, 0);
+  cone.rotateX(Math.PI / 2);
+  sphereGroup.add(cone);
+
+  // Label sprite
+  const canvas = document.createElement('canvas');
+  canvas.width = 64; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+  ctx.font = 'bold 36px JetBrains Mono, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, 32, 32);
+  const tex = new THREE.CanvasTexture(canvas);
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.position.copy(dir.clone().multiplyScalar(SPHERE_RADIUS * 1.35));
+  sprite.scale.set(0.3, 0.3, 1);
+  sphereGroup.add(sprite);
+}
+
+makeAxis(new THREE.Vector3(1, 0, 0), 0xff4d6a, 'X');
+makeAxis(new THREE.Vector3(0, 1, 0), 0x4dff91, 'Y');
+makeAxis(new THREE.Vector3(0, 0, 1), 0x4db8ff, 'Z');
+
+// ---- Equator circle ----
+const equatorGeo = new THREE.TorusGeometry(SPHERE_RADIUS, 0.008, 8, 80);
+const equatorMat = new THREE.MeshBasicMaterial({ color: 0x334488, transparent: true, opacity: 0.5 });
+const equator = new THREE.Mesh(equatorGeo, equatorMat);
+equator.rotation.x = Math.PI / 2;
+sphereGroup.add(equator);
+
+// ---- |0⟩ and |1⟩ poles ----
+const poleGeo = new THREE.SphereGeometry(0.08, 16, 16);
+const pole0 = new THREE.Mesh(poleGeo, new THREE.MeshPhongMaterial({ color: 0xff9f43, emissive: 0xff6a00, emissiveIntensity: 0.6 }));
+pole0.position.set(0, SPHERE_RADIUS, 0);
+sphereGroup.add(pole0);
+
+const pole1 = new THREE.Mesh(poleGeo, new THREE.MeshPhongMaterial({ color: 0xa55fff, emissive: 0x6600cc, emissiveIntensity: 0.6 }));
+pole1.position.set(0, -SPHERE_RADIUS, 0);
+sphereGroup.add(pole1);
+
+// ---- State vector arrow ----
+const arrowGroup = new THREE.Group();
+sphereGroup.add(arrowGroup);
+
+// Shaft
+const shaftGeo = new THREE.CylinderGeometry(0.025, 0.025, SPHERE_RADIUS * 0.85, 8);
+const arrowMat = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x88aaff, emissiveIntensity: 0.5, emissive: 0x4466ff });
+const arrowShaft = new THREE.Mesh(shaftGeo, arrowMat);
+arrowShaft.position.y = SPHERE_RADIUS * 0.425;
+arrowShaft.rotation.z = 0;
+arrowGroup.add(arrowShaft);
+
+// Tip
+const tipGeo = new THREE.ConeGeometry(0.07, 0.18, 8);
+const arrowTip = new THREE.Mesh(tipGeo, new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x88aaff, emissiveIntensity: 0.7 }));
+arrowTip.position.y = SPHERE_RADIUS * 0.915;
+arrowGroup.add(arrowTip);
+
+// Glow sphere on tip
+const tipGlowGeo = new THREE.SphereGeometry(0.1, 16, 16);
+const tipGlowMat = new THREE.MeshBasicMaterial({ color: 0x88aaff, transparent: true, opacity: 0.35 });
+const tipGlow = new THREE.Mesh(tipGlowGeo, tipGlowMat);
+tipGlow.position.y = SPHERE_RADIUS * 0.915;
+arrowGroup.add(tipGlow);
+
+// ---- Great circle arc (arc from |0⟩ to state) ----
+let arcMesh = null;
+function updateArc(theta, phi) {
+  if (arcMesh) { sphereGroup.remove(arcMesh); arcMesh.geometry.dispose(); }
+  const N = 40;
+  const pts = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const aTheta = t * theta;
+    const aPhi = t * phi;
+    const x = SPHERE_RADIUS * Math.sin(aTheta) * Math.cos(aPhi);
+    const y = SPHERE_RADIUS * Math.cos(aTheta);
+    const z = SPHERE_RADIUS * Math.sin(aTheta) * Math.sin(aPhi);
+    pts.push(new THREE.Vector3(x, y, z));
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({ color: 0x7799ff, transparent: true, opacity: 0.6 });
+  arcMesh = new THREE.Line(geo, mat);
+  sphereGroup.add(arcMesh);
+}
+
+// ---- Particle field (ambient) ----
+const pCount = 600;
+const pGeo = new THREE.BufferGeometry();
+const pPos = new Float32Array(pCount * 3);
+for (let i = 0; i < pCount; i++) {
+  const r = 3 + Math.random() * 6;
+  const th = Math.random() * Math.PI * 2;
+  const ph = Math.acos(2 * Math.random() - 1);
+  pPos[i*3]   = r * Math.sin(ph) * Math.cos(th);
+  pPos[i*3+1] = r * Math.sin(ph) * Math.sin(th);
+  pPos[i*3+2] = r * Math.cos(ph);
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+const pMat = new THREE.PointsMaterial({ color: 0x2233aa, size: 0.04, transparent: true, opacity: 0.5 });
+scene.add(new THREE.Points(pGeo, pMat));
+
+// ============================================================
+//  GLOW OVERLAY SPRITES
+// ============================================================
+function makeGlowSprite(color, size) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  const hex = '#' + color.toString(16).padStart(6, '0');
+  grad.addColorStop(0, hex + 'cc');
+  grad.addColorStop(0.4, hex + '44');
+  grad.addColorStop(1, hex + '00');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(size, size, 1);
+  return sprite;
+}
+
+const glowX = makeGlowSprite(0xff4d6a, 3.5);
+glowX.visible = false;
+sphereGroup.add(glowX);
+
+const glowY = makeGlowSprite(0x4dff91, 3.5);
+glowY.visible = false;
+sphereGroup.add(glowY);
+
+const glowZ = makeGlowSprite(0x4db8ff, 3.5);
+glowZ.visible = false;
+sphereGroup.add(glowZ);
+
+// ============================================================
+//  QUANTUM STATE MATH
+// ============================================================
+// Bloch coordinates: theta [0, PI] = polar from +Z, phi [0, 2PI] = azimuthal
+let theta = 0;    // |0⟩ 态
+let phi   = 0;
+
+function stateToCartesian(t, p) {
+  return new THREE.Vector3(
+    Math.sin(t) * Math.cos(p),
+    Math.cos(t),
+    Math.sin(t) * Math.sin(p)
+  );
+}
+
+function applyGate(gate) {
+  // Gate rotations on the Bloch sphere
+  switch(gate) {
+    case 'X': // rotate 180° around X axis: θ → π-θ, φ → -φ
+      theta = Math.PI - theta;
+      phi   = -phi;
+      break;
+    case 'Y': // rotate 180° around Y axis: θ → π-θ, φ → π-φ
+      theta = Math.PI - theta;
+      phi   = Math.PI - phi;
+      break;
+    case 'Z': // rotate 180° around Z axis: φ → φ+π
+      phi   = phi + Math.PI;
+      break;
+    case 'H': // Hadamard: maps |0⟩→|+⟩(|0⟩+|1⟩)/√2, |1⟩→|-⟩(|0⟩-|1⟩)/√2
+      // On Bloch: rotate -PI/2 around Y, then PI around Z
+      phi = phi + Math.PI;
+      // approximate
+      const oldTheta = theta, oldPhi = phi;
+      theta = Math.acos(-Math.cos(oldTheta));
+      phi   = oldPhi + Math.PI * Math.sin(oldTheta) / (1 + Math.abs(Math.sin(oldTheta)));
+      break;
+    case 'S': // S gate = sqrt(Z) = rotate PI/2 around Z
+      phi = phi + Math.PI / 2;
+      break;
+    case 'T': // T gate = sqrt(S) = rotate PI/4 around Z
+      phi = phi + Math.PI / 4;
+      break;
+  }
+  phi = ((phi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  updateFromAngles();
+}
+
+function updateFromAngles() {
+  const dir = stateToCartesian(theta, phi);
+  arrowGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+
+  // Pulse glow on tip
+  const tipWorldPos = new THREE.Vector3(0, SPHERE_RADIUS * 0.915, 0);
+  arrowTip.getWorldPosition(tipWorldPos);
+  tipGlow.position.copy(tipWorldPos);
+
+  updateArc(theta, phi);
+  updateUI();
+}
+
+function updateUI() {
+  const cosT2 = Math.cos(theta / 2);
+  const sinT2 = Math.sin(theta / 2);
+  const eIPhi2 = new THREE.Vector2(Math.cos(phi / 2), Math.sin(phi / 2));
+
+  // α = cos(θ/2), β = sin(θ/2)*e^(iφ)
+  const alphaMag2 = cosT2 * cosT2;
+  const betaMag2  = sinT2 * sinT2;
+
+  const p0 = (alphaMag2 * 100).toFixed(1);
+  const p1 = (betaMag2  * 100).toFixed(1);
+
+  document.getElementById('bar-0').style.width = p0 + '%';
+  document.getElementById('bar-1').style.width = p1 + '%';
+  document.getElementById('pct-0').textContent = p0 + '%';
+  document.getElementById('pct-1').textContent = p1 + '%';
+
+  document.getElementById('angle-display').textContent =
+    `θ=${theta.toFixed(3)} rad  φ=${phi.toFixed(3)} rad`;
+
+  // State label ket notation
+  const alphaRe = cosT2.toFixed(3);
+  const alphaIm = 0;
+  const betaRe  = (sinT2 * eIPhi2.x).toFixed(3);
+  const betaIm  = (sinT2 * eIPhi2.y).toFixed(3);
+  document.getElementById('state-label').textContent =
+    `|ψ⟩ = ${alphaRe}|0⟩ + (${betaRe}+${betaIm}i)|1⟩`;
+}
+
+// ============================================================
+//  ANIMATION
+// ============================================================
+let animatingGate = false;
+let animProgress = 0;
+let animGate = null;
+const ANIM_DURATION = 1.2; // seconds
+let animAxis = new THREE.Vector3();
+let animStartTheta = 0, animStartPhi = 0;
+let animTargetTheta = 0, animTargetPhi = 0;
+const clock = new THREE.Clock();
+
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+function startGateAnimation(gate) {
+  animatingGate = true;
+  animProgress  = 0;
+  animGate       = gate;
+  animStartTheta = theta;
+  animStartPhi   = phi;
+
+  // Compute target state after gate
+  let tTheta = theta, tPhi = phi;
+  const tmpGate = gate;
+  // apply temporarily
+  theta = animStartTheta; phi = animStartPhi;
+  applyGate(tmpGate);
+  // but we don't want applyGate to call updateFromAngles, so we compute manually
+  theta = animStartTheta; phi = animStartPhi;
+  switch(gate) {
+    case 'X':
+      tTheta = Math.PI - theta;
+      tPhi   = -phi;
+      animAxis.set(1, 0, 0);
+      break;
+    case 'Y':
+      tTheta = Math.PI - theta;
+      tPhi   = Math.PI - phi;
+      animAxis.set(0, 1, 0);
+      break;
+    case 'Z':
+      tPhi = phi + Math.PI;
+      tTheta = theta;
+      animAxis.set(0, 0, 1);
+      break;
+    case 'H':
+      tTheta = Math.acos(-Math.cos(theta));
+      tPhi   = phi + Math.PI * (Math.abs(Math.sin(theta)) > 1e-6 ? Math.sin(theta) / (1 + Math.abs(Math.sin(theta))) : 0);
+      animAxis.set(0, 1, 0);
+      break;
+    case 'S':
+      tPhi = phi + Math.PI / 2; tTheta = theta;
+      animAxis.set(0, 0, 1);
+      break;
+    case 'T':
+      tPhi = phi + Math.PI / 4; tTheta = theta;
+      animAxis.set(0, 0, 1);
+      break;
+  }
+  tPhi = ((tPhi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  animTargetTheta = tTheta;
+  animTargetPhi   = tPhi;
+
+  // Show gate label
+  const label = document.getElementById('gate-label');
+  label.textContent = gate;
+  label.classList.add('visible');
+  label.style.color = gate === 'X' ? '#ff4d6a' : gate === 'Y' ? '#4dff91' : '#4db8ff';
+
+  // Glow
+  glowX.visible = gate === 'X';
+  glowY.visible = gate === 'Y';
+  glowZ.visible = gate === 'Z' || gate === 'S' || gate === 'T';
+
+  // Reset
+  theta = animStartTheta; phi = animStartPhi;
+}
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = clock.getDelta();
+
+  controls.update();
+
+  if (animatingGate) {
+    animProgress += dt / ANIM_DURATION;
+    const t = Math.min(animProgress, 1);
+    const et = easeInOut(t);
+
+    // SLERP-like interpolation on sphere
+    theta = animStartTheta + (animTargetTheta - animStartTheta) * et;
+    // unwrap phi
+    let dPhi = animTargetPhi - animStartPhi;
+    if (dPhi > Math.PI)  dPhi -= 2 * Math.PI;
+    if (dPhi < -Math.PI) dPhi += 2 * Math.PI;
+    phi = animStartPhi + dPhi * et;
+    phi = ((phi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+
+    updateFromAngles();
+
+    // Sphere rotation visual
+    const axis = animAxis.clone().normalize();
+    const q = new THREE.Quaternion();
+    q.setFromAxisAngle(axis, et * Math.PI);
+    sphereGroup.quaternion.slerp(q, 0.08);
+
+    if (t >= 1) {
+      animatingGate = false;
+      theta = animTargetTheta; phi = animTargetPhi;
+      updateFromAngles();
+      setTimeout(() => {
+        document.getElementById('gate-label').classList.remove('visible');
+        glowX.visible = false;
+        glowY.visible = false;
+        glowZ.visible = false;
+        sphereGroup.quaternion.identity();
+      }, 600);
+    }
+  }
+
+  // Ambient sphere slow rotation
+  if (!animatingGate) {
+    sphereGroup.rotation.y += dt * 0.08;
+  }
+
+  // Tip glow pulse
+  const pulse = 0.9 + 0.1 * Math.sin(Date.now() * 0.003);
+  tipGlow.scale.setScalar(pulse);
+
+  // Rim light orbit
+  rimLight.position.x = 4 * Math.sin(Date.now() * 0.0005);
+  rimLight.position.z = 4 * Math.cos(Date.now() * 0.0005);
+
+  renderer.render(scene, camera);
+}
+tick();
+
+// ============================================================
+//  LIL-GUI
+// ============================================================
+const params = {
+  presetTheta: '0 (|0⟩)',
+  presetPhi: '0',
+  applyX: () => startGateAnimation('X'),
+  applyY: () => startGateAnimation('Y'),
+  applyZ: () => startGateAnimation('Z'),
+  applyH: () => startGateAnimation('H'),
+  applyS: () => startGateAnimation('S'),
+  applyT: () => startGateAnimation('T'),
+  reset: () => {
+    theta = 0; phi = 0;
+    updateFromAngles();
+    sphereGroup.quaternion.identity();
+  },
+  autoRotate: false,
+};
+
+const gui = new GUI({ title: 'Qubit Control' });
+gui.domElement.style.fontFamily = 'JetBrains Mono, monospace';
+
+// ---- State folder ----
+const fState = gui.addFolder('Qubit State');
+fState.add(params, 'presetTheta', {
+  '|0⟩ (θ=0)': '0 (|0⟩)',
+  '|1⟩ (θ=π)': 'pi (|1⟩)',
+  '|+⟩ (θ=π/2, φ=0)': 'pi/2 (|+\u27e9)',
+  '|-\u27e9 (θ=π/2, φ=π)': 'pi/2 (|-\u27e9)',
+  '|+i\u27e9 (θ=π/2, φ=π/2)': 'pi/2 (|+i\u27e9)',
+  '|-i\u27e9 (θ=π/2, φ=3π/2)': 'pi/2 (|-i\u27e9)',
+}).name('Preset').onChange(v => {
+  switch(v) {
+    case '0 (|0⟩)':        theta = 0;            phi = 0;            break;
+    case 'pi (|1⟩)':       theta = Math.PI;      phi = 0;            break;
+    case 'pi/2 (|+\u27e9)':  theta = Math.PI/2;   phi = 0;            break;
+    case 'pi/2 (|-\u27e9)':  theta = Math.PI/2;   phi = Math.PI;      break;
+    case 'pi/2 (|+i\u27e9)': theta = Math.PI/2;  phi = Math.PI/2;    break;
+    case 'pi/2 (|-i\u27e9)': theta = Math.PI/2;  phi = 3*Math.PI/2;  break;
+  }
+  updateFromAngles();
+});
+
+fState.add(params, 'presetPhi', {
+  'φ=0': '0',
+  'φ=π/2': 'pi/2',
+  'φ=π': 'pi',
+  'φ=3π/2': '3pi/2',
+}).name('φ Offset').onChange(v => {
+  const offsets = { '0': 0, 'pi/2': Math.PI/2, 'pi': Math.PI, '3pi/2': 3*Math.PI/2 };
+  phi = offsets[v];
+  phi = ((phi % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+  updateFromAngles();
+});
+
+// Manual theta slider (hidden, just for display)
+fState.close();
+
+// ---- Gates folder ----
+const fGates = gui.addFolder('Pauli Gates');
+fGates.add(params, 'applyX').name('X Gate').domElement.style.color = '#ff4d6a';
+fGates.add(params, 'applyY').name('Y Gate').domElement.style.color = '#4dff91';
+fGates.add(params, 'applyZ').name('Z Gate').domElement.style.color = '#4db8ff';
+fGates.add(params, 'applyH').name('Hadamard');
+fGates.add(params, 'applyS').name('S Gate');
+fGates.add(params, 'applyT').name('T Gate');
+fGates.open();
+
+// ---- View folder ----
+const fView = gui.addFolder('View');
+fView.add(params, 'autoRotate').name('Auto Rotate').onChange(v => {
+  // handled in tick loop
+  window._autoRotate = v;
+});
+fView.add({ speed: 0.08 }, 'speed', 0.01, 0.3).name('Rot Speed').onChange(v => {
+  window._rotSpeed = v;
+});
+fView.close();
+
+// Reset
+gui.add(params, 'reset').name('Reset State');
+
+// ============================================================
+//  AUTO ROTATE override
+// ============================================================
+window._autoRotate = false;
+window._rotSpeed = 0.08;
+
+// Patch tick for autoRotate
+const _origTick = tick;
+// (handled inline above via window flags)
+
+// ============================================================
+//  RESIZE
+// ============================================================
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ============================================================
+//  INITIAL STATE
+// ============================================================
+updateFromAngles();
+
+</script>
+</body>
+</html>

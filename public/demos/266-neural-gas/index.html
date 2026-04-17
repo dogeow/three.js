@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>神经气聚类 — 3D 可视化</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0f;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+    }
+
+    #ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 340px;
+      height: 100vh;
+      background: rgba(10, 10, 15, 0.88);
+      border-right: 1px solid rgba(80, 120, 255, 0.18);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      overflow-y: auto;
+      z-index: 10;
+      backdrop-filter: blur(6px);
+    }
+
+    h1 {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #7ba7ff;
+      line-height: 1.4;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #556;
+      margin-bottom: 6px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .stat-label { color: #778; }
+    .stat-value { color: #aac4ff; font-variant-numeric: tabular-nums; }
+
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4a6fff, #a078ff);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    .legend {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #8899aa;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      flex: 1;
+      padding: 7px 12px;
+      border: 1px solid rgba(80, 110, 255, 0.35);
+      background: rgba(60, 80, 200, 0.15);
+      color: #aab8ff;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    button:hover {
+      background: rgba(80, 110, 255, 0.25);
+      border-color: rgba(100, 140, 255, 0.55);
+    }
+
+    button.active {
+      background: rgba(80, 110, 255, 0.3);
+      border-color: rgba(120, 160, 255, 0.7);
+      color: #d0dfff;
+    }
+
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .slider-header span:first-child { color: #778; }
+    .slider-header span:last-child { color: #aac4ff; }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #4a6fff;
+      cursor: pointer;
+    }
+
+    .info-box {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(80,120,255,0.12);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 11.5px;
+      color: #667788;
+      line-height: 1.6;
+    }
+
+    .info-box strong { color: #8899bb; }
+
+    #error-legend {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    #error-bar-bg {
+      flex: 1;
+      height: 4px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    #error-bar-fill {
+      height: 100%;
+      background: #ff6b6b;
+      width: 100%;
+      transition: width 0.3s;
+    }
+
+    #error-val { color: #ff9090; min-width: 40px; text-align: right; }
+
+    #right-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 260px;
+      height: 100vh;
+      background: rgba(10, 10, 15, 0.82);
+      border-left: 1px solid rgba(80, 120, 255, 0.12);
+      padding: 20px 16px;
+      z-index: 10;
+      overflow-y: auto;
+      backdrop-filter: blur(6px);
+    }
+
+    .rank-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .rank-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11.5px;
+      padding: 3px 0;
+      color: #556677;
+    }
+
+    .rank-num { min-width: 18px; color: #445566; }
+    .rank-name { flex: 1; }
+    .rank-val { color: #7ba7ff; font-variant-numeric: tabular-nums; }
+
+    #three-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+<div id="canvas-container">
+  <canvas id="three-canvas"></canvas>
+</div>
+
+<!-- Left panel: controls & stats -->
+<div id="ui">
+  <h1>神经气<br>聚类</h1>
+
+  <div class="info-box">
+    <strong>神经气</strong>使用<strong>胜者通吃</strong>机制和衰减邻域函数来调整节点位置。观察150个节点如何发现3D目标点的拓扑结构。
+  </div>
+
+  <div>
+    <div class="section-title">控制面板</div>
+    <div class="controls">
+      <div class="btn-row">
+        <button id="btn-run" class="active">&#9654; 运行中</button>
+        <button id="btn-step">&#9646;&#9646; 单步</button>
+        <button id="btn-reset">&#8635; 重置</button>
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <span>速度 (轮次/步)</span>
+          <span id="speed-val">5</span>
+        </div>
+        <input type="range" id="speed-slider" min="1" max="30" value="5" />
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <span>邻域 λ₀</span>
+          <span id="lambda-val">0.5</span>
+        </div>
+        <input type="range" id="lambda-slider" min="1" max="100" value="50" />
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <span>学习率 ε₀</span>
+          <span id="lr-val">0.5</span>
+        </div>
+        <input type="range" id="lr-slider" min="1" max="99" value="50" />
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <span>形状</span>
+          <span id="shape-name">环面纽结</span>
+        </div>
+        <div class="btn-row" style="margin-top:2px">
+          <button id="shape-torus" class="active">环面纽结</button>
+          <button id="shape-spiral">螺旋</button>
+          <button id="shape-blob">团状</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">训练进度</div>
+    <div class="stat-row">
+      <span class="stat-label">轮次</span>
+      <span class="stat-value" id="stat-epoch">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">步/秒</span>
+      <span class="stat-value" id="stat-sps">—</span>
+    </div>
+    <div class="stat-row" style="margin-top:4px">
+      <span class="stat-label">量化误差</span>
+      <span class="stat-value" id="stat-error">—</span>
+    </div>
+    <div id="error-legend" style="margin-top:4px">
+      <div id="error-bar-bg"><div id="error-bar-fill"></div></div>
+      <span id="error-val">—</span>
+    </div>
+    <div class="progress-bar" style="margin-top:8px">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">图例</div>
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#4a6fff; box-shadow: 0 0 6px #4a6fff88;"></div>
+        <span>神经气节点（球体）</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#00e5cc; box-shadow: 0 0 4px #00e5cc66;"></div>
+        <span>目标点（粒子）</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#cc44ff;"></div>
+        <span>拓扑边（k-NN）</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#ff6644;"></div>
+        <span>每步获胜节点</span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">节点适应频率</div>
+    <div style="font-size:11px; color:#556677; margin-bottom:4px;">
+      <span style="color:#2266ff;">低</span>
+      <span style="float:right; color:#ff4422;">高</span>
+    </div>
+    <div style="
+      height:8px; border-radius:4px; background: linear-gradient(90deg, #1a2a88, #4a6fff, #a078ff, #ff6644, #ff2200);
+    "></div>
+  </div>
+</div>
+
+<!-- Right panel: ranking -->
+<div id="right-panel">
+  <div class="section-title">适应最多的前10个节点</div>
+  <div class="rank-list" id="rank-list"></div>
+  <div style="margin-top:16px; font-size:11px; color:#334; line-height:1.7;">
+    <div class="section-title" style="margin-bottom:6px;">工作原理</div>
+    每轮迭代中，算法随机选择一个目标点。<strong style="color:#8899bb;">最近的节点</strong>（胜者）及其拓扑邻居节点按照
+    <strong style="color:#8899bb;">邻域函数</strong>的权重向目标点移动：<br><br>
+    <code style="color:#7ba7ff; font-size:10.5px;">
+      hₖ(t) = exp(−k/λ(t))<br>
+      λ(t) = λ₀ · e^(−t/τλ)<br>
+      ε(t) = ε₀ · e^(−t/τε)
+    </code>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const NUM_NODES    = 150;
+const NUM_TARGETS  = 1200;
+const K_NEIGHBORS  = 6;     // edges per node
+const MAX_EPOCHS   = 3000;
+const TAU_LAMBDA   = 1000;  // decay time constant for λ
+const TAU_EPSILON  = 800;   // decay time constant for ε
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let nodes        = [];
+let targetPoints = [];
+let epoch        = 0;
+let running      = true;
+let speed        = 5;
+let baseLambda   = 0.5;     // fraction of spread, set by slider
+let baseEps      = 0.5;
+let shape        = 'torus';
+let stepTimes    = [];
+let winnerFlash  = -1;
+let winnerFlashT = 0;
+let nodeAdaptionCount = new Array(NUM_NODES).fill(0);
+let maxAdapt = 1;
+
+// ─── THREE.JS SETUP ──────────────────────────────────────────────────────────
+const canvas   = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x0a0a0f, 1);
+
+const scene  = new THREE.Scene();
+scene.fog    = new THREE.FogExp2(0x0a0a0f, 0.018);
+
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+camera.position.set(0, 6, 18);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.minDistance   = 4;
+controls.maxDistance   = 60;
+
+// Lights
+scene.add(new THREE.AmbientLight(0x1a1f3a, 2.5));
+const dirLight = new THREE.DirectionalLight(0x6699ff, 1.4);
+dirLight.position.set(8, 14, 8);
+scene.add(dirLight);
+const rimLight = new THREE.DirectionalLight(0xaa44ff, 0.6);
+rimLight.position.set(-10, -4, -6);
+scene.add(rimLight);
+
+// ─── GEOMETRY HELPERS ────────────────────────────────────────────────────────
+function spread() { return 7; }
+
+function generateTargetPoints(shape) {
+  const pts = [];
+  const n   = NUM_TARGETS;
+  if (shape === 'torus') {
+    for (let i = 0; i < n; i++) {
+      const u = (i / n) * Math.PI * 2 * 3;
+      const v = (i / n) * Math.PI * 2 * 2;
+      const R = 4.5, r = 1.5;
+      const x = (R + r * Math.cos(v)) * Math.cos(u);
+      const y = r * Math.sin(v);
+      const z = (R + r * Math.cos(v)) * Math.sin(u);
+      // Add gentle noise
+      pts.push(x + (Math.random()-0.5)*0.3, y + (Math.random()-0.5)*0.3, z + (Math.random()-0.5)*0.3);
+    }
+  } else if (shape === 'spiral') {
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 7;
+      const r = 1.0 + (i / n) * 3.5;
+      const x = r * Math.cos(t);
+      const y = (i / n - 0.5) * 8 + (Math.random()-0.5)*0.2;
+      const z = r * Math.sin(t);
+      pts.push(x, y, z);
+    }
+  } else { // blob
+    const centers = [
+      new THREE.Vector3(3, 1, 0),
+      new THREE.Vector3(-3, -1, 1),
+      new THREE.Vector3(0, -2, -3),
+      new THREE.Vector3(-2, 2.5, 2),
+      new THREE.Vector3(2, -2, 2),
+    ];
+    for (let i = 0; i < n; i++) {
+      const c = centers[i % centers.length];
+      const r = 2.5 + Math.random() * 1.5;
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const sx = r * Math.sin(phi) * Math.cos(theta);
+      const sy = r * Math.sin(phi) * Math.sin(theta);
+      const sz = r * Math.cos(phi);
+      pts.push(c.x + sx, c.y + sy, c.z + sz);
+    }
+  }
+  return pts;
+}
+
+// ─── NODE INIT ───────────────────────────────────────────────────────────────
+function initNodes() {
+  const s = spread();
+  nodes = Array.from({ length: NUM_NODES }, () => ({
+    pos:       new THREE.Vector3((Math.random()-0.5)*s*2, (Math.random()-0.5)*s*2, (Math.random()-0.5)*s*2),
+    adaptFreq: 0,
+    mesh:      null,
+    lineIndices: [],  // indices of neighbor nodes (for edges)
+  }));
+}
+
+// ─── MESH CREATION ───────────────────────────────────────────────────────────
+let nodeGroup     = new THREE.Group();
+let targetGroup   = new THREE.Group();
+let edgeGroup     = new THREE.Group();
+let winnerMarker  = new THREE.Mesh();
+
+scene.add(nodeGroup, targetGroup, edgeGroup);
+
+function buildMeshes(targetPosArray) {
+  // Clear old
+  nodeGroup.clear(); targetGroup.clear(); edgeGroup.clear();
+  if (winnerMarker.parent) scene.remove(winnerMarker);
+
+  // ── Target particles ──
+  const tGeo = new THREE.BufferGeometry();
+  tGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(targetPosArray), 3));
+  const tMat = new THREE.PointsMaterial({
+    color: 0x00e5cc, size: 0.09, transparent: true, opacity: 0.65,
+    sizeAttenuation: true,
+  });
+  targetGroup.add(new THREE.Points(tGeo, tMat));
+
+  // ── Node spheres ──
+  const sphereGeo = new THREE.SphereGeometry(0.14, 8, 6);
+  const frag = document.createDocumentFragment();
+  nodes.forEach((node, i) => {
+    const mat = new THREE.MeshPhongMaterial({
+      color: new THREE.Color().setHSL(0.62, 0.9, 0.55),
+      emissive: new THREE.Color(0x1a2866),
+      shininess: 90,
+    });
+    const mesh = new THREE.Mesh(sphereGeo, mat);
+    mesh.position.copy(node.pos);
+    mesh.userData.nodeIndex = i;
+    node.mesh = mesh;
+    nodeGroup.add(mesh);
+  });
+
+  // ── k-NN edge lines ──
+  rebuildEdges();
+
+  // ── Winner flash sphere ──
+  const wGeo = new THREE.SphereGeometry(0.32, 12, 8);
+  const wMat = new THREE.MeshBasicMaterial({ color: 0xff6644, transparent: true, opacity: 0.0 });
+  winnerMarker = new THREE.Mesh(wGeo, wMat);
+  scene.add(winnerMarker);
+}
+
+function rebuildEdges() {
+  edgeGroup.clear();
+  const edgeSet = new Set();
+
+  // Compute k-nearest neighbors for each node
+  nodes.forEach((node, i) => {
+    const dists = nodes
+      .map((other, j) => ({ j, d: node.pos.distanceTo(other.pos) }))
+      .filter(x => x.j !== i)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, K_NEIGHBORS);
+
+    node.lineIndices = dists.map(x => x.j);
+    dists.forEach(({ j }) => {
+      const key = i < j ? `${i}-${j}` : `${j}-${i}`;
+      edgeSet.add(key);
+    });
+  });
+
+  const positions = [];
+  edgeSet.forEach(key => {
+    const [a, b] = key.split('-').map(Number);
+    positions.push(nodes[a].pos.x, nodes[a].pos.y, nodes[a].pos.z);
+    positions.push(nodes[b].pos.x, nodes[b].pos.y, nodes[b].pos.z);
+  });
+
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x8833cc, transparent: true, opacity: 0.28 });
+  edgeGroup.add(new THREE.LineSegments(lineGeo, lineMat));
+}
+
+function updateEdgePositions() {
+  const posAttr = edgeGroup.children[0]?.geometry.getAttribute('position');
+  if (!posAttr) return;
+  let idx = 0;
+  const edgeSet = new Set();
+  nodes.forEach((node, i) => {
+    node.lineIndices.forEach(j => {
+      const key = i < j ? `${i}-${j}` : `${j}-${i}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        posAttr.setXYZ(idx++, node.pos.x, node.pos.y, node.pos.z);
+        posAttr.setXYZ(idx++, nodes[j].pos.x, nodes[j].pos.y, nodes[j].pos.z);
+      }
+    });
+  });
+  posAttr.needsUpdate = true;
+}
+
+// ─── NODE COLOR BY ADAPTATION ─────────────────────────────────────────────────
+function updateNodeColors() {
+  nodes.forEach((node, i) => {
+    const t = maxAdapt > 0 ? node.adaptFreq / maxAdapt : 0;
+    // Hue: 0.65 (blue) → 0.0 (red)
+    const hue = (1 - t) * 0.65;
+    const sat = 0.85;
+    const lig = 0.42 + t * 0.18;
+    node.mesh.material.color.setHSL(hue, sat, lig);
+    node.mesh.material.emissive.setHSL(hue * 0.5, 0.9, 0.05 + t * 0.12);
+  });
+}
+
+// ─── NEURAL GAS LEARNING ──────────────────────────────────────────────────────
+function learningRate(t) {
+  return baseEps * Math.exp(-t / TAU_EPSILON);
+}
+
+function neighborhood(t) {
+  return baseLambda * Math.exp(-t / TAU_LAMBDA);
+}
+
+function neuralGasStep() {
+  // Pick random target point
+  const ti = Math.floor(Math.random() * targetPoints.length);
+  const tp = new THREE.Vector3(targetPoints[ti*3], targetPoints[ti*3+1], targetPoints[ti*3+2]);
+
+  // Sort nodes by distance to tp
+  const sorted = nodes
+    .map((node, i) => ({ i, d: node.pos.distanceTo(tp) }))
+    .sort((a, b) => a.d - b.d);
+
+  const winner = sorted[0].i;
+  const λ = Math.max(0.01, neighborhood(epoch));
+  const ε = Math.max(0.001, learningRate(epoch));
+
+  // Winner flash
+  winnerFlash  = winner;
+  winnerFlashT = 12; // frames
+
+  nodeAdaptionCount[winner]++;
+  if (nodeAdaptionCount[winner] > maxAdapt) maxAdapt = nodeAdaptionCount[winner];
+
+  // Update all nodes
+  nodes.forEach((node, i) => {
+    const rank = sorted.findIndex(x => x.i === i);
+    const h    = Math.exp(-rank / λ);
+    node.pos.addScaledVector(
+      tp.clone().sub(node.pos),
+      ε * h
+    );
+    node.mesh.position.copy(node.pos);
+    node.adaptFreq = nodeAdaptionCount[i];
+  });
+
+  // Rebuild edges every 3 epochs to keep k-NN current
+  if (epoch % 3 === 0) rebuildEdges();
+  else updateEdgePositions();
+
+  updateNodeColors();
+  epoch++;
+}
+
+// ─── QUANTIZATION ERROR ───────────────────────────────────────────────────────
+function quantizationError() {
+  let total = 0;
+  const pts = NUM_TARGETS;
+  for (let i = 0; i < pts; i++) {
+    const tp = new THREE.Vector3(targetPoints[i*3], targetPoints[i*3+1], targetPoints[i*3+2]);
+    let minD = Infinity;
+    nodes.forEach(n => {
+      const d = n.pos.distanceTo(tp);
+      if (d < minD) minD = d;
+    });
+    total += minD * minD;
+  }
+  return Math.sqrt(total / pts);
+}
+
+// ─── RESIZE ───────────────────────────────────────────────────────────────────
+function onResize() {
+  const cont = canvas.parentElement;
+  const w = cont.clientWidth, h = cont.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+// ─── ANIMATION LOOP ───────────────────────────────────────────────────────────
+let lastFrameTime = performance.now();
+let framesSinceUpdate = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt  = now - lastFrameTime;
+  lastFrameTime = now;
+
+  // Run training steps
+  if (running) {
+    const stepStart = performance.now();
+    for (let s = 0; s < speed; s++) {
+      if (epoch >= MAX_EPOCHS) { running = false; updateRunButton(); break; }
+      neuralGasStep();
+    }
+    const stepMs = performance.now() - stepStart;
+    if (framesSinceUpdate++ % 30 === 0) {
+      stepTimes.push(1000 / Math.max(stepMs / speed, 0.001));
+      if (stepTimes.length > 10) stepTimes.shift();
+    }
+  }
+
+  // Winner flash
+  if (winnerFlashT > 0) {
+    winnerFlashT--;
+    const op = winnerFlashT / 12;
+    winnerMarker.position.copy(nodes[winnerFlash].pos);
+    winnerMarker.material.opacity = op * 0.7;
+    winnerMarker.material.color.setHSL(0.05, 1.0, 0.5 + op * 0.3);
+    winnerMarker.scale.setScalar(1 + (1 - op) * 0.5);
+  }
+
+  // Slow target point gentle drift (breathing effect)
+  // not needed — static target
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ─── UI WIRING ────────────────────────────────────────────────────────────────
+const statEpoch    = document.getElementById('stat-epoch');
+const statSps      = document.getElementById('stat-sps');
+const statError    = document.getElementById('stat-error');
+const errorFill    = document.getElementById('error-bar-fill');
+const errorVal     = document.getElementById('error-val');
+const progressFill = document.getElementById('progress-fill');
+const rankList     = document.getElementById('rank-list');
+const speedSlider  = document.getElementById('speed-slider');
+const speedVal     = document.getElementById('speed-val');
+const lambdaSlider = document.getElementById('lambda-slider');
+const lambdaVal    = document.getElementById('lambda-val');
+const lrSlider     = document.getElementById('lr-slider');
+const lrVal        = document.getElementById('lr-val');
+const shapeTorus   = document.getElementById('shape-torus');
+const shapeSpiral  = document.getElementById('shape-spiral');
+const shapeBlob    = document.getElementById('shape-blob');
+const shapeName    = document.getElementById('shape-name');
+const btnRun       = document.getElementById('btn-run');
+const btnStep      = document.getElementById('btn-step');
+const btnReset     = document.getElementById('btn-reset');
+
+let uiTick = 0;
+function updateUI() {
+  statEpoch.textContent = epoch.toLocaleString();
+
+  const sps = stepTimes.length
+    ? Math.round(stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length)
+    : 0;
+  statSps.textContent = sps > 0 ? `${sps} eps/s` : '—';
+
+  const err = quantizationError();
+  statError.textContent = err.toFixed(4);
+  // Normalize error display (max ~5 for big shapes)
+  const errPct = Math.min(100, (err / 5) * 100);
+  errorFill.style.width = errPct + '%';
+  errorVal.textContent  = err.toFixed(3);
+
+  progressFill.style.width = Math.min(100, (epoch / MAX_EPOCHS) * 100) + '%';
+
+  // Node ranking
+  if (uiTick++ % 10 === 0) {
+    const top10 = nodeAdaptionCount
+      .map((c, i) => ({ i, c }))
+      .sort((a, b) => b.c - a.c)
+      .slice(0, 10);
+
+    rankList.innerHTML = top10.map(({ i, c }, rank) => {
+      const t = maxAdapt > 0 ? c / maxAdapt : 0;
+      const hue = Math.round((1 - t) * 260);
+      return `<div class="rank-item">
+        <span class="rank-num">#${rank + 1}</span>
+        <span class="rank-name">Node ${i}</span>
+        <span class="rank-val" style="color:hsl(${hue},85%,65%)">${c}</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+setInterval(updateUI, 80);
+
+function updateRunButton() {
+  btnRun.textContent = running ? '⏸ 暂停' : '▶ 继续';
+  btnRun.classList.toggle('active', running);
+}
+
+btnRun.addEventListener('click', () => {
+  running = !running;
+  if (running && epoch >= MAX_EPOCHS) resetAll();
+  updateRunButton();
+});
+
+btnStep.addEventListener('click', () => {
+  for (let i = 0; i < speed; i++) {
+    if (epoch >= MAX_EPOCHS) break;
+    neuralGasStep();
+  }
+});
+
+function resetAll() {
+  epoch = 0;
+  nodeAdaptionCount = new Array(NUM_NODES).fill(0);
+  maxAdapt = 1;
+  stepTimes = [];
+  winnerFlashT = 0;
+  targetPoints = generateTargetPoints(shape);
+  initNodes();
+  buildMeshes(targetPoints);
+  running = true;
+  updateRunButton();
+}
+
+btnReset.addEventListener('click', resetAll);
+
+speedSlider.addEventListener('input', () => {
+  speed = parseInt(speedSlider.value);
+  speedVal.textContent = speed;
+});
+
+lambdaSlider.addEventListener('input', () => {
+  const v = parseInt(lambdaSlider.value);
+  baseLambda = v / 100;
+  lambdaVal.textContent = baseLambda.toFixed(2);
+});
+
+lrSlider.addEventListener('input', () => {
+  const v = parseInt(lrSlider.value);
+  baseEps = v / 100;
+  lrVal.textContent = baseEps.toFixed(2);
+});
+
+function setShape(s) {
+  shape = s;
+  if (s === 'torus') shapeName.textContent = 'Torus Knot';
+  else if (s === 'spiral') shapeName.textContent = 'Spiral';
+  else shapeName.textContent = 'Blob';
+  shapeTorus.classList.toggle('active', s === 'torus');
+  shapeSpiral.classList.toggle('active', s === 'spiral');
+  shapeBlob.classList.toggle('active', s === 'blob');
+  resetAll();
+}
+
+shapeTorus.addEventListener('click',  () => setShape('torus'));
+shapeSpiral.addEventListener('click', () => setShape('spiral'));
+shapeBlob.addEventListener('click',   () => setShape('blob'));
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+targetPoints = generateTargetPoints('torus');
+initNodes();
+buildMeshes(targetPoints);
+animate();
+</script>
+
+</body>
+</html>

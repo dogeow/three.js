@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Matter.js · 2D 物理引擎</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #1a1a2e; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
+    background: rgba(0,0,0,.4); padding: 8px 12px; border-radius: 6px;
+    pointer-events: none;
+  }
+  .btn {
+    position: fixed; bottom: 20px; left: 20px;
+    padding: 8px 16px; background: #4a90ff; color: #fff;
+    border: none; border-radius: 6px; cursor: pointer;
+    font: 14px -apple-system, sans-serif;
+  }
+  .btn:hover { background: #5aa0ff; }
+</style>
+</head>
+<body>
+<div class="tip">Matter.js · 2D 物理引擎（拖拽形状、按按钮继续加料）</div>
+<button class="btn" id="add">+ 再添加 20 个形状</button>
+<script type="module" src="main.js"></script>
+</body>
+</html>

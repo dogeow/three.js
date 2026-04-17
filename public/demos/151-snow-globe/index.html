@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>151 · 水晶球 Snow Globe</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #0a0510; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #e2e8f0; font: 14px/1.65 -apple-system, sans-serif;
+    background: rgba(3,7,18,0.8); padding: 10px 14px; border-radius: 10px;
+    max-width: 360px; backdrop-filter: blur(10px);
+  }
+  .tip b { color: #7dd3fc; }
+  .panel {
+    position: fixed; top: 12px; right: 12px;
+    background: rgba(3,7,18,0.85); border: 1px solid rgba(125,211,252,0.2);
+    border-radius: 12px; padding: 14px; backdrop-filter: blur(10px); width: 200px;
+  }
+  .panel h3 { margin: 0 0 10px; font-size: 12px; color: #7dd3fc; letter-spacing: 0.08em; text-transform: uppercase; }
+  .btn {
+    display: block; width: 100%; padding: 8px; margin-top: 6px;
+    background: rgba(125,211,252,0.15); border: 1px solid rgba(125,211,252,0.3);
+    color: #7dd3fc; border-radius: 8px; cursor: pointer; font-size: 13px;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: rgba(125,211,252,0.25); }
+  .hint { font-size: 11px; color: #475569; margin-top: 10px; line-height: 1.7; }
+  .hint kbd { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-family: monospace; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：水晶球特效</b><br>
+  · 玻璃穹顶折射 + Fresnel 边缘光 + 内置场景<br>
+  · 雪花粒子系统，重力下落 + 随机漂移<br>
+  · 点击摇匀雪花，旋转时雪花飞舞加剧
+</div>
+
+<div class="panel">
+  <h3>❄️ 水晶球</h3>
+  <button class="btn" id="shakeBtn">🫨 摇匀雪花</button>
+  <button class="btn" id="snowstormBtn">🌨️ 暴风雪</button>
+  <button class="btn" id="calmBtn">☁️ 平静模式</button>
+  <div class="hint">
+    <kbd>点击</kbd> 摇匀 &nbsp; <kbd>空格</kbd> 暴风雪 &nbsp; <kbd>R</kbd> 重置
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+// ─── Scene ────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0a0510)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 1, 8)
+camera.lookAt(0, 0, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.2
+document.body.appendChild(renderer.domElement)
+
+// ─── Lights ───────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.4))
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.0)
+keyLight.position.set(5, 8, 5)
+scene.add(keyLight)
+const rimLight = new THREE.PointLight(0x7dd3fc, 1.5, 20)
+rimLight.position.set(-4, 3, -3)
+scene.add(rimLight)
+const warmLight = new THREE.PointLight(0xfde68a, 0.8, 15)
+warmLight.position.set(3, -2, 3)
+scene.add(warmLight)
+
+// ─── Base ─────────────────────────────────────────────────────────────────────
+const baseGeo = new THREE.CylinderGeometry(1.2, 1.4, 0.6, 32)
+const baseMat = new THREE.MeshStandardMaterial({
+  color: 0x1a1a2e,
+  roughness: 0.2,
+  metalness: 0.8,
+})
+const base = new THREE.Mesh(baseGeo, baseMat)
+base.position.y = -2.1
+base.castShadow = true
+base.receiveShadow = true
+scene.add(base)
+
+// Base rim ring
+const rimGeo = new THREE.TorusGeometry(1.3, 0.08, 16, 64)
+const rimMat = new THREE.MeshStandardMaterial({ color: 0xc0c0c0, metalness: 0.9, roughness: 0.1 })
+const baseRim = new THREE.Mesh(rimGeo, rimMat)
+baseRim.rotation.x = Math.PI / 2
+baseRim.position.y = -1.8
+scene.add(baseRim)
+
+// ─── Inner Scene (what's inside the globe) ─────────────────────────────────────
+const innerScene = new THREE.Scene()
+const innerGroup = new THREE.Group()
+innerScene.add(innerGroup)
+
+// Ground inside globe
+const innerGround = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.5, 1.5, 0.05, 32),
+  new THREE.MeshStandardMaterial({ color: 0xe8f4e8, roughness: 0.9 })
+)
+innerGround.position.y = -1.5
+innerGroup.add(innerGround)
+
+// Small tree inside
+function makeTree(x, z, h) {
+  const g = new THREE.Group()
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.06, h * 0.4, 6),
+    new THREE.MeshStandardMaterial({ color: 0x5c3d1e, roughness: 0.9 })
+  )
+  trunk.position.y = h * 0.2
+  g.add(trunk)
+  const foliage = new THREE.Mesh(
+    new THREE.ConeGeometry(h * 0.25, h * 0.6, 8),
+    new THREE.MeshStandardMaterial({ color: 0x2d6a2d, roughness: 0.8 })
+  )
+  foliage.position.y = h * 0.55
+  g.add(foliage)
+  g.position.set(x, -1.45, z)
+  return g
+}
+innerGroup.add(makeTree(-0.3, 0.2, 0.8))
+innerGroup.add(makeTree(0.4, -0.1, 0.6))
+innerGroup.add(makeTree(0.0, 0.5, 0.5))
+
+// Tiny house
+const house = new THREE.Group()
+const houseBody = new THREE.Mesh(
+  new THREE.BoxGeometry(0.3, 0.25, 0.25),
+  new THREE.MeshStandardMaterial({ color: 0xd4a574, roughness: 0.7 })
+)
+houseBody.position.y = 0.125
+house.add(houseBody)
+const roof = new THREE.Mesh(
+  new THREE.ConeGeometry(0.25, 0.2, 4),
+  new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.8 })
+)
+roof.position.y = 0.37
+roof.rotation.y = Math.PI / 4
+house.add(roof)
+const chimney = new THREE.Mesh(
+  new THREE.BoxGeometry(0.06, 0.12, 0.06),
+  new THREE.MeshStandardMaterial({ color: 0x8b4513 })
+)
+chimney.position.set(0.08, 0.42, 0.05)
+house.add(chimney)
+house.position.set(-0.7, -1.45, -0.3)
+house.rotation.y = 0.3
+innerGroup.add(house)
+
+// Window light from house
+const houseLight = new THREE.PointLight(0xfde68a, 0.5, 2)
+houseLight.position.set(-0.7, -1.2, -0.3)
+innerGroup.add(houseLight)
+
+// Fence
+for (let i = 0; i < 5; i++) {
+  const post = new THREE.Mesh(
+    new THREE.BoxGeometry(0.03, 0.15, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0xd4a574 })
+  )
+  post.position.set(-1.2 + i * 0.15, -1.38, 0.5)
+  innerGroup.add(post)
+}
+const rail = new THREE.Mesh(
+  new THREE.BoxGeometry(0.6, 0.02, 0.02),
+  new THREE.MeshStandardMaterial({ color: 0xd4a574 })
+)
+rail.position.set(-0.9, -1.32, 0.5)
+innerGroup.add(rail)
+
+// ─── Globe Glass Sphere ────────────────────────────────────────────────────────
+const globeRadius = 2.0
+const globeGeo = new THREE.SphereGeometry(globeRadius, 64, 64)
+const globeMat = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff,
+  transmission: 0.95,
+  thickness: 1.0,
+  roughness: 0.05,
+  metalness: 0.0,
+  ior: 1.5,
+  transparent: true,
+  opacity: 0.3,
+  side: THREE.FrontSide,
+  envMapIntensity: 1.5,
+})
+
+// Fresnel glow on top hemisphere
+const fresnelGeo = new THREE.SphereGeometry(globeRadius + 0.01, 64, 64)
+const fresnelMat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  side: THREE.FrontSide,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vViewDir;
+    void main() {
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vNormal = normalize(normalMatrix * normal);
+      vViewDir = normalize(cameraPosition - worldPos.xyz);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vNormal;
+    varying vec3 vViewDir;
+    uniform float uTime;
+    void main() {
+      float fresnel = pow(1.0 - abs(dot(vNormal, vViewDir)), 4.0);
+      vec3 col = mix(vec3(0.3, 0.5, 1.0), vec3(0.8, 0.9, 1.0), fresnel);
+      col += vec3(0.1, 0.15, 0.2) * sin(uTime * 2.0) * 0.1;
+      gl_FragColor = vec4(col, fresnel * 0.35);
+    }
+  `
+})
+
+const globe = new THREE.Mesh(globeGeo, globeMat)
+globe.position.y = 0
+scene.add(globe)
+
+const fresnelMesh = new THREE.Mesh(fresnelGeo, fresnelMat)
+globe.add(fresnelMesh)
+
+// ─── Snow Particles ────────────────────────────────────────────────────────────
+const SNOW_COUNT = 400
+const snowPos = new Float32Array(SNOW_COUNT * 3)
+const snowVel = new Float32Array(SNOW_COUNT * 3)
+const snowSize = new Float32Array(SNOW_COUNT)
+
+let stormMode = false
+let calmMode = false
+
+function initSnow() {
+  for (let i = 0; i < SNOW_COUNT; i++) {
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.acos(2 * Math.random() - 1)
+    const r = Math.random() * (globeRadius - 0.1)
+    snowPos[i*3]   = Math.sin(phi) * Math.cos(theta) * r
+    snowPos[i*3+1] = Math.sin(phi) * Math.sin(theta) * r
+    snowPos[i*3+2] = Math.cos(phi) * r
+    snowVel[i*3]   = (Math.random() - 0.5) * 0.02
+    snowVel[i*3+1] = -0.01 - Math.random() * 0.02
+    snowVel[i*3+2] = (Math.random() - 0.5) * 0.02
+    snowSize[i] = 0.02 + Math.random() * 0.04
+  }
+}
+initSnow()
+
+const snowGeo = new THREE.BufferGeometry()
+snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3))
+snowGeo.setAttribute('size', new THREE.BufferAttribute(snowSize, 1))
+
+const snowMat = new THREE.PointsMaterial({
+  color: 0xffffff,
+  size: 0.06,
+  transparent: true,
+  opacity: 0.8,
+  depthWrite: false,
+  sizeAttenuation: true,
+})
+
+const snowSystem = new THREE.Points(snowGeo, snowMat)
+scene.add(snowSystem)
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.enablePan = false
+controls.minDistance = 4
+controls.maxDistance = 15
+controls.autoRotate = true
+controls.autoRotateSpeed = 0.5
+
+// Shake
+function shake() {
+  for (let i = 0; i < SNOW_COUNT; i++) {
+    snowPos[i*3]   = (Math.random() - 0.5) * globeRadius * 1.5
+    snowPos[i*3+1] = (Math.random() - 0.5) * globeRadius * 1.5
+    snowPos[i*3+2] = (Math.random() - 0.5) * globeRadius * 1.5
+    snowVel[i*3]   = (Math.random() - 0.5) * 0.1
+    snowVel[i*3+1] = 0.02 + Math.random() * 0.05
+    snowVel[i*3+2] = (Math.random() - 0.5) * 0.1
+  }
+  snowGeo.attributes.position.needsUpdate = true
+}
+
+document.getElementById('shakeBtn').addEventListener('click', shake)
+document.getElementById('snowstormBtn').addEventListener('click', () => {
+  stormMode = true; calmMode = false
+  for (let i = 0; i < SNOW_COUNT; i++) {
+    snowVel[i*3+1] = -0.03 - Math.random() * 0.05
+    snowVel[i*3] = (Math.random() - 0.5) * 0.08
+    snowVel[i*3+2] = (Math.random() - 0.5) * 0.08
+  }
+})
+document.getElementById('calmBtn').addEventListener('click', () => {
+  stormMode = false; calmMode = true
+  for (let i = 0; i < SNOW_COUNT; i++) {
+    snowVel[i*3+1] = -0.005 - Math.random() * 0.01
+    snowVel[i*3] = (Math.random() - 0.5) * 0.005
+    snowVel[i*3+2] = (Math.random() - 0.5) * 0.005
+  }
+})
+
+renderer.domElement.addEventListener('click', shake)
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { stormMode = !stormMode; calmMode = false; shake() }
+  if (e.code === 'KeyR') { stormMode = false; calmMode = false; initSnow() }
+})
+
+// ─── Animate ──────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const delta = Math.min(clock.getDelta(), 0.05)
+  const elapsed = clock.elapsedTime
+
+  fresnelMat.uniforms.uTime.value = elapsed
+
+  // Rotate inner group gently
+  innerGroup.rotation.y += delta * 0.1
+
+  // Update snow
+  const gravity = stormMode ? -0.002 : calmMode ? -0.0003 : -0.001
+  const drag = stormMode ? 0.98 : calmMode ? 0.995 : 0.99
+  const drift = stormMode ? 0.005 : calmMode ? 0.001 : 0.002
+
+  for (let i = 0; i < SNOW_COUNT; i++) {
+    snowVel[i*3]   += (Math.random() - 0.5) * drift
+    snowVel[i*3+1] += gravity
+    snowVel[i*3+2] += (Math.random() - 0.5) * drift
+
+    snowVel[i*3]   *= drag
+    snowVel[i*3+1] *= drag
+    snowVel[i*3+2] *= drag
+
+    snowPos[i*3]   += snowVel[i*3]
+    snowPos[i*3+1] += snowVel[i*3+1]
+    snowPos[i*3+2] += snowVel[i*3+2]
+
+    const r = Math.sqrt(snowPos[i*3]**2 + snowPos[i*3+1]**2 + snowPos[i*3+2]**2)
+    if (r > globeRadius) {
+      // Reset particle
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(2 * Math.random() - 1)
+      const nr = globeRadius * 0.8 * Math.random()
+      snowPos[i*3]   = Math.sin(phi) * Math.cos(theta) * nr
+      snowPos[i*3+1] = Math.abs(Math.sin(phi) * Math.sin(theta)) * nr
+      snowPos[i*3+2] = Math.cos(phi) * nr
+      snowVel[i*3]   = (Math.random() - 0.5) * 0.01
+      snowVel[i*3+1] = -(0.005 + Math.random() * 0.01)
+      snowVel[i*3+2] = (Math.random() - 0.5) * 0.01
+    }
+  }
+  snowGeo.attributes.position.needsUpdate = true
+
+  // Pulsing house light
+  houseLight.intensity = 0.4 + Math.sin(elapsed * 2) * 0.1
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+window.scene = scene
+window.camera = camera
+window.renderer = renderer
+window.controls = controls
+window.globe = globe
+
+animate()
+</script>
+</body>
+</html>

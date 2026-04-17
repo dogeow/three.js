@@ -1,0 +1,537 @@
+import * as THREE from 'three';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        // ============================================================
+        // SHADERS
+        // ============================================================
+
+        const vertexShader = `
+            varying vec2 vUv;
+            varying vec3 vWorldPos;
+
+            void main() {
+                vUv = uv;
+                vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                vWorldPos = worldPos.xyz;
+                gl_Position = projectionMatrix * viewMatrix * worldPos;
+            }
+        `;
+
+        const fragmentShader = `
+            precision highp float;
+
+            uniform float uTime;
+            uniform vec3 uCameraPos;
+            uniform vec2 uResolution;
+            uniform vec3 uLightPos;
+            uniform vec3 uLightColor;
+            uniform float uDensity;
+            uniform float uAbsorption;
+            uniform float uScattering;
+            uniform float uNoiseScale;
+            uniform float uNoiseStrength;
+            uniform float uStepSize;
+            uniform vec3 uSmokeColor1;
+            uniform vec3 uSmokeColor2;
+            uniform int uNumSources;
+            uniform vec3 uSourcePos[8];
+            uniform float uSourceStrength[8];
+            uniform vec2 uMouse;
+            uniform float uMouseRadius;
+            uniform float uMouseStrength;
+            uniform bool uMouseActive;
+
+            varying vec2 vUv;
+            varying vec3 vWorldPos;
+
+            // ============================================================
+            // NOISE FUNCTIONS
+            // ============================================================
+
+            float hash(float n) {
+                return fract(sin(n) * 43758.5453123);
+            }
+
+            float hash3(vec3 p) {
+                return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+            }
+
+            float noise3D(vec3 p) {
+                vec3 i = floor(p);
+                vec3 f = fract(p);
+                f = f * f * (3.0 - 2.0 * f);
+
+                float n = i.x + i.y * 57.0 + i.z * 113.0;
+
+                float a = hash(n);
+                float b = hash(n + 1.0);
+                float c = hash(n + 57.0);
+                float d = hash(n + 58.0);
+                float e = hash(n + 113.0);
+                float ff = hash(n + 114.0);
+                float g = hash(n + 170.0);
+                float h = hash(n + 171.0);
+
+                return mix(
+                    mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+                    mix(mix(e, ff, f.x), mix(g, h, f.x), f.y),
+                    f.z
+                );
+            }
+
+            // Fractal Brownian Motion
+            float fbm(vec3 p, int octaves) {
+                float value = 0.0;
+                float amplitude = 0.5;
+                float frequency = 1.0;
+                float maxValue = 0.0;
+
+                for (int i = 0; i < 6; i++) {
+                    if (i >= octaves) break;
+                    value += amplitude * noise3D(p * frequency);
+                    maxValue += amplitude;
+                    amplitude *= 0.5;
+                    frequency *= 2.0;
+                }
+
+                return value / maxValue;
+            }
+
+            // ============================================================
+            // DENSITY FIELD
+            // ============================================================
+
+            float getSmokeDensity(vec3 pos, float time) {
+                float density = 0.0;
+
+                // Multiple smoke sources
+                for (int i = 0; i < 8; i++) {
+                    if (i >= uNumSources) break;
+
+                    vec3 source = uSourcePos[i];
+                    float strength = uSourceStrength[i];
+
+                    // Distance from source with upward drift
+                    vec3 offset = pos - source;
+                    offset.y -= time * 0.3 * strength; // Rising smoke
+                    float dist = length(offset);
+
+                    // Base density falloff
+                    float falloff = exp(-dist * dist * 0.15) * strength;
+
+                    // Add turbulent noise
+                    vec3 noisePos = offset * uNoiseScale + vec3(0.0, time * 0.5, 0.0);
+                    float noise = fbm(noisePos, 5);
+                    noise = pow(noise, 1.5);
+
+                    // Add swirling motion
+                    float angle = time * 0.3 + float(i) * 0.7;
+                    mat3 swirl = mat3(
+                        cos(angle), 0.0, sin(angle),
+                        0.0, 1.0, 0.0,
+                        -sin(angle), 0.0, cos(angle)
+                    );
+                    noise *= fbm(swirl * noisePos * 0.8, 4);
+
+                    density += falloff * noise * uNoiseStrength;
+                }
+
+                // Mouse interaction - add smoke at mouse position
+                if (uMouseActive) {
+                    vec2 screenPos = vUv;
+                    vec2 mouseUV = uMouse;
+
+                    // Convert mouse to world approximation (center of volume)
+                    vec3 mouseWorld = vec3(
+                        (mouseUV.x - 0.5) * 6.0,
+                        mouseUV.y * 4.0 - 1.0,
+                        0.0
+                    );
+
+                    float mouseDist = length(pos - mouseWorld);
+                    float mouseFalloff = exp(-mouseDist * mouseDist * 0.5);
+                    vec3 mouseNoisePos = pos * 2.0 + vec3(uTime * 0.2);
+                    float mouseNoise = fbm(mouseNoisePos, 4);
+
+                    density += mouseFalloff * mouseNoise * uMouseStrength;
+                }
+
+                return density * uDensity;
+            }
+
+            // ============================================================
+            // RAYMARCHING
+            // ============================================================
+
+            float raymarch(vec3 ro, vec3 rd, float maxDist) {
+                float t = 0.0;
+                float density = 0.0;
+                int maxSteps = 64;
+
+                for (int i = 0; i < 64; i++) {
+                    if (i >= maxSteps || density > 0.95) break;
+
+                    vec3 pos = ro + rd * t;
+                    float d = getSmokeDensity(pos, uTime);
+
+                    density += d * uStepSize * (1.0 - density);
+                    t += uStepSize;
+
+                    if (t > maxDist) break;
+                }
+
+                return density;
+            }
+
+            // ============================================================
+            // LIGHTING
+            // ============================================================
+
+            vec3 calculateLighting(vec3 pos, float density, float time) {
+                vec3 lightDir = normalize(uLightPos - pos);
+                float lightDist = length(uLightPos - pos);
+
+                // Light attenuation
+                float attenuation = 1.0 / (1.0 + lightDist * 0.1);
+
+                // Shadow raymarch towards light
+                float shadowT = 0.0;
+                float shadowDensity = 0.0;
+                float shadowStep = 0.15;
+
+                for (int i = 0; i < 16; i++) {
+                    if (i >= 16 || shadowDensity > 0.9) break;
+
+                    vec3 shadowPos = pos + lightDir * shadowT;
+                    float d = getSmokeDensity(shadowPos, time) * uAbsorption;
+
+                    shadowDensity += d * shadowStep * (1.0 - shadowDensity);
+                    shadowT += shadowStep;
+                }
+
+                float lightTransmittance = 1.0 - shadowDensity;
+
+                // Phase function (Henyey-Greenstein approximation)
+                float cosAngle = dot(lightDir, normalize(uCameraPos - pos));
+                float g = 0.3; // Anisotropy factor
+                float phase = (1.0 - g * g) / (4.0 * 3.14159 * pow(1.0 + g * g - 2.0 * g * cosAngle, 1.5));
+
+                // Scattering
+                vec3 scattered = uLightColor * lightTransmittance * phase * uScattering * density;
+
+                // Absorption
+                vec3 absorbed = vec3(1.0) * density * uAbsorption;
+
+                // Ambient
+                vec3 ambient = vec3(0.1, 0.12, 0.15) * density;
+
+                return scattered + absorbed + ambient;
+            }
+
+            // ============================================================
+            // MAIN
+            // ============================================================
+
+            void main() {
+                // Ray setup
+                vec3 ro = uCameraPos;
+                vec3 rd = normalize(vWorldPos - uCameraPos);
+
+                // Find intersection with bounding box
+                float tMin = 0.0;
+                float tMax = 20.0;
+
+                vec3 boxMin = vec3(-3.0, -1.0, -3.0);
+                vec3 boxMax = vec3(3.0, 4.0, 3.0);
+
+                vec3 invDir = 1.0 / rd;
+                vec3 t0s = (boxMin - ro) * invDir;
+                vec3 t1s = (boxMax - ro) * invDir;
+
+                vec3 tmin = min(t0s, t1s);
+                vec3 tmax = max(t0s, t1s);
+
+                tMin = max(max(tmin.x, tmin.y), tmin.z);
+                tMax = min(min(tmax.x, tmax.y), tmax.z);
+
+                if (tMax < tMin || tMax < 0.0) {
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+                    return;
+                }
+
+                tMin = max(tMin, 0.0);
+
+                // Raymarch through volume
+                float totalDensity = 0.0;
+                float t = tMin;
+                float stepSize = uStepSize;
+                int maxSteps = int(ceil((tMax - tMin) / stepSize));
+                maxSteps = min(maxSteps, 80);
+
+                vec3 accumulatedColor = vec3(0.0);
+                float transmittance = 1.0;
+
+                for (int i = 0; i < 80; i++) {
+                    if (i >= maxSteps || transmittance < 0.01) break;
+
+                    vec3 pos = ro + rd * t;
+                    float density = getSmokeDensity(pos, uTime);
+
+                    if (density > 0.001) {
+                        // Calculate color based on density
+                        vec3 smokeColor = mix(uSmokeColor1, uSmokeColor2, density * 2.0);
+
+                        // Lighting
+                        vec3 lighting = calculateLighting(pos, density, uTime);
+                        vec3 sampleColor = smokeColor * lighting;
+
+                        // Accumulate using Beer-Lambert law
+                        float absorption = density * uAbsorption * stepSize;
+                        float sampleTransmittance = exp(-absorption);
+
+                        // Front-to-back compositing
+                        accumulatedColor += transmittance * (1.0 - sampleTransmittance) * sampleColor;
+                        transmittance *= sampleTransmittance;
+                    }
+
+                    t += stepSize;
+                }
+
+                float alpha = 1.0 - transmittance;
+
+                // Tone mapping
+                accumulatedColor = accumulatedColor / (accumulatedColor + vec3(1.0));
+                accumulatedColor = pow(accumulatedColor, vec3(1.0 / 2.2));
+
+                gl_FragColor = vec4(accumulatedColor, alpha);
+            }
+        `;
+
+        // ============================================================
+        // SCENE SETUP
+        // ============================================================
+
+        let scene, camera, renderer;
+        let smokeMesh;
+        let mouse = new THREE.Vector2(0.5, 0.5);
+        let mouseActive = false;
+        let targetMouseActive = false;
+
+        const params = {
+            density: 2.5,
+            absorption: 0.8,
+            scattering: 1.2,
+            noiseScale: 1.5,
+            noiseStrength: 1.0,
+            stepSize: 0.08,
+            lightPosX: 2.0,
+            lightPosY: 3.0,
+            lightPosZ: 2.0,
+            lightColor: '#ffaa88',
+            smokeColor1: '#8899aa',
+            smokeColor2: '#ddeeff',
+            mouseRadius: 1.5,
+            mouseStrength: 2.0,
+            source1Strength: 1.0,
+            source2Strength: 0.7,
+            source3Strength: 0.5
+        };
+
+        const sourcePositions = [
+            new THREE.Vector3(-1.5, 0.0, 0.5),
+            new THREE.Vector3(1.2, 0.0, -0.8),
+            new THREE.Vector3(0.0, 0.0, 1.5)
+        ];
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.5, 5);
+            camera.lookAt(0, 1, 0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setClearColor(0x000000, 0);
+            document.body.appendChild(renderer.domElement);
+
+            // Create volume mesh
+            createSmokeVolume();
+
+            // GUI
+            setupGUI();
+
+            // Events
+            window.addEventListener('resize', onResize);
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mousedown', () => targetMouseActive = true);
+            window.addEventListener('mouseup', () => targetMouseActive = false);
+            window.addEventListener('wheel', onWheel);
+
+            animate();
+        }
+
+        function createSmokeVolume() {
+            const geometry = new THREE.BoxGeometry(6, 5, 6);
+
+            const material = new THREE.ShaderMaterial({
+                vertexShader,
+                fragmentShader,
+                transparent: true,
+                depthWrite: false,
+                side: THREE.BackSide
+            });
+
+            smokeMesh = new THREE.Mesh(geometry, material);
+            smokeMesh.position.set(0, 1.5, 0);
+            scene.add(smokeMesh);
+            initUniforms();
+        }
+
+        function setupGUI() {
+            const gui = new GUI({ title: 'Smoke Parameters' });
+
+            const smokeFolder = gui.addFolder('Smoke');
+            smokeFolder.add(params, 'density', 0.1, 5.0).name('Density');
+            smokeFolder.add(params, 'absorption', 0.1, 2.0).name('Absorption');
+            smokeFolder.add(params, 'scattering', 0.1, 3.0).name('Scattering');
+            smokeFolder.add(params, 'noiseScale', 0.5, 4.0).name('Noise Scale');
+            smokeFolder.add(params, 'noiseStrength', 0.1, 2.0).name('Noise Strength');
+            smokeFolder.add(params, 'stepSize', 0.03, 0.2).name('Step Size');
+
+            const colorFolder = gui.addFolder('Colors');
+            colorFolder.addColor(params, 'smokeColor1').name('Smoke Color 1');
+            colorFolder.addColor(params, 'smokeColor2').name('Smoke Color 2');
+            colorFolder.addColor(params, 'lightColor').name('Light Color');
+
+            const lightFolder = gui.addFolder('Light Position');
+            lightFolder.add(params, 'lightPosX', -5, 5).name('X');
+            lightFolder.add(params, 'lightPosY', 0, 8).name('Y');
+            lightFolder.add(params, 'lightPosZ', -5, 5).name('Z');
+
+            const sourceFolder = gui.addFolder('Smoke Sources');
+            sourceFolder.add(params, 'source1Strength', 0, 2).name('Source 1');
+            sourceFolder.add(params, 'source2Strength', 0, 2).name('Source 2');
+            sourceFolder.add(params, 'source3Strength', 0, 2).name('Source 3');
+
+            const mouseFolder = gui.addFolder('Mouse Interaction');
+            mouseFolder.add(params, 'mouseRadius', 0.5, 3.0).name('Radius');
+            mouseFolder.add(params, 'mouseStrength', 0, 4).name('Strength');
+
+            smokeFolder.open();
+        }
+
+        function updateUniforms(time) {
+            if (!smokeMesh) return;
+
+            const sourceStrengths = [
+                params.source1Strength,
+                params.source2Strength,
+                params.source3Strength
+            ];
+
+            const lightColor = new THREE.Color(params.lightColor);
+            const smokeColor1 = new THREE.Color(params.smokeColor1);
+            const smokeColor2 = new THREE.Color(params.smokeColor2);
+
+            smokeMesh.material.uniforms.uTime.value = time;
+            smokeMesh.material.uniforms.uCameraPos.value.copy(camera.position);
+            smokeMesh.material.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+            smokeMesh.material.uniforms.uLightPos.value.set(params.lightPosX, params.lightPosY, params.lightPosZ);
+            smokeMesh.material.uniforms.uLightColor.value.copy(lightColor);
+            smokeMesh.material.uniforms.uDensity.value = params.density;
+            smokeMesh.material.uniforms.uAbsorption.value = params.absorption;
+            smokeMesh.material.uniforms.uScattering.value = params.scattering;
+            smokeMesh.material.uniforms.uNoiseScale.value = params.noiseScale;
+            smokeMesh.material.uniforms.uNoiseStrength.value = params.noiseStrength;
+            smokeMesh.material.uniforms.uStepSize.value = params.stepSize;
+            smokeMesh.material.uniforms.uSmokeColor1.value.copy(smokeColor1);
+            smokeMesh.material.uniforms.uSmokeColor2.value.copy(smokeColor2);
+            smokeMesh.material.uniforms.uMouse.value.copy(mouse);
+            smokeMesh.material.uniforms.uMouseRadius.value = params.mouseRadius;
+            smokeMesh.material.uniforms.uMouseStrength.value = params.mouseStrength;
+            smokeMesh.material.uniforms.uMouseActive.value = mouseActive;
+
+            // Update source positions and strengths
+            for (let i = 0; i < 3; i++) {
+                if (i < sourcePositions.length) {
+                    smokeMesh.material.uniforms.uSourcePos.value[i].copy(sourcePositions[i]);
+                    smokeMesh.material.uniforms.uSourceStrength.value[i] = sourceStrengths[i];
+                }
+            }
+            smokeMesh.material.uniforms.uNumSources.value = 3;
+        }
+
+        function initUniforms() {
+            smokeMesh.material.uniforms = {
+                uTime: { value: 0 },
+                uCameraPos: { value: new THREE.Vector3() },
+                uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                uLightPos: { value: new THREE.Vector3(params.lightPosX, params.lightPosY, params.lightPosZ) },
+                uLightColor: { value: new THREE.Color(params.lightColor) },
+                uDensity: { value: params.density },
+                uAbsorption: { value: params.absorption },
+                uScattering: { value: params.scattering },
+                uNoiseScale: { value: params.noiseScale },
+                uNoiseStrength: { value: params.noiseStrength },
+                uStepSize: { value: params.stepSize },
+                uSmokeColor1: { value: new THREE.Color(params.smokeColor1) },
+                uSmokeColor2: { value: new THREE.Color(params.smokeColor2) },
+                uNumSources: { value: 3 },
+                uSourcePos: { value: [
+                    new THREE.Vector3().copy(sourcePositions[0]),
+                    new THREE.Vector3().copy(sourcePositions[1]),
+                    new THREE.Vector3().copy(sourcePositions[2]),
+                    new THREE.Vector3(),
+                    new THREE.Vector3(),
+                    new THREE.Vector3(),
+                    new THREE.Vector3(),
+                    new THREE.Vector3()
+                ]},
+                uSourceStrength: { value: [params.source1Strength, params.source2Strength, params.source3Strength, 0, 0, 0, 0, 0] },
+                uMouse: { value: new THREE.Vector2(0.5, 0.5) },
+                uMouseRadius: { value: params.mouseRadius },
+                uMouseStrength: { value: params.mouseStrength },
+                uMouseActive: { value: false }
+            };
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(e) {
+            mouse.x = e.clientX / window.innerWidth;
+            mouse.y = 1.0 - e.clientY / window.innerHeight;
+        }
+
+        function onWheel(e) {
+            camera.position.z += e.deltaY * 0.005;
+            camera.position.z = Math.max(2, Math.min(12, camera.position.z));
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            mouseActive = targetMouseActive;
+
+            const time = performance.now() * 0.001;
+            updateUniforms(time);
+
+            // Slow camera rotation
+            const angle = time * 0.1;
+            const radius = camera.position.z;
+            camera.position.x = Math.sin(angle) * radius * 0.3;
+            camera.position.z = radius;
+            camera.lookAt(0, 1, 0);
+
+            renderer.render(scene, camera);
+        }
+
+        init();

@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>多米诺骨牌连锁反应</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+
+    #ui {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    #tip {
+      background: rgba(0,0,0,0.6);
+      color: #e0e0e0;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #stats {
+      background: rgba(0,0,0,0.6);
+      color: #a0d8ef;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #controls {
+      display: flex;
+      gap: 10px;
+    }
+
+    #launchBtn, #resetBtn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(8px);
+    }
+
+    #launchBtn {
+      background: linear-gradient(135deg, #e94560, #c23152);
+      color: white;
+    }
+
+    #launchBtn:hover { transform: scale(1.05); box-shadow: 0 4px 20px rgba(233,69,96,0.4); }
+    #launchBtn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    #resetBtn {
+      background: rgba(255,255,255,0.15);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    #resetBtn:hover { background: rgba(255,255,255,0.25); }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div id="tip">点击"发射"让球滚向多米诺骨牌</div>
+<div id="stats">骨牌: <span id="count">0</span> | 倒下: <span id="fallen">0</span></div>
+    <div id="controls">
+      <button id="launchBtn">发射</button>
+      <button id="resetBtn">重置</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ─── Renderer & Scene ───────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    scene.fog = new THREE.FogExp2(0x1a1a2e, 0.025);
+
+    // ─── Camera ─────────────────────────────────────────────────────────────
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 8, 20);
+
+    // ─── OrbitControls ───────────────────────────────────────────────────────
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 2;
+    controls.maxDistance = 60;
+    controls.maxPolarAngle = Math.PI / 2.2;
+    controls.minPolarAngle = Math.PI / 8;
+    controls.target.set(0, 1.5, 0);
+
+    // ─── Lights ──────────────────────────────────────────────────────────────
+    const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
+    dirLight.position.set(10, 20, 10);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 100;
+    dirLight.shadow.camera.left = -30;
+    dirLight.shadow.camera.right = 30;
+    dirLight.shadow.camera.top = 30;
+    dirLight.shadow.camera.bottom = -30;
+    dirLight.shadow.bias = -0.0005;
+    scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0x6699cc, 0.4);
+    fillLight.position.set(-10, 5, -10);
+    scene.add(fillLight);
+
+    // ─── Ground ──────────────────────────────────────────────────────────────
+    const groundGeo = new THREE.PlaneGeometry(120, 120);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x16213e,
+      roughness: 0.85,
+      metalness: 0.1,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Grid
+    const gridHelper = new THREE.GridHelper(60, 60, 0x304060, 0x203050);
+    gridHelper.position.y = 0.002;
+    scene.add(gridHelper);
+
+    // ─── Domino Path ─────────────────────────────────────────────────────────
+    // Create a winding path for dominoes
+    const pathPoints = [
+      new THREE.Vector3(-18, 0, 8),
+      new THREE.Vector3(-10, 0, 8),
+      new THREE.Vector3(-5, 0, 6),
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(5, 0, -4),
+      new THREE.Vector3(10, 0, -2),
+      new THREE.Vector3(14, 0, 4),
+      new THREE.Vector3(14, 0, 10),
+      new THREE.Vector3(10, 0, 14),
+      new THREE.Vector3(4, 0, 14),
+      new THREE.Vector3(-2, 0, 14),
+      new THREE.Vector3(-8, 0, 10),
+    ];
+
+    const curve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.5);
+
+    // ─── Domino Colors ────────────────────────────────────────────────────────
+    const dominoColors = [
+      0xe94560, 0xf5a623, 0xf7d716, 0x7ed321,
+      0x50e3c2, 0x4a90e2, 0x7e57c2, 0xec407a,
+      0xff7043, 0x26c6da, 0x9ccc65, 0xffca28,
+    ];
+
+    // ─── Domino Setup ─────────────────────────────────────────────────────────
+    const dominoGeo = new THREE.BoxGeometry(0.15, 0.6, 0.4);
+    const dominoSpacing = 0.55;
+    const dominoes = [];
+    let chainActive = false;
+
+    const dominoGroup = new THREE.Group();
+    scene.add(dominoGroup);
+
+    function createDominoes() {
+      // Clear existing
+      dominoes.forEach(d => {
+        dominoGroup.remove(d.mesh);
+        d.mesh.geometry.dispose();
+        d.mesh.material.dispose();
+      });
+      dominoes.length = 0;
+
+      const totalLength = curve.getLength();
+      const count = Math.floor(totalLength / dominoSpacing);
+
+      for (let i = 0; i < count; i++) {
+        const t = (i / count) * 0.98 + 0.01;
+        const point = curve.getPointAt(t);
+        const tangent = curve.getTangentAt(t);
+
+        // Determine upright direction (perpendicular to path in XZ plane)
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+        // Create domino mesh
+        const color = dominoColors[i % dominoColors.length];
+        const mat = new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.3,
+          metalness: 0.2,
+          emissive: color,
+          emissiveIntensity: 0.05,
+        });
+        const mesh = new THREE.Mesh(dominoGeo, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        // Position: bottom of domino on ground
+        mesh.position.copy(point);
+        mesh.position.y = 0.3;
+        // Tilt upright domino slightly in path direction
+        mesh.rotation.y = Math.atan2(tangent.x, tangent.z);
+
+        dominoGroup.add(mesh);
+
+        // Domino physics state
+        dominoes.push({
+          mesh,
+          angle: 0,                    // 0 = upright, PI/2 = fully fallen
+          angularVelocity: 0,
+          tipping: false,
+          fallen: false,
+          t,
+          basePos: point.clone(),
+          normal: normal.clone(),
+          tangent: tangent.clone(),
+          colorIndex: i % dominoColors.length,
+        });
+      }
+
+      updateCountDisplay();
+    }
+
+    createDominoes();
+
+    // ─── Ball ─────────────────────────────────────────────────────────────────
+    const ballGeo = new THREE.SphereGeometry(0.3, 32, 32);
+    const ballMat = new THREE.MeshStandardMaterial({
+      color: 0xf5f5f5,
+      roughness: 0.2,
+      metalness: 0.8,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.1,
+    });
+    const ball = new THREE.Mesh(ballGeo, ballMat);
+    ball.castShadow = true;
+    ball.receiveShadow = true;
+
+    // Start position: slightly before the first domino
+    const startPoint = curve.getPointAt(0.02);
+    const startTangent = curve.getTangentAt(0.02);
+    ball.position.copy(startPoint);
+    ball.position.y = 0.3;
+    scene.add(ball);
+
+    // Ball physics
+    const ballState = {
+      rolling: false,
+      speed: 4.5,
+      t: 0.02,
+    };
+
+    // ─── Path Visualization ────────────────────────────────────────────────────
+    // Small markers along path
+    const markerGeo = new THREE.SphereGeometry(0.04, 8, 8);
+    const markerMat = new THREE.MeshBasicMaterial({ color: 0x304060, transparent: true, opacity: 0.5 });
+    for (let i = 0; i < pathPoints.length; i++) {
+      const m = new THREE.Mesh(markerGeo, markerMat);
+      m.position.copy(pathPoints[i]);
+      m.position.y = 0.05;
+      scene.add(m);
+    }
+
+    // ─── Physics ──────────────────────────────────────────────────────────────
+    const GRAVITY = 9.8;
+    const dominoHeight = 0.6;
+    const tippingThreshold = Math.PI / 4; // PI/4 radians
+
+    function updateDominoPhysics(dt) {
+      let fallenCount = 0;
+
+      for (let i = 0; i < dominoes.length; i++) {
+        const d = dominoes[i];
+
+        if (d.fallen) {
+          // Already fallen, settle
+          if (d.angle < Math.PI / 2) {
+            d.angle = Math.PI / 2;
+            d.angularVelocity = 0;
+            updateDominoMesh(d);
+          }
+          fallenCount++;
+          continue;
+        }
+
+        if (d.tipping) {
+          // Apply gravity acceleration
+          const torque = GRAVITY * Math.sin(d.angle) * 0.5;
+          d.angularVelocity += torque * dt;
+          d.angularVelocity *= 0.98; // damping
+          d.angle += d.angularVelocity * dt;
+
+          if (d.angle >= Math.PI / 2) {
+            d.angle = Math.PI / 2;
+            d.fallen = true;
+            fallenCount++;
+          }
+
+          updateDominoMesh(d);
+
+          // Check if this domino can tip the next one
+          if (i + 1 < dominoes.length) {
+            const next = dominoes[i + 1];
+            if (!next.tipping && !next.fallen && d.angle > tippingThreshold) {
+              const contactAngle = d.angle - Math.PI / 2;
+              const reachDistance = Math.abs(Math.sin(contactAngle)) * dominoHeight * 0.5;
+              const separation = dominoSpacing;
+              if (reachDistance >= separation * 0.7) {
+                next.tipping = true;
+                next.angularVelocity = d.angularVelocity * 0.85;
+              }
+            }
+          }
+        } else {
+          // Check if previous domino tips this one
+          if (i > 0) {
+            const prev = dominoes[i - 1];
+            if (prev.tipping && prev.angle > tippingThreshold && !d.tipping) {
+              // Check contact
+              const contactAngle = prev.angle - Math.PI / 2;
+              const reachDistance = Math.abs(Math.sin(contactAngle)) * dominoHeight * 0.5;
+              if (reachDistance >= dominoSpacing * 0.7) {
+                d.tipping = true;
+                d.angularVelocity = prev.angularVelocity * 0.85;
+              }
+            }
+          }
+        }
+      }
+
+      document.getElementById('fallen').textContent = fallenCount;
+    }
+
+    function updateDominoMesh(d) {
+      const mesh = d.mesh;
+      // Rotation around bottom edge: pivot point is at ground level
+      // The domino pivots around its bottom corner in the fall direction
+      const pivotOffset = new THREE.Vector3(0, 0, -0.075).applyAxisAngle(new THREE.Vector3(1, 0, 0), -d.angle);
+      // Simplified: just rotate mesh around local Y + lean
+
+      // Fall direction is perpendicular to path
+      const fallAxis = d.normal.clone();
+      fallAxis.y = 0;
+      fallAxis.normalize();
+
+      mesh.rotation.set(0, 0, 0);
+      mesh.updateMatrixWorld();
+
+      // Use quaternion for clean rotation
+      const axis = new THREE.Vector3(d.normal.x, 0, d.normal.z).normalize();
+      const q = new THREE.Quaternion().setFromAxisAngle(axis, d.angle);
+      const baseQ = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(0, Math.atan2(d.tangent.x, d.tangent.z), 0)
+      );
+      mesh.quaternion.copy(baseQ).premultiply(q);
+
+      // Adjust position: pivot at bottom corner
+      const halfHeight = dominoHeight / 2;
+      const halfDepth = 0.2;
+      mesh.position.copy(d.basePos);
+      mesh.position.y = halfHeight * Math.cos(d.angle);
+      mesh.position.addScaledVector(
+        new THREE.Vector3(d.normal.x, 0, d.normal.z).normalize(),
+        halfDepth * Math.sin(d.angle)
+      );
+    }
+
+    function updateBall(dt) {
+      if (!ballState.rolling) return;
+
+      // Move ball along path
+      ballState.t += (ballState.speed * dt) / curve.getLength();
+
+      if (ballState.t >= 0.99) {
+        ballState.rolling = false;
+        ballState.t = 0.99;
+        document.getElementById('tip').textContent = 'Ball has reached the end!';
+        return;
+      }
+
+      const point = curve.getPointAt(ballState.t);
+      const tangent = curve.getTangentAt(ballState.t);
+
+      ball.position.copy(point);
+      ball.position.y = 0.3;
+
+      // Roll rotation
+      ball.rotation.x += (ballState.speed * dt) / 0.3;
+
+      // Check if ball hit the first domino
+      if (ballState.t > 0.025 && !dominoes[0].tipping) {
+        dominoes[0].tipping = true;
+        dominoes[0].angularVelocity = 1.5;
+        document.getElementById('tip').textContent = 'Chain reaction started!';
+      }
+    }
+
+    // ─── Camera Follow ────────────────────────────────────────────────────────
+    let followIndex = 0;
+    let cameraLerpTarget = new THREE.Vector3(0, 1.5, 0);
+    let cameraLerpPos = new THREE.Vector3(0, 8, 20);
+
+    function updateCamera(dt) {
+      if (chainActive) {
+        // Find the furthest tipped domino
+        let maxTipped = 0;
+        for (let i = 0; i < dominoes.length; i++) {
+          if (dominoes[i].tipping || dominoes[i].fallen) {
+            maxTipped = i;
+          }
+        }
+
+        // Look ahead a bit
+        const lookAhead = Math.min(maxTipped + 3, dominoes.length - 1);
+        const targetDomino = dominoes[lookAhead];
+        if (targetDomino) {
+          const targetPos = targetDomino.mesh.position.clone();
+          targetPos.y = 1.5;
+
+          cameraLerpTarget.lerp(targetPos, dt * 2.5);
+
+          const offset = new THREE.Vector3(-3, 6, 8);
+          const desiredCamPos = cameraLerpTarget.clone().add(offset);
+          cameraLerpPos.lerp(desiredCamPos, dt * 1.5);
+
+          camera.position.copy(cameraLerpPos);
+          controls.target.lerp(cameraLerpTarget, dt * 3);
+        }
+
+        // Check if chain finished
+        const allFallen = dominoes.every(d => d.fallen);
+        if (allFallen) {
+          chainActive = false;
+          document.getElementById('tip').textContent = 'Chain reaction complete! All dominoes fell.';
+          document.getElementById('launchBtn').disabled = false;
+        }
+      } else {
+        // Return to default orbit
+        cameraLerpPos.lerp(new THREE.Vector3(0, 8, 20), dt * 0.5);
+        cameraLerpTarget.lerp(new THREE.Vector3(0, 1.5, 0), dt * 0.5);
+        camera.position.copy(cameraLerpPos);
+        controls.target.lerp(cameraLerpTarget, dt * 1);
+      }
+
+      controls.update();
+    }
+
+    // ─── Launch & Reset ───────────────────────────────────────────────────────
+    function launch() {
+      if (ballState.rolling) return;
+
+      ballState.rolling = true;
+      ballState.t = 0.02;
+      chainActive = true;
+      document.getElementById('launchBtn').disabled = true;
+      document.getElementById('tip').textContent = 'Ball rolling...';
+    }
+
+    function reset() {
+      ballState.rolling = false;
+      ballState.t = 0.02;
+      chainActive = false;
+
+      // Reset ball
+      const startPoint = curve.getPointAt(0.02);
+      ball.position.copy(startPoint);
+      ball.position.y = 0.3;
+      ball.rotation.set(0, 0, 0);
+
+      // Reset dominoes
+      createDominoes();
+
+      // Reset camera
+      cameraLerpPos.set(0, 8, 20);
+      cameraLerpTarget.set(0, 1.5, 0);
+      camera.position.copy(cameraLerpPos);
+      controls.target.set(0, 1.5, 0);
+
+      document.getElementById('launchBtn').disabled = false;
+      document.getElementById('tip').textContent = 'Click "Launch" to roll the ball into the dominoes';
+      document.getElementById('fallen').textContent = '0';
+    }
+
+    function updateCountDisplay() {
+      document.getElementById('count').textContent = dominoes.length;
+      document.getElementById('fallen').textContent = '0';
+    }
+
+    // ─── Events ───────────────────────────────────────────────────────────────
+    document.getElementById('launchBtn').addEventListener('click', launch);
+    document.getElementById('resetBtn').addEventListener('click', reset);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ─── Animation Loop ───────────────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const dt = Math.min(clock.getDelta(), 0.05);
+
+      updateBall(dt);
+      updateDominoPhysics(dt);
+      updateCamera(dt);
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ─── Expose to Window ─────────────────────────────────────────────────────
+    window.scene = scene;
+    window.camera = camera;
+    window.renderer = renderer;
+    window.controls = controls;
+    window.dominoes = dominoes;
+    window.launch = launch;
+    window.reset = reset;
+
+    console.log('Domino Chain loaded:', dominoes.length, 'dominoes');
+  </script>
+</body>
+</html>

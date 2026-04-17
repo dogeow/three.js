@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2D 流体模拟</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0f; overflow: hidden; font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace; }
+    canvas { display: block; }
+
+    .tip-box {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background: rgba(10, 10, 20, 0.85);
+      border: 1px solid rgba(80, 200, 255, 0.2);
+      border-radius: 8px;
+      padding: 14px 18px;
+      color: rgba(200, 220, 255, 0.85);
+      font-size: 12px;
+      line-height: 1.6;
+      backdrop-filter: blur(12px);
+      max-width: 240px;
+      pointer-events: none;
+    }
+    .tip-box .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(80, 200, 255, 0.9);
+      margin-bottom: 6px;
+      letter-spacing: 0.05em;
+    }
+    .tip-box .row { margin: 2px 0; }
+    .tip-box .key {
+      display: inline-block;
+      background: rgba(80, 200, 255, 0.12);
+      border: 1px solid rgba(80, 200, 255, 0.25);
+      border-radius: 3px;
+      padding: 0 5px;
+      font-size: 10px;
+      color: rgba(80, 200, 255, 0.8);
+    }
+
+    .panel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(10, 10, 20, 0.85);
+      border: 1px solid rgba(80, 200, 255, 0.2);
+      border-radius: 8px;
+      padding: 14px 18px;
+      color: rgba(200, 220, 255, 0.85);
+      font-size: 11px;
+      line-height: 1.8;
+      backdrop-filter: blur(12px);
+      min-width: 180px;
+      pointer-events: none;
+    }
+    .panel .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(80, 200, 255, 0.9);
+      margin-bottom: 8px;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid rgba(80, 200, 255, 0.15);
+      padding-bottom: 6px;
+    }
+    .panel .stat {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .panel .stat-label { color: rgba(160, 180, 210, 0.7); }
+    .panel .stat-value { color: rgba(80, 200, 255, 0.9); font-weight: 500; }
+
+    .stats-bar {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10, 10, 20, 0.75);
+      border: 1px solid rgba(80, 200, 255, 0.15);
+      border-radius: 6px;
+      padding: 6px 16px;
+      color: rgba(120, 160, 200, 0.7);
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+<div class="tip-box">
+    <div class="title">流体模拟</div>
+    <div class="row"><span class="key">拖动</span> 注入速度和染料</div>
+    <div class="row"><span class="key">滚轮</span> 缩放相机</div>
+    <div class="row"><span class="key">右键拖动</span> 旋转视角</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">模拟</div>
+    <div class="stat"><span class="stat-label">帧率</span><span class="stat-value" id="fps">--</span></div>
+    <div class="stat"><span class="stat-label">迭代</span><span class="stat-value" id="iters">--</span></div>
+    <div class="stat"><span class="stat-label">纹理大小</span><span class="stat-value" id="texSize">--</span></div>
+    <div class="stat"><span class="stat-label">粒子数</span><span class="stat-value" id="particles">--</span></div>
+  </div>
+
+  <div class="stats-bar" id="statsBar">2D 欧拉流体 // 纳维-斯托克斯方程</div>
+
+  <!-- ===================== SHADERS ===================== -->
+
+  <!-- Base vertex shader -->
+  <script id="baseVert" type="x-shader/x-vertex">
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  </script>
+
+  <!-- Clear texture (initialize) -->
+  <script id="clearFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uTexture;
+    uniform vec3 uColor;
+    uniform float uScale;
+    varying vec2 vUv;
+    void main() {
+      vec4 tex = texture2D(uTexture, vUv);
+      gl_FragColor = tex * uScale + vec4(uColor, 0.0);
+    }
+  </script>
+
+  <!-- Advection shader -->
+  <script id="advectFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uSource;
+    uniform vec2 uTexelSize;
+    uniform float uDt;
+    uniform float uDissipation;
+    varying vec2 vUv;
+    void main() {
+      vec2 vel = texture2D(uVelocity, vUv).xy;
+      vec2 pos = vUv - vel * uTexelSize * uDt;
+      pos = clamp(pos, uTexelSize, 1.0 - uTexelSize);
+      gl_FragColor = uDissipation * texture2D(uSource, pos);
+    }
+  </script>
+
+  <!-- Divergence shader -->
+  <script id="divergenceFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexelSize;
+    varying vec2 vUv;
+    void main() {
+      float L = texture2D(uVelocity, vUv - vec2(uTexelSize.x, 0.0)).x;
+      float R = texture2D(uVelocity, vUv + vec2(uTexelSize.x, 0.0)).x;
+      float B = texture2D(uVelocity, vUv - vec2(0.0, uTexelSize.y)).y;
+      float T = texture2D(uVelocity, vUv + vec2(0.0, uTexelSize.y)).y;
+      float div = 0.5 * (R - L + T - B);
+      gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
+    }
+  </script>
+
+  <!-- Pressure Jacobi iteration -->
+  <script id="pressureFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uPressure;
+    uniform sampler2D uDivergence;
+    uniform vec2 uTexelSize;
+    varying vec2 vUv;
+    void main() {
+      float L = texture2D(uPressure, vUv - vec2(uTexelSize.x, 0.0)).x;
+      float R = texture2D(uPressure, vUv + vec2(uTexelSize.x, 0.0)).x;
+      float B = texture2D(uPressure, vUv - vec2(0.0, uTexelSize.y)).x;
+      float T = texture2D(uPressure, vUv + vec2(0.0, uTexelSize.y)).x;
+      float div = texture2D(uDivergence, vUv).x;
+      float pressure = (L + R + B + T - div) * 0.25;
+      gl_FragColor = vec4(pressure, 0.0, 0.0, 1.0);
+    }
+  </script>
+
+  <!-- Gradient subtraction (make velocity divergence-free) -->
+  <script id="gradientSubtractFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uPressure;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexelSize;
+    varying vec2 vUv;
+    void main() {
+      float L = texture2D(uPressure, vUv - vec2(uTexelSize.x, 0.0)).x;
+      float R = texture2D(uPressure, vUv + vec2(uTexelSize.x, 0.0)).x;
+      float B = texture2D(uPressure, vUv - vec2(0.0, uTexelSize.y)).x;
+      float T = texture2D(uPressure, vUv + vec2(0.0, uTexelSize.y)).x;
+      vec2 vel = texture2D(uVelocity, vUv).xy;
+      vel -= 0.5 * vec2(R - L, T - B);
+      gl_FragColor = vec4(vel, 0.0, 1.0);
+    }
+  </script>
+
+  <!-- Splat velocity/dye -->
+  <script id="splatFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uTarget;
+    uniform vec2 uPoint;
+    uniform vec3 uColor;
+    uniform float uRadius;
+    varying vec2 vUv;
+    void main() {
+      vec2 p = vUv - uPoint;
+      p.x *= 1.0; // aspect ratio correction not needed per-field
+      float d = dot(p, p);
+      float s = exp(-d / uRadius);
+      vec4 base = texture2D(uTarget, vUv);
+      gl_FragColor = vec4(base.rgb + s * uColor, 1.0);
+    }
+  </script>
+
+  <!-- Curl (for vorticity) -->
+  <script id="curlFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexelSize;
+    varying vec2 vUv;
+    void main() {
+      float L = texture2D(uVelocity, vUv - vec2(uTexelSize.x, 0.0)).y;
+      float R = texture2D(uVelocity, vUv + vec2(uTexelSize.x, 0.0)).y;
+      float B = texture2D(uVelocity, vUv - vec2(0.0, uTexelSize.y)).x;
+      float T = texture2D(uVelocity, vUv + vec2(0.0, uTexelSize.y)).x;
+      float curl = R - L - T + B;
+      gl_FragColor = vec4(curl * 0.5, 0.0, 0.0, 1.0);
+    }
+  </script>
+
+  <!-- Vorticity confinement -->
+  <script id="vorticityFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uCurl;
+    uniform float uCurlStrength;
+    uniform float uDt;
+    uniform vec2 uTexelSize;
+    varying vec2 vUv;
+    void main() {
+      float L = texture2D(uCurl, vUv - vec2(uTexelSize.x, 0.0)).x;
+      float R = texture2D(uCurl, vUv + vec2(uTexelSize.x, 0.0)).x;
+      float B = texture2D(uCurl, vUv - vec2(0.0, uTexelSize.y)).x;
+      float T = texture2D(uCurl, vUv + vec2(0.0, uTexelSize.y)).x;
+      float C = texture2D(uCurl, vUv).x;
+
+      vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+      float len = length(force) + 0.0001;
+      force = force / len * C;
+      force *= uCurlStrength;
+
+      vec2 vel = texture2D(uVelocity, vUv).xy;
+      vel += force * uDt;
+      gl_FragColor = vec4(vel, 0.0, 1.0);
+    }
+  </script>
+
+  <!-- Display shader with viridis colormap -->
+  <script id="displayFrag" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uDensity;
+    uniform float uExposure;
+    varying vec2 vUv;
+
+    // Viridis colormap
+    vec3 viridis(float t) {
+      t = clamp(t, 0.0, 1.0);
+      vec3 c0 = vec3(0.267, 0.004, 0.329);
+      vec3 c1 = vec3(0.282, 0.140, 0.457);
+      vec3 c2 = vec3(0.254, 0.265, 0.529);
+      vec3 c3 = vec3(0.206, 0.371, 0.553);
+      vec3 c4 = vec3(0.163, 0.471, 0.558);
+      vec3 c5 = vec3(0.128, 0.566, 0.551);
+      vec3 c6 = vec3(0.135, 0.659, 0.518);
+      vec3 c7 = vec3(0.267, 0.749, 0.441);
+      vec3 c8 = vec3(0.478, 0.821, 0.318);
+      vec3 c9 = vec3(0.741, 0.873, 0.150);
+      vec3 c10 = vec3(0.993, 0.906, 0.144);
+
+      if (t < 0.1) return mix(c0, c1, t / 0.1);
+      if (t < 0.2) return mix(c1, c2, (t - 0.1) / 0.1);
+      if (t < 0.3) return mix(c2, c3, (t - 0.2) / 0.1);
+      if (t < 0.4) return mix(c3, c4, (t - 0.3) / 0.1);
+      if (t < 0.5) return mix(c4, c5, (t - 0.4) / 0.1);
+      if (t < 0.6) return mix(c5, c6, (t - 0.5) / 0.1);
+      if (t < 0.7) return mix(c6, c7, (t - 0.6) / 0.1);
+      if (t < 0.8) return mix(c7, c8, (t - 0.7) / 0.1);
+      if (t < 0.9) return mix(c8, c9, (t - 0.8) / 0.1);
+      return mix(c9, c10, (t - 0.9) / 0.1);
+    }
+
+    void main() {
+      vec3 density = texture2D(uDensity, vUv).rgb;
+      float lum = (density.r + density.g + density.b) / 3.0;
+      lum *= uExposure;
+      lum = pow(lum, 0.65);
+      vec3 color = viridis(lum);
+      // Add subtle glow
+      float glow = lum * 0.3;
+      color += glow * vec3(0.1, 0.15, 0.25);
+      gl_FragColor = vec4(color, 1.0);
+    }
+  </script>
+
+  <!-- Floor shader -->
+  <script id="floorFrag" type="x-shader/x-fragment">
+    precision highp float;
+    varying vec2 vUv;
+    void main() {
+      float grid = step(0.97, fract(vUv.x * 20.0)) + step(0.97, fract(vUv.y * 20.0));
+      grid = min(grid, 1.0);
+      vec3 col = mix(vec3(0.02, 0.02, 0.04), vec3(0.04, 0.06, 0.1), grid * 0.5);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  </script>
+
+  <!-- ===================== IMPORTMAP ===================== -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- ===================== MAIN ===================== -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ---- Renderer ----
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.autoClear = false;
+    document.body.appendChild(renderer.domElement);
+
+    // ---- Camera ----
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 3.5, 3.5);
+    camera.lookAt(0, 0, 0);
+
+    // ---- Controls ----
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 0, 0);
+    controls.minDistance = 1.5;
+    controls.maxDistance = 12;
+    controls.mouseButtons = {
+      LEFT: null,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.ROTATE
+    };
+
+    // ---- Main Scene ----
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050508);
+    scene.fog = new THREE.FogExp2(0x050508, 0.08);
+
+    // ---- Simulation resolution ----
+    const SIM_RES = 512;
+    const TEX_SIZE = SIM_RES;
+
+    function makeRT(w, h) {
+      return new THREE.WebGLRenderTarget(w, h, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat,
+        type: THREE.HalfFloatType,
+        depthBuffer: false,
+        stencilBuffer: false,
+      });
+    }
+
+    // Ping-pong render targets
+    let velRT = [makeRT(TEX_SIZE, TEX_SIZE), makeRT(TEX_SIZE, TEX_SIZE)];
+    let presRT = [makeRT(TEX_SIZE, TEX_SIZE), makeRT(TEX_SIZE, TEX_SIZE)];
+    let dyeRT = [makeRT(TEX_SIZE, TEX_SIZE), makeRT(TEX_SIZE, TEX_SIZE)];
+    let divRT = makeRT(TEX_SIZE, TEX_SIZE);
+    let curlRT = makeRT(TEX_SIZE, TEX_SIZE);
+
+    let velIdx = 0;
+    let presIdx = 0;
+    let dyeIdx = 0;
+
+    // ---- Offscreen scene & camera ----
+    const offCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const offScene = new THREE.Scene();
+    const offGeo = new THREE.PlaneGeometry(2, 2);
+    const offMesh = new THREE.Mesh(offGeo, null);
+    offScene.add(offMesh);
+
+    function blit(mat, target) {
+      offMesh.material = mat;
+      renderer.setRenderTarget(target);
+      renderer.clear();
+      renderer.render(offScene, offCamera);
+    }
+
+    // ---- Helper: fullscreen quad material builder ----
+    function makeMat(fragId, uniforms) {
+      const vert = document.getElementById('baseVert').textContent;
+      const frag = document.getElementById(fragId).textContent;
+      return new THREE.ShaderMaterial({
+        vertexShader: vert,
+        fragmentShader: frag,
+        uniforms,
+        depthTest: false,
+        depthWrite: false,
+      });
+    }
+
+    const texelSize = new THREE.Vector2(1 / TEX_SIZE, 1 / TEX_SIZE);
+    const simUniforms = () => ({
+      uVelocity: { value: null },
+      uTexture: { value: null },
+      uSource: { value: null },
+      uTarget: { value: null },
+      uTexelSize: { value: texelSize },
+      uDt: { value: 0.016 },
+      uDissipation: { value: 0.995 },
+      uColor: { value: new THREE.Vector3(0, 0, 0) },
+      uScale: { value: 0.0 },
+      uPoint: { value: new THREE.Vector2(0.5, 0.5) },
+      uRadius: { value: 0.0005 },
+      uPressure: { value: null },
+      uDivergence: { value: null },
+      uCurl: { value: null },
+      uCurlStrength: { value: 30.0 },
+      uDensity: { value: null },
+      uExposure: { value: 2.8 },
+    });
+
+    const advectMat = makeMat('advectFrag', simUniforms());
+    const divMat = makeMat('divergenceFrag', simUniforms());
+    const presMat = makeMat('pressureFrag', simUniforms());
+    const gradMat = makeMat('gradientSubtractFrag', simUniforms());
+    const splatMat = makeMat('splatFrag', simUniforms());
+    const curlMat = makeMat('curlFrag', simUniforms());
+    const vortMat = makeMat('vorticityFrag', simUniforms());
+    const clearMat = makeMat('clearFrag', simUniforms());
+    const displayMat = makeMat('displayFrag', {
+      uDensity: { value: null },
+      uExposure: { value: 2.8 },
+    });
+
+    // ---- Display mesh ----
+    const planeGeo = new THREE.PlaneGeometry(4, 4);
+    const planeMesh = new THREE.Mesh(planeGeo, displayMat);
+    planeMesh.rotation.x = -Math.PI / 2;
+    planeMesh.position.y = -0.001;
+    scene.add(planeMesh);
+
+    // ---- Floor plane ----
+    const floorGeo = new THREE.PlaneGeometry(20, 20);
+    floorGeo.rotateX(-Math.PI / 2);
+    const floorMat = new THREE.ShaderMaterial({
+      vertexShader: document.getElementById('baseVert').textContent,
+      fragmentShader: document.getElementById('floorFrag').textContent,
+    });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.position.y = -0.01;
+    scene.add(floor);
+
+    // ---- Ambient lighting ----
+    const ambLight = new THREE.AmbientLight(0x112244, 0.4);
+    scene.add(ambLight);
+    const dirLight = new THREE.DirectionalLight(0x334466, 0.3);
+    dirLight.position.set(2, 5, 3);
+    scene.add(dirLight);
+
+    // ---- Simulation params ----
+    const JACOBI_ITERS = 40;
+    const ADVECT_DT = 0.5;
+    const VEL_DISSIPATION = 0.99;
+    const DYE_DISSIPATION = 0.982;
+    const CURL_STRENGTH = 35.0;
+
+    // ---- Clear all RTs ----
+    function clearRT(rt) {
+      clearMat.uniforms.uTexture.value = rt.texture;
+      clearMat.uniforms.uColor.value.set(0, 0, 0);
+      clearMat.uniforms.uScale.value = 0.0;
+      blit(clearMat, rt);
+    }
+
+    // Init
+    [velRT[0], velRT[1], dyeRT[0], dyeRT[1], presRT[0], presRT[1]].forEach(clearRT);
+
+    // ---- Mouse interaction ----
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const mouseNDC = new THREE.Vector2();
+    let isPointerDown = false;
+    let lastPointer = null;
+    let pointerVelocity = new THREE.Vector2(0, 0);
+    let pointerColor = new THREE.Vector3(1, 1, 1);
+    let colorPhase = 0;
+
+    // Color cycling
+    function nextColor() {
+      colorPhase += 0.08;
+      const r = 0.5 + 0.5 * Math.sin(colorPhase * 1.3 + 0.0);
+      const g = 0.5 + 0.5 * Math.sin(colorPhase * 1.3 + 2.094);
+      const b = 0.5 + 0.5 * Math.sin(colorPhase * 1.3 + 4.189);
+      const mag = Math.sqrt(r * r + g * g + b * b) + 0.001;
+      pointerColor.set(r / mag * 2.5, g / mag * 2.5, b / mag * 2.5);
+    }
+
+    function getSimUV(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const clientX = event.clientX !== undefined ? event.clientX : event.touches?.[0]?.clientX ?? 0;
+      const clientY = event.clientY !== undefined ? event.clientY : event.touches?.[0]?.clientY ?? 0;
+      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const target = new THREE.Vector3();
+      const hit = raycaster.ray.intersectPlane(plane, target);
+      if (!hit) return null;
+      // Map world coords (-2..2) to UV (0..1)
+      const u = (target.x + 2) / 4;
+      const v = (target.z + 2) / 4;
+      return new THREE.Vector2(
+        Math.max(0.001, Math.min(0.999, u)),
+        Math.max(0.001, Math.min(0.999, v))
+      );
+    }
+
+    // Left click/drag = splat
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (e.button === 0) {
+        isPointerDown = true;
+        lastPointer = getSimUV(e);
+        nextColor();
+        pointerVelocity.set(0, 0);
+      }
+    });
+
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      if (isPointerDown && e.button === 0) {
+        const cur = getSimUV(e);
+        if (!cur || !lastPointer) return;
+
+        const dx = cur.x - lastPointer.x;
+        const dy = cur.y - lastPointer.y;
+
+        // Velocity splat
+        splatMat.uniforms.uTarget.value = velRT[1 - velIdx].texture;
+        splatMat.uniforms.uPoint.value.copy(cur);
+        splatMat.uniforms.uColor.value.set(dx * 25.0, dy * 25.0, 0);
+        splatMat.uniforms.uRadius.value = 0.0004;
+        blit(splatMat, velRT[velIdx]);
+        velIdx = 1 - velIdx;
+
+        // Dye splat
+        splatMat.uniforms.uTarget.value = dyeRT[1 - dyeIdx].texture;
+        splatMat.uniforms.uColor.value.copy(pointerColor);
+        splatMat.uniforms.uRadius.value = 0.0008;
+        blit(splatMat, dyeRT[dyeIdx]);
+        dyeIdx = 1 - dyeIdx;
+
+        pointerVelocity.set(dx, dy);
+        lastPointer = cur;
+      }
+    });
+
+    renderer.domElement.addEventListener('pointerup', () => {
+      isPointerDown = false;
+      lastPointer = null;
+    });
+
+    renderer.domElement.addEventListener('pointerleave', () => {
+      isPointerDown = false;
+      lastPointer = null;
+    });
+
+    // ---- Simulation step ----
+    function step(dt) {
+      const clampedDt = Math.min(dt, 0.025);
+      const advectDt = ADVECT_DT;
+
+      // 1. Curl
+      curlMat.uniforms.uVelocity.value = velRT[1 - velIdx].texture;
+      blit(curlMat, curlRT);
+
+      // 2. Vorticity confinement
+      vortMat.uniforms.uVelocity.value = velRT[1 - velIdx].texture;
+      vortMat.uniforms.uCurl.value = curlRT.texture;
+      vortMat.uniforms.uCurlStrength.value = CURL_STRENGTH;
+      vortMat.uniforms.uDt.value = clampedDt;
+      blit(vortMat, velRT[velIdx]);
+      velIdx = 1 - velIdx;
+
+      // 3. Advect velocity
+      advectMat.uniforms.uVelocity.value = velRT[1 - velIdx].texture;
+      advectMat.uniforms.uSource.value = velRT[1 - velIdx].texture;
+      advectMat.uniforms.uDissipation.value = VEL_DISSIPATION;
+      advectMat.uniforms.uDt.value = advectDt;
+      blit(advectMat, velRT[velIdx]);
+      velIdx = 1 - velIdx;
+
+      // 4. Compute divergence
+      divMat.uniforms.uVelocity.value = velRT[1 - velIdx].texture;
+      blit(divMat, divRT);
+
+      // 5. Clear pressure
+      clearRT(presRT[presIdx]);
+
+      // 6. Jacobi pressure solve
+      for (let i = 0; i < JACOBI_ITERS; i++) {
+        presMat.uniforms.uPressure.value = presRT[1 - presIdx].texture;
+        presMat.uniforms.uDivergence.value = divRT.texture;
+        blit(presMat, presRT[presIdx]);
+        presIdx = 1 - presIdx;
+      }
+
+      // 7. Gradient subtraction
+      gradMat.uniforms.uPressure.value = presRT[1 - presIdx].texture;
+      gradMat.uniforms.uVelocity.value = velRT[1 - velIdx].texture;
+      blit(gradMat, velRT[velIdx]);
+      velIdx = 1 - velIdx;
+
+      // 8. Advect dye
+      advectMat.uniforms.uVelocity.value = velRT[1 - velIdx].texture;
+      advectMat.uniforms.uSource.value = dyeRT[1 - dyeIdx].texture;
+      advectMat.uniforms.uDissipation.value = DYE_DISSIPATION;
+      advectMat.uniforms.uDt.value = advectDt;
+      blit(advectMat, dyeRT[dyeIdx]);
+      dyeIdx = 1 - dyeIdx;
+    }
+
+    // ---- Auto splats ----
+    let autoTime = 0;
+    function autoSplats(t) {
+      // Add some swirling auto-drips
+      const cx = 0.5 + 0.25 * Math.sin(t * 0.3);
+      const cy = 0.5 + 0.25 * Math.cos(t * 0.4);
+
+      // Velocity curl
+      const ang = t * 0.7;
+      const vr = 1.2;
+      splatMat.uniforms.uTarget.value = velRT[1 - velIdx].texture;
+      splatMat.uniforms.uPoint.value.set(cx, cy);
+      splatMat.uniforms.uColor.value.set(
+        Math.cos(ang) * vr,
+        Math.sin(ang) * vr,
+        0
+      );
+      splatMat.uniforms.uRadius.value = 0.0015;
+      blit(splatMat, velRT[velIdx]);
+      velIdx = 1 - velIdx;
+
+      // Dye
+      const cr = 0.5 + 0.5 * Math.sin(t * 1.1 + 1.0);
+      const cg = 0.5 + 0.5 * Math.sin(t * 1.1 + 3.0);
+      const cb = 0.5 + 0.5 * Math.sin(t * 1.1 + 5.0);
+      const cm = Math.sqrt(cr * cr + cg * cg + cb * cb) + 0.001;
+      splatMat.uniforms.uTarget.value = dyeRT[1 - dyeIdx].texture;
+      splatMat.uniforms.uPoint.value.set(cx, cy);
+      splatMat.uniforms.uColor.value.set(
+        cr / cm * 3.0,
+        cg / cm * 3.0,
+        cb / cm * 3.0
+      );
+      splatMat.uniforms.uRadius.value = 0.003;
+      blit(splatMat, dyeRT[dyeIdx]);
+      dyeIdx = 1 - dyeIdx;
+    }
+
+    // ---- Resize ----
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    window.addEventListener('resize', onResize);
+
+    // ---- FPS counter ----
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let fps = 0;
+    const fpsEl = document.getElementById('fps');
+    const itersEl = document.getElementById('iters');
+    const texSizeEl = document.getElementById('texSize');
+    const particlesEl = document.getElementById('particles');
+
+    texSizeEl.textContent = SIM_RES + 'x' + SIM_RES;
+    particlesEl.textContent = (SIM_RES * SIM_RES).toLocaleString();
+
+    // ---- Animation loop ----
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const now = performance.now();
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      frameCount++;
+      if (frameCount % 30 === 0) {
+        fps = Math.round(1 / dt);
+        fpsEl.textContent = fps;
+        itersEl.textContent = JACOBI_ITERS;
+      }
+
+      autoTime += dt;
+      autoSplats(autoTime);
+
+      step(dt);
+
+      controls.update();
+
+      // Render display
+      displayMat.uniforms.uDensity.value = dyeRT[1 - dyeIdx].texture;
+      renderer.setRenderTarget(null);
+      renderer.clear();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ---- Expose to window ----
+    window.scene = scene;
+    window.camera = camera;
+    window.renderer = renderer;
+    window.controls = controls;
+  </script>
+</body>
+</html>

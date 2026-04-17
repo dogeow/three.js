@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>着色器图可视化 — GLSL 数学曲面浏览器</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #0a0a0f;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      color: #e0e0e0;
+    }
+
+    #app {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* ── Left panel ── */
+    #panel-left {
+      width: 340px;
+      min-width: 260px;
+      display: flex;
+      flex-direction: column;
+      background: #111118;
+      border-right: 1px solid #222233;
+      resize: horizontal;
+      overflow: hidden;
+    }
+
+    #panel-left-header {
+      padding: 12px 16px 8px;
+      background: #0d0d14;
+      border-bottom: 1px solid #1e1e2e;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #7b7ba0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #panel-left-header span.dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #3b82f6;
+      box-shadow: 0 0 6px #3b82f6;
+    }
+
+    #function-list {
+      padding: 8px 12px;
+      background: #0d0d14;
+      border-bottom: 1px solid #1e1e2e;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    #function-list label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #555570;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    #preset-select {
+      width: 100%;
+      background: #1a1a28;
+      color: #c0c0d8;
+      border: 1px solid #2a2a3e;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23555' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
+    }
+
+    #preset-select:focus { border-color: #3b82f6; }
+
+    #code-editor {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #editor-label {
+      padding: 8px 16px 4px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #555570;
+    }
+
+    #function-input {
+      flex: 1;
+      margin: 0 12px 12px;
+      background: #0a0a12;
+      color: #d4d4f0;
+      border: 1px solid #1e1e30;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: inherit;
+      font-size: 12px;
+      line-height: 1.7;
+      resize: none;
+      outline: none;
+      tab-size: 2;
+      overflow-y: auto;
+    }
+
+    #function-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+
+    #editor-footer {
+      padding: 8px 16px;
+      background: #0d0d14;
+      border-top: 1px solid #1e1e2e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #compile-btn {
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 18px;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      transition: opacity 0.15s;
+    }
+
+    #compile-btn:hover { opacity: 0.85; }
+    #compile-btn:active { opacity: 0.7; }
+
+    #error-msg {
+      font-size: 11px;
+      color: #f87171;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Resizer handle ── */
+    #resize-handle {
+      width: 4px;
+      cursor: col-resize;
+      background: transparent;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    #resize-handle:hover, #resize-handle.active { background: #3b82f6; }
+
+    /* ── Right panel (canvas) ── */
+    #panel-right {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #panel-right canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ── Overlay HUD ── */
+    #hud {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #hud-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffffcc;
+      letter-spacing: 0.04em;
+      text-shadow: 0 1px 8px #000a;
+    }
+
+    #hud-formula {
+      font-size: 11px;
+      color: #7b7ba0;
+      font-style: italic;
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #hud-fps {
+      font-size: 11px;
+      color: #4ade80;
+      font-weight: 600;
+    }
+
+    /* ── Stats corner ── */
+    #lil-gui-wrapper {
+      position: absolute;
+      top: 0;
+      right: 0;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- Left panel -->
+  <div id="panel-left">
+    <div id="panel-left-header"><span class="dot"></span>着色器图可视化器</div>
+
+    <div id="function-list">
+      <label>预设函数</label>
+      <select id="preset-select">
+        <option value="sincos">正弦余弦波</option>
+        <option value="gyroid">Gyroid</option>
+        <option value="noise">FBM 噪声地形</option>
+        <option value="torusKnot">环面纽结曲面</option>
+        <option value="ripple">径向涟漪</option>
+        <option value="spiral">3D 螺旋</option>
+        <option value="hyperbolic">双曲抛物面</option>
+        <option value="custom">自定义…</option>
+      </select>
+    </div>
+
+    <div id="code-editor">
+      <div id="editor-label">Fragment Shader 函数 — f(u,v) → 高度</div>
+      <textarea id="function-input" spellcheck="false" autocomplete="off">// Height function: f(u, v) → float
+// u, v range: -π to +π
+// Use: sin, cos, tan, pow, sqrt, abs, noise(u,v), fbm(u,v)
+
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  vec2  s = vec2(1.7, 9.2);
+  for (int i = 0; i < 5; i++) {
+    v += a * (sin(p.x * s.x) * cos(p.y * s.y));
+    p  = p * 2.1 + vec2(3.1, 1.7);
+    a *= 0.5;
+    s  = s.yx * 1.3;
+  }
+  return v;
+}
+
+float f(vec2 uv) {
+  float x = uv.x;
+  float y = uv.y;
+  float r = sqrt(x*x + y*y);
+  float a = atan(y, x);
+
+  // Gyroid
+  return sin(x*3.0)*cos(y*3.0) + sin(y*3.0)*cos(a*2.0) + sin(a*3.0)*cos(x*2.0);
+}</textarea>
+      <div id="editor-footer">
+        <span id="error-msg"></span>
+        <button id="compile-btn">编译并渲染</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resizer -->
+  <div id="resize-handle"></div>
+
+  <!-- Right panel -->
+  <div id="panel-right">
+    <canvas id="canvas"></canvas>
+    <div id="hud">
+      <div id="hud-title">Shader 图可视化</div>
+      <div id="hud-formula">f(u,v) = sin(u)·cos(v)</div>
+      <div id="hud-fps">— FPS</div>
+    </div>
+    <div id="lil-gui-wrapper"></div>
+  </div>
+</div>
+
+<!-- ── Import Map ── -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI }       from 'three/addons/libs/lil-gui.module.min.js';
+
+// ═══════════════════════════════════════════════════
+//  PRESETS
+// ═══════════════════════════════════════════════════
+const PRESETS = {
+
+  sincos: {
+    label: 'Sin/Cos Waves',
+    formula: 'sin(u*2) * cos(v*2)',
+    code: `float f(vec2 uv) {
+  float x = uv.x, y = uv.y;
+  return sin(x * 2.0) * cos(y * 2.0);
+}`
+  },
+
+  gyroid: {
+    label: 'Gyroid',
+    formula: 'sin(x)cos(y) + sin(y)cos(z) + sin(z)cos(x)',
+    code: `float f(vec2 uv) {
+  float x = uv.x, y = uv.y;
+  return sin(x * 3.0) * cos(y * 3.0)
+       + sin(y * 3.0) * cos(x * 2.0)
+       + sin(x * 2.0) * cos(y * 1.5);
+}`
+  },
+
+  noise: {
+    label: 'FBM Noise Terrain',
+    formula: 'fbm(uv) — 5-octave fractional Brownian motion',
+    code: `float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash(i), hash(i+vec2(1,0)), f.x),
+    mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x),
+    f.y
+  );
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  mat2 rot = mat2(1.6,1.2,-1.2,1.6);
+  for (int i=0;i<5;i++) {
+    v += a * noise(p);
+    p  = rot * p + vec2(1.7, 9.2);
+    a *= 0.5;
+  }
+  return v;
+}
+float f(vec2 uv) {
+  return fbm(uv * 3.0) * 2.0 - 1.0;
+}`
+  },
+
+  torusKnot: {
+    label: 'Torus Knot Surface',
+    formula: 'parametric torus-knot-inspired surface',
+    code: `float f(vec2 uv) {
+  float x = uv.x, y = uv.y;
+  float r = length(uv) * 0.5;
+  float t = atan(y, x);
+  return sin(x * 4.0 + t * 2.0) * cos(y * 3.0 - t) + 0.5 * sin(r * 8.0 - t * 3.0);
+}`
+  },
+
+  ripple: {
+    label: 'Radial Ripples',
+    formula: 'sin(r*6) / (1 + r*2)',
+    code: `float f(vec2 uv) {
+  float r = length(uv);
+  return sin(r * 6.0) / (1.0 + r * 2.0) * 1.5;
+}`
+  },
+
+  spiral: {
+    label: '3D Spiral',
+    formula: 'sin(r*4 + atan(y,x)*3) * cos(r*3)',
+    code: `float f(vec2 uv) {
+  float x = uv.x, y = uv.y;
+  float r = length(uv);
+  float a = atan(y, x);
+  return sin(r * 4.0 + a * 3.0) * cos(r * 3.0 - a * 2.0);
+}`
+  },
+
+  hyperbolic: {
+    label: 'Hyperbolic Paraboloid',
+    formula: 'x² − y²  (saddle surface)',
+    code: `float f(vec2 uv) {
+  float x = uv.x, y = uv.y;
+  return (x * x - y * y) * 0.5;
+}`
+  },
+
+  custom: {
+    label: 'Custom',
+    formula: 'edit the code below',
+    code: `float f(vec2 uv) {
+  float x = uv.x, y = uv.y;
+  float r = length(uv);
+  float a = atan(y, x);
+  return sin(x * 3.0) * cos(y * 3.0);
+}`
+  }
+};
+
+// ═══════════════════════════════════════════════════
+//  RENDERER + SCENE
+// ═══════════════════════════════════════════════════
+const canvas   = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x0a0a0f, 1);
+
+const scene  = new THREE.Scene();
+scene.fog    = new THREE.FogExp2(0x0a0a0f, 0.06);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 200);
+camera.position.set(0, 2.5, 5);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping   = true;
+controls.dampingFactor  = 0.06;
+controls.minDistance    = 0.5;
+controls.maxDistance    = 20;
+
+// Lights
+scene.add(new THREE.AmbientLight(0x8888cc, 0.6));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(3, 5, 3);
+scene.add(dirLight);
+const backLight = new THREE.DirectionalLight(0x3355ff, 0.5);
+backLight.position.set(-3, -2, -3);
+scene.add(backLight);
+
+// Grid helper
+const grid = new THREE.GridHelper(8, 20, 0x222244, 0x111122);
+grid.position.y = -0.01;
+scene.add(grid);
+
+// ═══════════════════════════════════════════════════
+//  PARAMS
+// ═══════════════════════════════════════════════════
+const params = {
+  color:       '#4488ff',
+  wireframe:   false,
+  resolution:  120,
+  autoRotate:  true,
+  animate:     true,
+  palette:     'ocean',
+  heightScale: 1.0,
+};
+
+const PALETTES = {
+  ocean:   { top: new THREE.Color('#2266ff'), bottom: new THREE.Color('#001133') },
+  sunset:  { top: new THREE.Color('#ff5500'), bottom: new THREE.Color('#220011') },
+  neon:    { top: new THREE.Color('#00ffcc'), bottom: new THREE.Color('#110033') },
+  fire:    { top: new THREE.Color('#ffdd00'), bottom: new THREE.Color('#220000') },
+  aurora:  { top: new THREE.Color('#00ffaa'), bottom: new THREE.Color('#002211') },
+};
+
+// ═══════════════════════════════════════════════════
+//  GEOMETRY BUILDER
+// ═══════════════════════════════════════════════════
+let currentMesh = null;
+let currentGeom = null;
+let animTime    = 0;
+
+function buildGeometry(funcBody, resolution) {
+  const res   = Math.max(10, Math.min(resolution, 300));
+  const geom  = new THREE.BufferGeometry();
+  const verts = [], norms = [], uvArr = [], idxs = [];
+
+  const RANGE = Math.PI;
+  const STEP  = (2 * RANGE) / res;
+
+  // Build vertices
+  for (let j = 0; j <= res; j++) {
+    for (let i = 0; i <= res; i++) {
+      const u = -RANGE + i * STEP;
+      const v = -RANGE + j * STEP;
+      let h;
+      try {
+        h = evaluate(u, v, funcBody);
+        if (!isFinite(h)) h = 0;
+      } catch (e) {
+        h = 0;
+      }
+      verts.push(u, h * params.heightScale, v);
+      uvArr.push(i / res, j / res);
+    }
+  }
+
+  // Build indices
+  for (let j = 0; j < res; j++) {
+    for (let i = 0; i < res; i++) {
+      const a = j * (res + 1) + i;
+      const b = a + 1;
+      const c = a + (res + 1);
+      const d = c + 1;
+      idxs.push(a, c, b);
+      idxs.push(b, c, d);
+    }
+  }
+
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  geom.setAttribute('uv',       new THREE.Float32BufferAttribute(uvArr, 2));
+  geom.setIndex(idxs);
+  geom.computeVertexNormals();
+  return geom;
+}
+
+// ── Safe-ish JS function evaluator ──────────────
+function evaluate(u, v, body) {
+  // Provide math helpers
+  const sin   = Math.sin;
+  const cos   = Math.cos;
+  const tan   = Math.tan;
+  const abs   = Math.abs;
+  const sqrt  = Math.sqrt;
+  const pow   = Math.pow;
+  const exp   = Math.exp;
+  const log   = Math.log;
+  const floor = Math.floor;
+  const fract = (x) => x - floor(x);
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const mix   = (a, b, t)  => a + (b - a) * t;
+  const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const length2 = (vec) => Math.sqrt(vec[0]*vec[0] + vec[1]*vec[1]);
+  const dot2   = (a, b)    => a[0]*b[0] + a[1]*b[1];
+
+  // Pseudo-noise
+  const hash = (px, py) => {
+    let n = px * 127.1 + py * 311.7;
+    n = Math.sin(n) * 43758.5453;
+    return n - Math.floor(n);
+  };
+  const noise = (nx, ny) => {
+    const ix = Math.floor(nx), iy = Math.floor(ny);
+    const fx = nx - ix, fy = ny - iy;
+    const ux = fx * fx * (3 - 2 * fx);
+    const uy = fy * fy * (3 - 2 * fy);
+    const a = hash(ix, iy), b = hash(ix+1, iy);
+    const c = hash(ix, iy+1), d = hash(ix+1, iy+1);
+    return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+  };
+  const fbm = (px, py) => {
+    let val = 0, amp = 0.5, freq = 1.0;
+    for (let i = 0; i < 5; i++) {
+      val += amp * noise(px * freq, py * freq);
+      amp  *= 0.5;
+      freq *= 2.1;
+    }
+    return val;
+  };
+
+  // UV shorthand
+  const x = u, y = v, r = Math.sqrt(u*u + v*v);
+  const pi = Math.PI, PI = Math.PI;
+  const TAU = Math.PI * 2;
+
+  // eslint-disable-next-line no-new-func
+  const f = new Function('uv', 'x', 'y', 'r', 'sin', 'cos', 'tan', 'abs',
+    'sqrt', 'pow', 'exp', 'log', 'floor', 'fract', 'clamp', 'mix',
+    'smoothstep', 'length', 'dot', 'noise', 'fbm', 'pi', 'PI', 'TAU',
+    body
+  );
+  return f([u, v], u, v, r, sin, cos, tan, abs, sqrt, pow, exp, log,
+    floor, fract, clamp, mix, smoothstep, length2, dot2, noise, fbm,
+    Math.PI, Math.PI, Math.PI * 2);
+}
+
+function rebuildMesh() {
+  if (currentMesh) {
+    scene.remove(currentMesh);
+    currentMesh.geometry.dispose();
+    currentMesh.material.dispose();
+    currentMesh = null;
+  }
+
+  const code = document.getElementById('function-input').value;
+  let geom;
+  try {
+    geom = buildGeometry(code, params.resolution);
+    document.getElementById('error-msg').textContent = '';
+  } catch (e) {
+    document.getElementById('error-msg').textContent = e.message || 'compile error';
+    return;
+  }
+  currentGeom = geom;
+
+  const topCol    = PALETTES[params.palette]?.top    || new THREE.Color(params.color);
+  const bottomCol = PALETTES[params.palette]?.bottom || new THREE.Color('#001133');
+
+  const mat = new THREE.MeshPhongMaterial({
+    color:     new THREE.Color(params.color),
+    emissive:  new THREE.Color(params.color).multiplyScalar(0.1),
+    specular:  new THREE.Color('#ffffff'),
+    shininess: 60,
+    wireframe: params.wireframe,
+    side: THREE.DoubleSide,
+    vertexColors: false,
+    flatShading: false,
+  });
+
+  // Color by height
+  const pos    = geom.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const h = (pos.getY(i) / params.heightScale + 1) / 2; // 0..1
+    const c = new THREE.Color().lerpColors(bottomCol, topCol, Math.max(0, Math.min(1, h)));
+    colors[i * 3]     = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  mat.vertexColors = true;
+
+  currentMesh = new THREE.Mesh(geom, mat);
+  scene.add(currentMesh);
+}
+
+// ═══════════════════════════════════════════════════
+//  GUI
+// ═══════════════════════════════════════════════════
+const gui = new GUI({ container: document.getElementById('lil-gui-wrapper'), title: 'Controls' });
+gui.domElement.style.setProperty('--lil-gui-background-color', '#111118');
+gui.domElement.style.setProperty('--lil-gui-title-background-color', '#1a1a28');
+gui.domElement.style.setProperty('--lil-gui-title-text-color', '#7b7ba0');
+
+gui.addColor(params, 'color').name('基础颜色').onChange(() => rebuildMesh());
+gui.add(params, 'wireframe').name('线框图').onChange(() => rebuildMesh());
+gui.add(params, 'resolution', 20, 250, 1).name('分辨率').onChange(() => rebuildMesh());
+gui.add(params, 'heightScale', 0.1, 4.0, 0.05).name('高度缩放').onChange(() => rebuildMesh());
+gui.add(params, 'autoRotate').name('自动旋转');
+gui.add(params, 'animate').name('动画高度');
+gui.add(params, 'palette', ['ocean', 'sunset', 'neon', 'fire', 'aurora']).name('色彩方案').onChange(() => rebuildMesh());
+
+gui.open();
+
+// ═══════════════════════════════════════════════════
+//  PRESET SELECT
+// ═══════════════════════════════════════════════════
+const presetSelect = document.getElementById('preset-select');
+const functionInput = document.getElementById('function-input');
+const hudFormula   = document.getElementById('hud-formula');
+
+presetSelect.addEventListener('change', () => {
+  const key = presetSelect.value;
+  const p   = PRESETS[key] || PRESETS.custom;
+  functionInput.value = p.code;
+  hudFormula.textContent = p.formula;
+  rebuildMesh();
+});
+
+// ═══════════════════════════════════════════════════
+//  COMPILE BUTTON
+// ═══════════════════════════════════════════════════
+document.getElementById('compile-btn').addEventListener('click', () => {
+  presetSelect.value = 'custom';
+  hudFormula.textContent = PRESETS.custom.formula;
+  rebuildMesh();
+});
+
+// ═══════════════════════════════════════════════════
+//  RESIZE
+// ═══════════════════════════════════════════════════
+function onResize() {
+  const panel = document.getElementById('panel-right');
+  const w = panel.clientWidth;
+  const h = panel.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false);
+}
+window.addEventListener('resize', onResize);
+
+// ═══════════════════════════════════════════════════
+//  PANEL RESIZER
+// ═══════════════════════════════════════════════════
+const resizeHandle = document.getElementById('resize-handle');
+const panelLeft    = document.getElementById('panel-left');
+let dragging = false;
+
+resizeHandle.addEventListener('mousedown', (e) => {
+  dragging = true;
+  resizeHandle.classList.add('active');
+  e.preventDefault();
+});
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  const newW = Math.max(220, Math.min(window.innerWidth - 300, e.clientX));
+  panelLeft.style.width = newW + 'px';
+  onResize();
+});
+window.addEventListener('mouseup', () => {
+  dragging = false;
+  resizeHandle.classList.remove('active');
+});
+
+// ═══════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ═══════════════════════════════════════════════════
+let lastTime = performance.now();
+let frameCount = 0;
+let fpsTimer = 0;
+
+function animate(now) {
+  requestAnimationFrame(animate);
+
+  const delta = (now - lastTime) / 1000;
+  lastTime = now;
+
+  // FPS counter
+  frameCount++;
+  fpsTimer += delta;
+  if (fpsTimer >= 1.0) {
+    document.getElementById('hud-fps').textContent =
+      `${frameCount} fps`;
+    frameCount = 0;
+    fpsTimer   = 0;
+  }
+
+  if (params.autoRotate && currentMesh) {
+    currentMesh.rotation.y += delta * 0.4;
+  }
+
+  if (params.animate && currentGeom) {
+    animTime += delta;
+    // Gentle vertical oscillation of height scale
+    const animatedScale = params.heightScale * (1 + Math.sin(animTime * 0.8) * 0.05);
+    const posAttr = currentGeom.attributes.position;
+    const code    = functionInput.value;
+    try {
+      const verts = posAttr.array;
+      const RANGE = Math.PI;
+      const res   = params.resolution;
+      const STEP  = (2 * RANGE) / res;
+      let vi = 0;
+      for (let j = 0; j <= res; j++) {
+        for (let i = 0; i <= res; i++) {
+          const u = -RANGE + i * STEP;
+          const v = -RANGE + j * STEP;
+          const h = evaluate(u, v, code) * animatedScale;
+          verts[vi + 1] = h;
+          vi += 3;
+        }
+      }
+      posAttr.needsUpdate = true;
+      currentGeom.computeVertexNormals();
+
+      // Recompute colors
+      const colors  = currentGeom.attributes.color.array;
+      const topCol    = PALETTES[params.palette]?.top    || new THREE.Color(params.color);
+      const bottomCol = PALETTES[params.palette]?.bottom || new THREE.Color('#001133');
+      for (let i = 0; i < posAttr.count; i++) {
+        const h = (verts[i * 3 + 1] / animatedScale + 1) / 2;
+        const c = new THREE.Color().lerpColors(bottomCol, topCol, Math.max(0, Math.min(1, h)));
+        colors[i * 3]     = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+      }
+      currentGeom.attributes.color.needsUpdate = true;
+    } catch (e) {
+      // silently skip bad frames
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ═══════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════
+onResize();
+
+// Apply custom font via Google Fonts
+const link = document.createElement('link');
+link.rel = 'stylesheet';
+link.href = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap';
+document.head.appendChild(link);
+
+rebuildMesh();
+
+// Mount for debugging
+window.THREE  = THREE;
+window.scene  = scene;
+window.camera  = camera;
+window.renderer = renderer;
+window.params  = params;
+window.rebuildMesh = rebuildMesh;
+
+animate(performance.now());
+</script>
+
+</body>
+</html>

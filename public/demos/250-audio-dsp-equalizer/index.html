@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Audio DSP Equalizer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+
+    #title {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #00e5ff;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      text-shadow: 0 0 20px rgba(0, 229, 255, 0.6);
+      pointer-events: none;
+      user-select: none;
+    }
+
+    #controls {
+      position: absolute;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 10px 28px;
+      border: 2px solid #00e5ff;
+      background: transparent;
+      color: #00e5ff;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    .btn:hover {
+      background: rgba(0, 229, 255, 0.15);
+      box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+    }
+    .btn:active { transform: scale(0.97); }
+
+    .btn.green {
+      border-color: #00ff88;
+      color: #00ff88;
+    }
+    .btn.green:hover {
+      background: rgba(0, 255, 136, 0.15);
+      box-shadow: 0 0 16px rgba(0, 255, 136, 0.4);
+    }
+
+    #status {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #888;
+      font-size: 12px;
+      letter-spacing: 1px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+<div id="title">3D 音频 DSP 均衡器</div>
+  <div id="status">点击"启动音频"开始</div>
+  <div id="controls">
+    <button class="btn green" id="startBtn">启动音频</button>
+    <button class="btn" id="demoBtn">振荡器演示</button>
+    <button class="btn" id="stopBtn">停止</button>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // --- Scene Setup ---
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x020408);
+    scene.fog = new THREE.Fog(0x020408, 40, 120);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+    camera.position.set(0, 18, 50);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2.1;
+    controls.minDistance = 10;
+    controls.maxDistance = 100;
+    controls.target.set(0, 5, 0);
+
+    // --- Lights ---
+    const ambientLight = new THREE.AmbientLight(0x001122, 0.5);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0x00e5ff, 1.0);
+    dirLight.position.set(20, 40, 20);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 120;
+    dirLight.shadow.camera.left = -40;
+    dirLight.shadow.camera.right = 40;
+    dirLight.shadow.camera.top = 40;
+    dirLight.shadow.camera.bottom = -40;
+    scene.add(dirLight);
+
+    const pointLight = new THREE.PointLight(0x00ff88, 0.8, 80);
+    pointLight.position.set(-20, 15, -10);
+    scene.add(pointLight);
+
+    // --- Ground Plane ---
+    const groundGeo = new THREE.PlaneGeometry(120, 120);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x050d14,
+      metalness: 0.85,
+      roughness: 0.15,
+      envMapIntensity: 1.0,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // --- Grid Helper ---
+    const gridHelper = new THREE.GridHelper(120, 60, 0x003344, 0x001a22);
+    gridHelper.position.y = 0.01;
+    scene.add(gridHelper);
+
+    // --- Equalizer Bars (32 bands) ---
+    const NUM_BANDS = 32;
+    const BAR_SPACING = 1.4;
+    const BAR_WIDTH = 0.9;
+    const MAX_HEIGHT = 22;
+    const START_X = -((NUM_BANDS - 1) * BAR_SPACING) / 2;
+
+    const barMeshes = [];
+    const barTargetHeights = [];
+    const barCurrentHeights = [];
+    const barColors = [];
+
+    // Color gradient from deep blue to cyan to green to yellow to red at peak
+    function getBarColor(normalizedHeight) {
+      const t = normalizedHeight;
+      if (t < 0.2) return new THREE.Color().setHSL(0.55, 1.0, 0.2 + t * 0.3);
+      if (t < 0.4) return new THREE.Color().setHSL(0.50, 1.0, 0.35 + (t - 0.2) * 0.3);
+      if (t < 0.6) return new THREE.Color().setHSL(0.45, 1.0, 0.4 + (t - 0.4) * 0.3);
+      if (t < 0.8) return new THREE.Color().setHSL(0.15, 1.0, 0.4 + (t - 0.6) * 0.3);
+      return new THREE.Color().setHSL(0.02, 1.0, 0.45 + (t - 0.8) * 0.2);
+    }
+
+    for (let i = 0; i < NUM_BANDS; i++) {
+      const geometry = new THREE.BoxGeometry(BAR_WIDTH, 1, BAR_WIDTH);
+      geometry.translate(0, 0.5, 0); // pivot at bottom
+
+      const material = new THREE.MeshStandardMaterial({
+        color: 0x00e5ff,
+        emissive: 0x00e5ff,
+        emissiveIntensity: 0.3,
+        metalness: 0.6,
+        roughness: 0.25,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(START_X + i * BAR_SPACING, 0, 0);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+
+      barMeshes.push(mesh);
+      barColors.push(new THREE.Color(0x00e5ff));
+      barTargetHeights.push(0);
+      barCurrentHeights.push(0);
+    }
+
+    // --- Web Audio API ---
+    let audioContext = null;
+    let analyser = null;
+    let dataArray = null;
+    let audioSource = null;
+    let demoOscillators = [];
+    let isAudioPlaying = false;
+    let useOscillators = false;
+
+    function initAudioContext() {
+      if (audioContext) return;
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.78;
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.connect(audioContext.destination);
+    }
+
+    async function startDemoOscillators() {
+      initAudioContext();
+      stopAllAudio();
+
+      useOscillators = true;
+      isAudioPlaying = true;
+
+      const frequencies = [60, 120, 200, 350, 500, 700, 1000, 1400, 2000, 2800, 4000, 5600, 8000, 11000, 14000, 20000];
+      // Map 32 bands to selected frequencies
+      const bandFreqs = [];
+      for (let i = 0; i < NUM_BANDS; i++) {
+        const idx = Math.floor(i * frequencies.length / NUM_BANDS);
+        bandFreqs.push(frequencies[Math.min(idx, frequencies.length - 1)]);
+      }
+
+      bandFreqs.forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        const lfo = audioContext.createOscillator();
+        const lfoGain = audioContext.createGain();
+
+        osc.type = i % 3 === 0 ? 'sawtooth' : i % 3 === 1 ? 'square' : 'sine';
+        osc.frequency.value = freq + (Math.random() - 0.5) * 30;
+
+        // LFO for tremolo effect
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.5 + Math.random() * 3;
+        lfoGain.gain.value = 0.3;
+
+        lfo.connect(lfoGain);
+        lfoGain.connect(gain.gain);
+
+        gain.gain.value = 0.08;
+        osc.connect(gain);
+        gain.connect(analyser);
+
+        osc.start();
+        lfo.start();
+        demoOscillators.push({ osc, gain, lfo, lfoGain });
+      });
+
+      document.getElementById('status').textContent = '振荡器播放中 — 鼠标旋转视角';
+    }
+
+    async function loadAudioFile() {
+      initAudioContext();
+      stopAllAudio();
+
+      // Use a public domain audio sample
+      const response = await fetch('https://upload.wikimedia.org/wikipedia/commons/7/7e/Beat_Example.ogg');
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      audioSource = audioContext.createBufferSource();
+      audioSource.buffer = audioBuffer;
+      audioSource.loop = true;
+      audioSource.connect(analyser);
+      audioSource.start(0);
+
+      useOscillators = false;
+      isAudioPlaying = true;
+      document.getElementById('status').textContent = '音频播放中 — 鼠标旋转视角';
+    }
+
+    function stopAllAudio() {
+      demoOscillators.forEach(({ osc, lfo }) => {
+        try { osc.stop(); } catch(e) {}
+        try { lfo.stop(); } catch(e) {}
+      });
+      demoOscillators = [];
+
+      if (audioSource) {
+        try { audioSource.stop(); } catch(e) {}
+        audioSource = null;
+      }
+      isAudioPlaying = false;
+    }
+
+    // --- Button Events ---
+    document.getElementById('startBtn').addEventListener('click', () => {
+      initAudioContext();
+      if (audioContext.state === 'suspended') audioContext.resume();
+      loadAudioFile();
+    });
+
+    document.getElementById('demoBtn').addEventListener('click', () => {
+      initAudioContext();
+      if (audioContext.state === 'suspended') audioContext.resume();
+      startDemoOscillators();
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', () => {
+      stopAllAudio();
+      document.getElementById('status').textContent = 'Audio stopped';
+      // Animate bars to zero
+      for (let i = 0; i < NUM_BANDS; i++) barTargetHeights[i] = 0;
+    });
+
+    // --- Resize Handler ---
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- Animation Loop ---
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const time = clock.getElapsedTime();
+
+      // Update frequency data
+      if (analyser && isAudioPlaying) {
+        analyser.getByteFrequencyData(dataArray);
+      }
+
+      // Map FFT bins to 32 bands (roughly log-spaced)
+      const binCount = analyser ? analyser.frequencyBinCount : 1024;
+
+      for (let i = 0; i < NUM_BANDS; i++) {
+        if (isAudioPlaying && dataArray) {
+          // Logarithmic frequency mapping
+          const lowFreq = Math.pow(binCount * 2, i / NUM_BANDS) * audioContext.sampleRate / (binCount * 2);
+          const highFreq = Math.pow(binCount * 2, (i + 1) / NUM_BANDS) * audioContext.sampleRate / (binCount * 2);
+          const lowBin = Math.round(lowFreq / (audioContext.sampleRate / binCount));
+          const highBin = Math.round(highFreq / (audioContext.sampleRate / binCount));
+
+          let sum = 0;
+          const count = Math.max(1, highBin - lowBin);
+          for (let b = lowBin; b < Math.min(highBin, binCount); b++) {
+            sum += dataArray[b];
+          }
+          const avg = sum / count;
+          barTargetHeights[i] = (avg / 255) * MAX_HEIGHT;
+        } else {
+          // Idle wave animation when no audio
+          const wave = Math.sin(time * 1.5 + i * 0.4) * 0.5 + 0.5;
+          barTargetHeights[i] = wave * 2.5;
+        }
+
+        // Smooth lerp
+        barCurrentHeights[i] += (barTargetHeights[i] - barCurrentHeights[i]) * 0.12;
+
+        const h = Math.max(0.02, barCurrentHeights[i]);
+        barMeshes[i].scale.y = h;
+        barMeshes[i].position.y = 0;
+
+        // Color and emissive based on height
+        const normH = barCurrentHeights[i] / MAX_HEIGHT;
+        const col = getBarColor(normH);
+        barMeshes[i].material.color.copy(col);
+        barMeshes[i].material.emissive.copy(col);
+        barMeshes[i].material.emissiveIntensity = 0.2 + normH * 1.2;
+      }
+
+      // Subtle point light animation
+      pointLight.position.x = Math.sin(time * 0.5) * 20;
+      pointLight.position.z = Math.cos(time * 0.5) * 20;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>变形球</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #0a0a0f; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ── Renderer ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// ── Scene / Camera ─────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 4.5);
+
+// ── Lights ─────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(2, 3, 4);
+scene.add(dirLight);
+
+// ── Parameters ─────────────────────────────────────────────────────────────
+const params = {
+  noiseSpeed: 0.8,
+  amplitude: 0.35,
+  detailLevel: 4,
+  palette: 'Rainbow',
+  glowIntensity: 1.0,
+};
+
+const palettes = {
+  Rainbow:    [new THREE.Color(0xff0066), new THREE.Color(0x00ffcc), new THREE.Color(0x6600ff)],
+  Ocean:      [new THREE.Color(0x0033ff), new THREE.Color(0x00aaff), new THREE.Color(0x00ffcc)],
+  Aurora:     [new THREE.Color(0x00ff88), new THREE.Color(0xaa00ff), new THREE.Color(0xff00aa)],
+  Fire:       [new THREE.Color(0xff2200), new THREE.Color(0xff8800), new THREE.Color(0xffee00)],
+  Ice:        [new THREE.Color(0xaaffff), new THREE.Color(0x0066ff), new THREE.Color(0xffffff)],
+};
+
+// ── Shader ─────────────────────────────────────────────────────────────────
+const vertexShader = /* glsl */`
+  uniform float uTime;
+  uniform float uAmplitude;
+  uniform float uNoiseSpeed;
+  uniform float uGlowIntensity;
+  uniform vec3  uMouse;
+
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying float vNoise;
+  varying float vGlow;
+
+  // ── Hash / Noise ──────────────────────────────────────────────────────────
+  float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+  float noise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float n = i.x + i.y * 57.0 + i.z * 113.0;
+    return mix(
+      mix(mix(hash(n),      hash(n+1.0),   f.x),
+          mix(hash(n+57.0), hash(n+58.0),  f.x), f.y),
+      mix(mix(hash(n+113.0),hash(n+114.0), f.x),
+          mix(hash(n+170.0),hash(n+171.0), f.x), f.y),
+      f.z);
+  }
+
+  float fbm(vec3 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      v += a * noise3(p);
+      p = p * 2.1 + vec3(5.2, 1.3, 2.7);
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  void main() {
+    vec3 pos = position;
+
+    // ── FBM deformation ────────────────────────────────────────────────────
+    float t = uTime * uNoiseSpeed;
+    vec3 np = pos * 1.8 + vec3(t * 0.3, t * 0.2, t * 0.25);
+    float n = fbm(np) - 0.5;
+    vNoise = n;
+
+    pos += normal * n * uAmplitude;
+
+    // ── Mouse glow ──────────────────────────────────────────────────────────
+    float dist = distance(position, uMouse);
+    float pulse = sin(uTime * 4.0) * 0.5 + 0.5;
+    float glow = exp(-dist * 2.0) * uGlowIntensity * (0.7 + 0.3 * pulse);
+    vGlow = glow;
+
+    // deform toward mouse
+    vec3 toMouse = normalize(uMouse - position);
+    pos += toMouse * glow * 0.15;
+
+    // ── Varyings ────────────────────────────────────────────────────────────
+    vNormal  = normalMatrix * normal;
+    vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+    vViewDir  = -mvPos.xyz;
+
+    gl_Position = projectionMatrix * mvPos;
+  }
+`;
+
+const fragmentShader = /* glsl */`
+  uniform vec3  uColor0;
+  uniform vec3  uColor1;
+  uniform vec3  uColor2;
+  uniform float uTime;
+
+  varying vec3  vNormal;
+  varying vec3  vViewDir;
+  varying float vNoise;
+  varying float vGlow;
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 V = normalize(vViewDir);
+
+    // ── Fresnel ─────────────────────────────────────────────────────────────
+    float fresnel = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.8);
+
+    // ── Iridescent palette ──────────────────────────────────────────────────
+    float t = vNoise * 0.5 + 0.5;
+    vec3 col = mix(uColor0, uColor1, t);
+    col = mix(col, uColor2, fresnel);
+
+    // ── Edge glow / iridescence ─────────────────────────────────────────────
+    col += fresnel * uColor2 * 1.2;
+
+    // ── Mouse hover highlight ───────────────────────────────────────────────
+    col += vGlow * uColor2 * 2.0;
+    col += vGlow * uColor1 * 0.8;
+
+    // ── Rim light boost ─────────────────────────────────────────────────────
+    col = clamp(col, 0.0, 1.0);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+// ── Geometry ───────────────────────────────────────────────────────────────
+function buildGeometry(detail) {
+  return new THREE.IcosahedronGeometry(1.0, detail);
+}
+
+const paletteColors = palettes[params.palette];
+const uniforms = {
+  uTime:         { value: 0 },
+  uAmplitude:    { value: params.amplitude },
+  uNoiseSpeed:   { value: params.noiseSpeed },
+  uGlowIntensity:{ value: params.glowIntensity },
+  uMouse:        { value: new THREE.Vector3(0, 0, 0) },
+  uColor0:       { value: paletteColors[0].clone() },
+  uColor1:       { value: paletteColors[1].clone() },
+  uColor2:       { value: paletteColors[2].clone() },
+};
+
+const material = new THREE.ShaderMaterial({
+  vertexShader,
+  fragmentShader,
+  uniforms,
+});
+
+let geometry = buildGeometry(params.detailLevel);
+let mesh = new THREE.Mesh(geometry, material);
+scene.add(mesh);
+
+// ── Raycaster / Mouse ───────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let mouseWorld = new THREE.Vector3(0, 0, 0);
+let targetMouseWorld = new THREE.Vector3(0, 0, 0);
+let isHovering = false;
+
+function onMouseMove(e) {
+  mouse.x = (e.clientX / window.innerWidth)  * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(mesh);
+  if (hits.length > 0) {
+    targetMouseWorld.copy(hits[0].point);
+    isHovering = true;
+  } else {
+    isHovering = false;
+  }
+}
+
+window.addEventListener('mousemove', onMouseMove);
+
+// ── GUI ─────────────────────────────────────────────────────────────────────
+const gui = new GUI();
+gui.add(params, 'noiseSpeed',   0.1, 3.0, 0.1).name('Noise Speed').onChange(v => uniforms.uNoiseSpeed.value = v);
+gui.add(params, 'amplitude',    0.0, 0.8, 0.01).name('Amplitude').onChange(v => uniforms.uAmplitude.value = v);
+gui.add(params, 'glowIntensity', 0.0, 3.0, 0.1).name('Glow').onChange(v => uniforms.uGlowIntensity.value = v);
+gui.add(params, 'detailLevel', [1, 2, 3, 4, 5]).name('Detail').onChange(v => {
+  scene.remove(mesh);
+  geometry.dispose();
+  geometry = buildGeometry(v);
+  mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
+});
+gui.add(params, 'palette', Object.keys(palettes)).name('Palette').onChange(v => {
+  const c = palettes[v];
+  uniforms.uColor0.value.copy(c[0]);
+  uniforms.uColor1.value.copy(c[1]);
+  uniforms.uColor2.value.copy(c[2]);
+});
+
+// ── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Animation Loop ─────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+(function animate() {
+  requestAnimationFrame(animate);
+
+  uniforms.uTime.value = clock.getElapsedTime();
+
+  // smooth mouse world position
+  mouseWorld.lerp(targetMouseWorld, isHovering ? 0.12 : 0.04);
+  uniforms.uMouse.value.copy(mouseWorld);
+
+  // slow auto-rotate when not hovering
+  if (!isHovering) {
+    mesh.rotation.y += 0.003;
+    mesh.rotation.x += 0.001;
+  } else {
+    // gentle wobble on hover
+    mesh.rotation.y += 0.005;
+  }
+
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

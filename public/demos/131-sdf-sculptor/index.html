@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>131 · SDF 雕刻器 SDF Sculptor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #0d0d14; color: #fff; font-family: -apple-system, sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(13,13,20,0.85); border: 1px solid rgba(244,114,182,0.25);
+    border-radius: 12px; padding: 16px 18px; backdrop-filter: blur(12px);
+    width: 200px;
+  }
+  #ui h3 { font-size: 13px; color: #f472b6; margin: 0 0 14px; letter-spacing: 0.05em; }
+  .row { display: flex; gap: 5px; margin-bottom: 10px; }
+  .btn {
+    flex: 1; padding: 7px 4px; border-radius: 8px;
+    border: 1px solid rgba(244,114,182,0.3);
+    background: rgba(244,114,182,0.08); color: #94a3b8;
+    font-size: 12px; cursor: pointer; transition: all 0.15s; font-family: inherit;
+  }
+  .btn:hover { background: rgba(244,114,182,0.15); color: #f0abfc; }
+  .btn.active { background: rgba(244,114,182,0.25); border-color: #f472b6; color: #f472b6; }
+  .btn.danger { border-color: rgba(248,113,113,0.3); color: #f87171; }
+  .btn.danger:hover { background: rgba(248,113,113,0.15); }
+  .ctrl { margin-bottom: 10px; }
+  .ctrl label { display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-bottom: 4px; }
+  .ctrl label span { color: #f472b6; }
+  .ctrl input[type=range] {
+    width: 100%; height: 3px; -webkit-appearance: none; appearance: none;
+    background: rgba(255,255,255,0.08); border-radius: 2px; outline: none;
+  }
+  .ctrl input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #f472b6; cursor: pointer;
+  }
+  #stat { font-size: 11px; color: #475569; margin-top: 6px; }
+  #stat span { color: #94a3b8; }
+  .tip {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(13,13,20,0.8); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; padding: 10px 18px; font-size: 12px; color: #64748b;
+    backdrop-filter: blur(8px); white-space: nowrap;
+  }
+  .tip b { color: #94a3b8; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h3>SDF 雕刻</h3>
+  <div class="row">
+    <button class="btn active" id="btnAdd">添加</button>
+    <button class="btn" id="btnSub">删除</button>
+  </div>
+  <div class="row">
+    <button class="btn" id="btnSphere">球</button>
+    <button class="btn" id="btnBox">方块</button>
+  </div>
+  <div class="ctrl">
+    <label>笔刷半径 <span id="rVal">1.0</span></label>
+    <input type="range" id="rSlider" min="1" max="5" step="1" value="1" />
+  </div>
+  <div class="ctrl">
+    <label>细分面数 <span id="sVal">12</span></label>
+    <input type="range" id="sSlider" min="4" max="32" step="2" value="12" />
+  </div>
+  <div class="row">
+    <button class="btn danger" id="btnClear">清空</button>
+    <button class="btn" id="btnReset">重置</button>
+  </div>
+  <div id="stat">体素数 <span id="count">0</span></div>
+</div>
+
+<div class="tip">
+  <b>左键</b> 添加/删除体素 &nbsp;|&nbsp; <b>右键拖拽</b> 旋转视角 &nbsp;|&nbsp; <b>滚轮</b> 缩放
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+// ─── Scene ───────────────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0d0d14)
+scene.fog = new THREE.FogExp2(0x0d0d14, 0.06)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200)
+camera.position.set(12, 10, 16)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+document.body.appendChild(renderer.domElement)
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.2))
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.5)
+sun.position.set(8, 16, 10)
+sun.castShadow = true
+sun.shadow.mapSize.set(2048, 2048)
+sun.shadow.camera.near = 1
+sun.shadow.camera.far = 80
+sun.shadow.camera.left = sun.shadow.camera.bottom = -20
+sun.shadow.camera.right = sun.shadow.camera.top = 20
+scene.add(sun)
+
+const fill = new THREE.DirectionalLight(0x8844ff, 1.0)
+fill.position.set(-6, 4, -8)
+scene.add(fill)
+
+const rimLight = new THREE.PointLight(0xf472b6, 30, 30, 2)
+rimLight.position.set(-5, 8, 5)
+scene.add(rimLight)
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshStandardMaterial({ color: 0x1a1a28, roughness: 0.9 })
+)
+ground.rotation.x = -Math.PI / 2
+ground.position.y = -0.01
+ground.receiveShadow = true
+scene.add(ground)
+
+// Grid
+const grid = new THREE.GridHelper(60, 60, 0x2a2a40, 0x1e1e32)
+grid.position.y = 0
+scene.add(grid)
+
+// ─── Voxel System ─────────────────────────────────────────────────────────
+const voxels = new Map() // key string -> { mesh, pos }
+let brushRadius = 1
+let segCount = 12
+let sculptMode = 'add'    // 'add' | 'sub'
+let sculptShape = 'sphere' // 'sphere' | 'box'
+
+const COLORS = [
+  0xf472b6, 0x818cf8, 0x38bdf8, 0x34d399,
+  0xf59e0b, 0xfb923c, 0xa78bfa, 0x2dd4bf,
+  0xfb7185, 0xe879f9, 0x4ade80, 0xfacc15
+]
+
+const VOXEL_SIZE = 0.8
+const HALF = 4  // build a 8x8x8 grid centered at origin
+
+// Create voxel at grid position
+function makeVoxel(gx, gy, gz) {
+  const key = `${gx},${gy},${gz}`
+  if (voxels.has(key)) return null
+
+  const geo = sculptShape === 'box'
+    ? new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE)
+    : new THREE.SphereGeometry(VOXEL_SIZE * 0.5, segCount, segCount)
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    roughness: 0.3, metalness: 0.4,
+    emissive: new THREE.Color(COLORS[Math.floor(Math.random() * COLORS.length)]),
+    emissiveIntensity: 0.2,
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(gx * VOXEL_SIZE, gy * VOXEL_SIZE + VOXEL_SIZE / 2, gz * VOXEL_SIZE)
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  scene.add(mesh)
+  voxels.set(key, { mesh, gx, gy, gz })
+  return mesh
+}
+
+function removeVoxel(key) {
+  const v = voxels.get(key)
+  if (!v) return
+  scene.remove(v.mesh)
+  v.mesh.geometry.dispose()
+  v.mesh.material.dispose()
+  voxels.delete(key)
+}
+
+function clearAll() {
+  for (const [key, v] of voxels) {
+    scene.remove(v.mesh)
+    v.mesh.geometry.dispose()
+    v.mesh.material.dispose()
+  }
+  voxels.clear()
+  updateUI()
+}
+
+// ─── Seed initial shape ───────────────────────────────────────────────────
+function seedSphere(r = 3, cx = 0, cy = 0, cz = 0) {
+  for (let x = -r; x <= r; x++)
+  for (let y = -r; y <= r; y++)
+  for (let z = -r; z <= r; z++) {
+    if (x*x + y*y + z*z <= r*r) {
+      makeVoxel(cx + x, cy + y, cz + z)
+    }
+  }
+}
+
+function seedBox(w = 5, h = 3, d = 5) {
+  for (let x = 0; x < w; x++)
+  for (let y = 0; y < h; y++)
+  for (let z = 0; z < d; z++) {
+    makeVoxel(x - Math.floor(w/2), y, z - Math.floor(d/2))
+  }
+}
+
+// Default: sphere
+seedSphere(3)
+
+// ─── Brush cursor ───────────────────────────────────────────────────────
+const cursorMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.25, wireframe: true })
+let cursorMesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), cursorMat)
+cursorMesh.visible = false
+scene.add(cursorMesh)
+
+function updateCursorGeometry() {
+  scene.remove(cursorMesh)
+  cursorMesh.geometry.dispose()
+  const r = brushRadius * VOXEL_SIZE * 0.5
+  cursorMesh = new THREE.Mesh(
+    sculptShape === 'box'
+      ? new THREE.BoxGeometry(r*2, r*2, r*2)
+      : new THREE.SphereGeometry(r, 12, 12),
+    cursorMat
+  )
+  cursorMesh.visible = false
+  scene.add(cursorMesh)
+}
+
+function updateCursor(rx, ry, rz) {
+  cursorMesh.visible = true
+  cursorMesh.position.set(rx * VOXEL_SIZE, ry * VOXEL_SIZE + VOXEL_SIZE / 2, rz * VOXEL_SIZE)
+  cursorMat.opacity = 0.2 + Math.sin(Date.now() * 0.004) * 0.1
+}
+
+// ─── Raycasting ──────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster()
+const mouse = new THREE.Vector2()
+let mouseDown = false
+
+function toNDC(e) {
+  const r = renderer.domElement.getBoundingClientRect()
+  return new THREE.Vector2(
+    ((e.clientX - r.left) / r.width)  * 2 - 1,
+   -((e.clientY - r.top)  / r.height) * 2 + 1
+  )
+}
+
+// Build a flat array of voxel meshes for raycasting
+function getVoxelMeshes() {
+  const meshes = []
+  for (const [, v] of voxels) meshes.push(v.mesh)
+  return meshes
+}
+
+// Ground plane for raycasting
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+
+function sculptAt(e) {
+  const ndc = toNDC(e)
+  raycaster.setFromCamera(ndc, camera)
+
+  // First try hitting existing voxels
+  const hits = raycaster.intersectObjects(getVoxelMeshes())
+
+  if (hits.length > 0) {
+    const hit = hits[0]
+    const hitMesh = hit.object
+    // Find which voxel
+    for (const [key, v] of voxels) {
+      if (v.mesh !== hitMesh) continue
+
+      const n = hit.face.normal
+      // Add voxel on the face normal direction
+      const nx = Math.round(n.x)
+      const ny = Math.round(n.y)
+      const nz = Math.round(n.z)
+
+      if (sculptMode === 'add') {
+        makeVoxel(v.gx + nx, v.gy + ny, v.gz + nz)
+      } else {
+        removeVoxel(key)
+      }
+    }
+  } else {
+    // Hit ground or empty space — add/delete in a sphere/box around cursor
+    const pt = new THREE.Vector3()
+    if (raycaster.ray.intersectPlane(groundPlane, pt)) {
+      const gc = Math.round(pt.x / VOXEL_SIZE)
+      const gcZ = Math.round(pt.z / VOXEL_SIZE)
+      const gy = 0
+
+      if (sculptMode === 'add') {
+        const r = brushRadius
+        if (sculptShape === 'box') {
+          for (let dx = -r; dx <= r; dx++)
+          for (let dy = 0; dy <= r * 2; dy++)
+          for (let dz = -r; dz <= r; dz++) {
+            makeVoxel(gc + dx, dy, gcZ + dz)
+          }
+        } else {
+          for (let dx = -r; dx <= r; dx++)
+          for (let dy = 0; dy <= r * 2; dy++)
+          for (let dz = -r; dz <= r; dz++) {
+            if (dx*dx + dy*dy*0.3 + dz*dz <= r*r) {
+              makeVoxel(gc + dx, dy, gcZ + dz)
+            }
+          }
+        }
+      } else {
+        // Delete in sphere around click
+        const r = brushRadius
+        for (let dx = -r; dx <= r; dx++)
+        for (let dy = -r; dy <= r * 3; dy++)
+        for (let dz = -r; dz <= r; dz++) {
+          if (dx*dx + dy*dy*0.3 + dz*dz <= r*r) {
+            removeVoxel(`${gc + dx},${dy},${gcZ + dz}`)
+          }
+        }
+      }
+    }
+  }
+  updateUI()
+}
+
+function getCursorPos(e) {
+  const ndc = toNDC(e)
+  raycaster.setFromCamera(ndc, camera)
+  const hits = raycaster.intersectObjects(getVoxelMeshes())
+  if (hits.length > 0) {
+    const hit = hits[0]
+    for (const [, v] of voxels) {
+      if (v.mesh !== hit.object) continue
+      const n = hit.face.normal
+      return { gx: v.gx + Math.round(n.x), gy: v.gy + Math.round(n.y), gz: v.gz + Math.round(n.z) }
+    }
+  }
+  const pt = new THREE.Vector3()
+  if (raycaster.ray.intersectPlane(groundPlane, pt)) {
+    return {
+      gx: Math.round(pt.x / VOXEL_SIZE),
+      gy: 0,
+      gz: Math.round(pt.z / VOXEL_SIZE)
+    }
+  }
+  return null
+}
+
+renderer.domElement.addEventListener('mousedown', e => {
+  if (e.button === 0) {
+    mouseDown = true
+    controls.enabled = false
+    sculptAt(e)
+  }
+})
+renderer.domElement.addEventListener('mousemove', e => {
+  const pos = getCursorPos(e)
+  if (pos) updateCursor(pos.gx, pos.gy, pos.gz)
+  else cursorMesh.visible = false
+  if (mouseDown) sculptAt(e)
+})
+renderer.domElement.addEventListener('mouseup', () => {
+  mouseDown = false
+  controls.enabled = true
+})
+renderer.domElement.addEventListener('mouseleave', () => {
+  mouseDown = false
+  controls.enabled = true
+  cursorMesh.visible = false
+})
+
+// ─── Controls ────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.enablePan = true
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+
+// ─── UI ─────────────────────────────────────────────────────────────────
+function updateUI() {
+  document.getElementById('count').textContent = voxels.size
+}
+
+document.getElementById('btnAdd').addEventListener('click', () => {
+  sculptMode = 'add'
+  document.querySelectorAll('#btnAdd, #btnSub').forEach(b => b.classList.remove('active'))
+  document.getElementById('btnAdd').classList.add('active')
+})
+document.getElementById('btnSub').addEventListener('click', () => {
+  sculptMode = 'sub'
+  document.querySelectorAll('#btnAdd, #btnSub').forEach(b => b.classList.remove('active'))
+  document.getElementById('btnSub').classList.add('active')
+})
+
+document.getElementById('btnSphere').addEventListener('click', () => {
+  sculptShape = 'sphere'
+  document.querySelectorAll('#btnSphere, #btnBox').forEach(b => b.classList.remove('active'))
+  document.getElementById('btnSphere').classList.add('active')
+  updateCursorGeometry()
+})
+document.getElementById('btnBox').addEventListener('click', () => {
+  sculptShape = 'box'
+  document.querySelectorAll('#btnSphere, #btnBox').forEach(b => b.classList.remove('active'))
+  document.getElementById('btnBox').classList.add('active')
+  updateCursorGeometry()
+})
+
+document.getElementById('rSlider').addEventListener('input', e => {
+  brushRadius = parseInt(e.target.value)
+  document.getElementById('rVal').textContent = brushRadius
+  updateCursorGeometry()
+})
+document.getElementById('sSlider').addEventListener('input', e => {
+  segCount = parseInt(e.target.value)
+  document.getElementById('sVal').textContent = segCount
+  // Rebuild all sphere voxels with new segments
+  for (const [, v] of voxels) {
+    if (v.mesh.geometry.type === 'SphereGeometry') {
+      v.mesh.geometry.dispose()
+      v.mesh.geometry = new THREE.SphereGeometry(VOXEL_SIZE * 0.5, segCount, segCount)
+    }
+  }
+})
+
+document.getElementById('btnClear').addEventListener('click', clearAll)
+document.getElementById('btnReset').addEventListener('click', () => {
+  clearAll()
+  seedSphere(3)
+  updateUI()
+})
+
+// ─── Animate ────────────────────────────────────────────────────────────
+let t = 0
+function animate() {
+  requestAnimationFrame(animate)
+  t += 0.016
+  cursorMat.opacity = 0.18 + Math.sin(t * 3) * 0.08
+  controls.update()
+  renderer.render(scene, camera)
+}
+animate()
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+updateUI()
+</script>
+</body>
+</html>

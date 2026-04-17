@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>160 · 迷你高尔夫 Mini Golf</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #0a1a0a; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #e2e8f0; font: 14px/1.65 -apple-system, sans-serif;
+    background: rgba(3,18,3,0.85); padding: 10px 14px; border-radius: 10px;
+    max-width: 340px; backdrop-filter: blur(10px);
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  .tip b { color: #4ade80; }
+  .panel {
+    position: fixed; top: 12px; right: 12px;
+    background: rgba(3,18,3,0.85); border: 1px solid rgba(34,197,94,0.2);
+    border-radius: 12px; padding: 14px; backdrop-filter: blur(10px); width: 200px;
+  }
+  .panel h3 { margin: 0 0 8px; font-size: 12px; color: #4ade80; letter-spacing: 0.08em; text-transform: uppercase; }
+  .stat { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+  .stat span { color: #4ade80; font-weight: 600; }
+  .power-bar {
+    width: 100%; height: 8px; background: rgba(255,255,255,0.1);
+    border-radius: 4px; margin: 6px 0; overflow: hidden;
+  }
+  .power-fill {
+    height: 100%; background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
+    border-radius: 4px; width: 0%; transition: width 0.03s;
+  }
+  .btn {
+    display: block; width: 100%; padding: 8px; margin-top: 6px;
+    background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3);
+    color: #4ade80; border-radius: 8px; cursor: pointer; font-size: 13px;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: rgba(34,197,94,0.25); }
+  .hint { font-size: 11px; color: #475569; margin-top: 10px; line-height: 1.7; }
+  .hint kbd { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-family: monospace; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：迷你高尔夫游戏</b><br>
+  · 2D 物理（速度 + 摩擦力 + 边界反弹）<br>
+  · 拖拽瞄准 + 力度条，洞进球触发胜利<br>
+  · 3 个球洞，自动切换
+</div>
+
+<div class="panel">
+  <h3>⛳ 迷你高尔夫</h3>
+  <div class="stat">
+    洞：<span id="holeNum">1</span> / 3 &nbsp;
+    杆数：<span id="strokes">0</span> &nbsp;
+    总杆：<span id="total">0</span>
+  </div>
+  <div class="power-bar"><div class="power-fill" id="powerFill"></div></div>
+  <div class="hint"><kbd>拖拽</kbd> 瞄准并发射</div>
+  <button class="btn" id="resetBallBtn">🔄 重置球</button>
+  <button class="btn" id="nextHoleBtn">⏭ 下一洞</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0a1a0a)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 25, 12)
+camera.lookAt(0, 0, 0)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.enablePan = false
+controls.minDistance = 10
+controls.maxDistance = 40
+controls.maxPolarAngle = Math.PI / 2.5
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5))
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.0)
+sunLight.position.set(10, 20, 10)
+sunLight.castShadow = true
+sunLight.shadow.mapSize.set(2048, 2048)
+sunLight.shadow.camera.left = -30
+sunLight.shadow.camera.right = 30
+sunLight.shadow.camera.top = 30
+sunLight.shadow.camera.bottom = -30
+scene.add(sunLight)
+
+// ─── Courses ────────────────────────────────────────────────────────────────────
+const courses = [
+  {
+    walls: [
+      { x1: -5, z1: -4, x2: 5, z2: -4 },
+      { x1: 5, z1: -4, x2: 5, z2: 4 },
+      { x1: 5, z1: 4, x2: -5, z2: 4 },
+      { x1: -5, z1: 4, x2: -5, z2: -4 },
+    ],
+    hole: { x: 3, z: 0 },
+    ballStart: { x: -3, z: 0 },
+    tee: { x: -3, z: -2 },
+    obstacles: [],
+  },
+  {
+    walls: [
+      { x1: -6, z1: -3, x2: 6, z2: -3 },
+      { x1: 6, z1: -3, x2: 6, z2: 5 },
+      { x1: 6, z1: 5, x2: -6, z2: 5 },
+      { x1: -6, z1: 5, x2: -6, z2: -3 },
+      // L-shaped obstacle
+      { x1: 0, z1: -3, x2: 0, z2: 1 },
+      { x1: 0, z1: 1, x2: 4, z2: 1 },
+    ],
+    hole: { x: 4, z: 3 },
+    ballStart: { x: -4, z: 0 },
+    tee: { x: -4, z: 0 },
+    obstacles: [{ x: 2, z: -1, w: 1, h: 1.5 }],
+  },
+  {
+    walls: [
+      { x1: -7, z1: -4, x2: 7, z2: -4 },
+      { x1: 7, z1: -4, x2: 7, z2: 4 },
+      { x1: 7, z1: 4, x2: -7, z2: 4 },
+      { x1: -7, z1: 4, x2: -7, z2: -4 },
+    ],
+    hole: { x: 5, z: 0 },
+    ballStart: { x: -5, z: 0 },
+    tee: { x: -5, z: 0 },
+    obstacles: [
+      { x: 0, z: 0, w: 0.8, h: 3 },
+      { x: -2, z: -2.5, w: 1.5, h: 0.5 },
+      { x: 2, z: 2.5, w: 1.5, h: 0.5 },
+    ],
+  },
+]
+
+// Course walls rendered as thin boxes
+function clearWalls() {
+  scene.children
+    .filter(c => c.userData.isWall || c.userData.isObstacle || c.userData.isTee || c.userData.isHole)
+    .forEach(c => scene.remove(c))
+}
+
+function buildCourse(courseIdx) {
+  clearWalls()
+  const c = courses[courseIdx]
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x3d1f0a, roughness: 0.5 })
+
+  c.walls.forEach(w => {
+    const dx = w.x2 - w.x1, dz = w.z2 - w.z1
+    const len = Math.sqrt(dx*dx + dz*dz)
+    const angle = Math.atan2(dz, dx)
+    const midX = (w.x1 + w.x2) / 2
+    const midZ = (w.z1 + w.z2) / 2
+    const wall = new THREE.Mesh(
+      new THREE.BoxGeometry(len, 0.3, 0.2),
+      wallMat
+    )
+    wall.position.set(midX, 0.15, midZ)
+    wall.rotation.y = -angle
+    wall.castShadow = true
+    wall.receiveShadow = true
+    wall.userData.isWall = true
+    scene.add(wall)
+  })
+
+  // Hole
+  const holeMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 0.4, 0.05, 16),
+    new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1 })
+  )
+  holeMesh.position.set(c.hole.x, 0.01, c.hole.z)
+  holeMesh.userData.isHole = true
+  scene.add(holeMesh)
+
+  // Hole rim
+  const rimMesh = new THREE.Mesh(
+    new THREE.TorusGeometry(0.4, 0.05, 8, 32),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 })
+  )
+  rimMesh.rotation.x = Math.PI / 2
+  rimMesh.position.set(c.hole.x, 0.02, c.hole.z)
+  rimMesh.userData.isHole = true
+  scene.add(rimMesh)
+
+  // Flag
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.03, 1.2, 8),
+    new THREE.MeshStandardMaterial({ color: 0xcccccc })
+  )
+  pole.position.set(c.hole.x, 0.6, c.hole.z)
+  pole.userData.isHole = true
+  scene.add(pole)
+  const flag = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.4, 0.25),
+    new THREE.MeshStandardMaterial({ color: 0xff4444, side: THREE.DoubleSide })
+  )
+  flag.position.set(c.hole.x + 0.2, 1.1, c.hole.z)
+  flag.userData.isHole = true
+  scene.add(flag)
+
+  // Tee marker
+  const tee = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.15, 0.02, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffffff })
+  )
+  tee.position.set(c.tee.x, 0.01, c.tee.z)
+  tee.userData.isTee = true
+  scene.add(tee)
+
+  // Obstacles
+  const obsMat = new THREE.MeshStandardMaterial({ color: 0x666666 })
+  c.obstacles.forEach(o => {
+    const obs = new THREE.Mesh(
+      new THREE.BoxGeometry(o.w, 0.4, o.h),
+      obsMat
+    )
+    obs.position.set(o.x, 0.2, o.z)
+    obs.castShadow = true
+    obs.receiveShadow = true
+    obs.userData.isObstacle = true
+    scene.add(obs)
+  })
+}
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshStandardMaterial({ color: 0x0d4a0d, roughness: 0.9 })
+)
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+// ─── Ball ───────────────────────────────────────────────────────────────────────
+const BALL_R = 0.2
+let ballX = 0, ballZ = 0, ballVX = 0, ballVZ = 0
+const FRICTION = 0.985
+const RESTITUTION = 0.7
+const MIN_VEL = 0.002
+const BALL_Y = BALL_R
+
+const ballMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(BALL_R, 24, 24),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.3 })
+)
+ballMesh.castShadow = true
+scene.add(ballMesh)
+
+let currentHole = 0;
+let inHole = false;
+
+function resetBall() {
+  const c = courses[currentHole]
+  ballX = c.ballStart.x
+  ballZ = c.ballStart.z
+  ballVX = 0
+  ballVZ = 0
+  ballMesh.position.set(ballX, BALL_Y, ballZ)
+  inHole = false
+}
+resetBall()
+
+// ─── Hole Detection ────────────────────────────────────────────────────────────
+function checkHole() {
+  const c = courses[currentHole]
+  const dx = ballX - c.hole.x, dz = ballZ - c.hole.z
+  const dist = Math.sqrt(dx*dx + dz*dz)
+  const speed = Math.sqrt(ballVX*ballVX + ballVZ*ballVZ)
+  if (dist < 0.35 && speed < 0.08) {
+    inHole = true
+    ballMesh.visible = false
+    document.getElementById('strokes').textContent = parseInt(document.getElementById('strokes').textContent) + 1
+  }
+}
+
+// ─── Aiming ────────────────────────────────────────────────────────────────────
+const aimGeo = new THREE.BufferGeometry()
+const aimLine = new THREE.Line(
+  aimGeo,
+  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })
+)
+aimLine.visible = false
+scene.add(aimLine)
+
+let isDragging = false
+let dragStartX = 0, dragStartY = 0
+let aimDX = 0, aimDZ = 0
+
+const raycaster = new THREE.Raycaster()
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+
+function getBallScreenPos() {
+  const v = ballMesh.position.clone().project(camera)
+  return {
+    x: (v.x + 1) / 2 * innerWidth,
+    y: (-v.y + 1) / 2 * innerHeight,
+  }
+}
+
+renderer.domElement.addEventListener('mousedown', e => {
+  if (e.button !== 0) return
+  const sp = getBallScreenPos()
+  const dx = e.clientX - sp.x, dy = e.clientY - sp.y
+  if (Math.sqrt(dx*dx + dy*dy) < 40) {
+    isDragging = true
+    dragStartX = e.clientX
+    dragStartY = e.clientY
+  }
+})
+
+renderer.domElement.addEventListener('mousemove', e => {
+  if (!isDragging) return
+  const dx = e.clientX - dragStartX
+  const dy = e.clientY - dragStartY
+  aimDX = dx / 30
+  aimDZ = -dy / 30
+  const power = Math.min(Math.sqrt(dx*dx + dy*dy) / 150, 1)
+  document.getElementById('powerFill').style.width = (power * 100) + '%'
+
+  // Update aim line
+  const pts = [
+    new THREE.Vector3(ballX, BALL_Y, ballZ),
+    new THREE.Vector3(ballX + aimDX * 3, BALL_Y, ballZ + aimDZ * 3),
+  ]
+  aimGeo.setFromPoints(pts)
+  aimLine.visible = true
+})
+
+renderer.domElement.addEventListener('mouseup', e => {
+  if (!isDragging) return
+  isDragging = false
+  aimLine.visible = false
+  const dx = e.clientX - dragStartX
+  const dy = e.clientY - dragStartY
+  const power = Math.min(Math.sqrt(dx*dx + dy*dy) / 150, 1) * 0.3
+  if (power > 0.01) {
+    const nx = dx / Math.sqrt(dx*dx + dy*dy) || 0
+    const ny = -dy / Math.sqrt(dx*dx + dy*dy) || 0
+    ballVX += nx * power
+    ballVZ += ny * power
+    strokes++
+    document.getElementById('strokes').textContent = strokes
+  }
+  document.getElementById('powerFill').style.width = '0%'
+})
+
+// ─── Physics ────────────────────────────────────────────────────────────────────
+let strokes = 0
+let totalStrokes = 0
+
+function updateBall(dt) {
+  if (inHole) return
+
+  // Apply velocity
+  ballX += ballVX
+  ballZ += ballVZ
+
+  // Friction
+  ballVX *= FRICTION
+  ballVZ *= FRICTION
+  if (Math.abs(ballVX) < MIN_VEL) ballVX = 0
+  if (Math.abs(ballVZ) < MIN_VEL) ballVZ = 0
+
+  // Wall collision (simplified AABB)
+  const HW = 5, HH = 4
+  if (ballX < -HW + BALL_R) { ballX = -HW + BALL_R; ballVX *= -RESTITUTION }
+  if (ballX > HW - BALL_R)  { ballX = HW - BALL_R;  ballVX *= -RESTITUTION }
+  if (ballZ < -HH + BALL_R) { ballZ = -HH + BALL_R; ballVZ *= -RESTITUTION }
+  if (ballZ > HH - BALL_R)  { ballZ = HH - BALL_R;  ballVZ *= -RESTITUTION }
+
+  // Obstacle collision
+  courses[currentHole].obstacles.forEach(o => {
+    const hw = o.w / 2, hh = o.h / 2
+    if (ballX > o.x - hw - BALL_R && ballX < o.x + hw + BALL_R &&
+        ballZ > o.z - hh - BALL_R && ballZ < o.z + hh + BALL_R) {
+      // Push out
+      const dx = ballX - o.x, dz = ballZ - o.z
+      const ox = (hw + BALL_R) - Math.abs(dx)
+      const oz = (hh + BALL_R) - Math.abs(dz)
+      if (ox < oz) {
+        ballX += ox * Math.sign(dx)
+        ballVX *= -RESTITUTION
+      } else {
+        ballZ += oz * Math.sign(dz)
+        ballVZ *= -RESTITUTION
+      }
+    }
+  })
+
+  // Ball rotation
+  const speed = Math.sqrt(ballVX*ballVX + ballVZ*ballVZ)
+  if (speed > 0.001) {
+    const axis = new THREE.Vector3(-ballVZ, 0, ballVX).normalize()
+    ballMesh.rotateOnWorldAxis(axis, speed / BALL_R * dt)
+  }
+
+  ballMesh.position.set(ballX, BALL_Y, ballZ)
+  checkHole()
+}
+
+// ─── UI ────────────────────────────────────────────────────────────────────────
+document.getElementById('resetBallBtn').addEventListener('click', () => {
+  strokes = 0
+  document.getElementById('strokes').textContent = '0'
+  resetBall()
+})
+
+document.getElementById('nextHoleBtn').addEventListener('click', () => {
+  totalStrokes += strokes
+  currentHole = (currentHole + 1) % courses.length
+  strokes = 0
+  document.getElementById('holeNum').textContent = currentHole + 1
+  document.getElementById('strokes').textContent = '0'
+  document.getElementById('total').textContent = totalStrokes
+  buildCourse(currentHole)
+  resetBall()
+})
+
+// ─── Animate ──────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const delta = Math.min(clock.getDelta(), 0.05)
+
+  updateBall(delta)
+
+  // Ball in hole animation
+  if (inHole) {
+    const c = courses[currentHole]
+    ballMesh.position.set(c.hole.x, 0.05 + Math.sin(clock.elapsedTime * 3) * 0.02, c.hole.z)
+    ballMesh.visible = true
+  }
+
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+// Build first course
+buildCourse(0)
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+window.scene = scene
+window.camera = camera
+window.renderer = renderer
+window.controls = controls
+window.ballMesh = ballMesh
+
+animate()
+</script>
+</body>
+</html>

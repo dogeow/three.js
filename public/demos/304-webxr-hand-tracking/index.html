@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>304 — WebXR 手部追踪与手势</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d0d0d; }
+
+    canvas { display: block; }
+
+    /* ── overlay ── */
+    #overlay {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: rgba(8, 8, 8, 0.88);
+      color: #e0e0e0; font-family: 'Courier New', monospace;
+      z-index: 100; transition: opacity 0.4s;
+    }
+    #overlay.hidden { opacity: 0; pointer-events: none; }
+
+    #overlay h1 { font-size: 1.4rem; letter-spacing: 0.12em; color: #00e5ff; margin-bottom: 0.6rem; }
+    #overlay p { font-size: 0.78rem; line-height: 1.7; color: #9e9e9e; max-width: 420px; text-align: center; }
+    #overlay .key { color: #ffca28; }
+
+    #xrBtn {
+      margin-top: 1.4rem; padding: 0.65rem 1.6rem;
+      background: transparent; border: 1.5px solid #00e5ff;
+      color: #00e5ff; font-family: inherit; font-size: 0.82rem;
+      letter-spacing: 0.1em; cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    #xrBtn:hover { background: #00e5ff22; }
+    #xrBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #errorMsg { margin-top: 1rem; font-size: 0.75rem; color: #ff5252; display: none; }
+
+    /* ── gesture label ── */
+    #gestureLabel {
+      position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.6); border: 1px solid #00e5ff55;
+      color: #00e5ff; font-family: 'Courier New', monospace; font-size: 0.8rem;
+      padding: 0.35rem 1rem; border-radius: 2rem;
+      pointer-events: none; opacity: 0; transition: opacity 0.3s;
+      z-index: 50;
+    }
+    #gestureLabel.visible { opacity: 1; }
+
+    /* ── gui hint ── */
+    #guiHint {
+      position: fixed; bottom: 1rem; right: 1rem;
+      font-family: 'Courier New', monospace; font-size: 0.7rem;
+      color: #555; pointer-events: none;
+    }
+  </style>
+
+  <!-- ── importmap: Three.js r160 ── -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<!-- instructions overlay -->
+<div id="overlay">
+  <h1>304 · WebXR 手部追踪</h1>
+  <p>
+    <span class="key">捏合</span> — 拇指与食指指尖相触<br>
+    <span class="key">抓取</span> — 弯曲所有手指向掌心<br>
+    <span class="key">指向</span> — 仅伸出食指<br>
+    <br>
+    在 <span class="key">immersive-ar</span> 模式下运行。<br>
+    桌面预览: 鼠标旋转视角。
+  </p>
+  <button id="xrBtn">正在加载 XR…</button>
+  <div id="errorMsg"></div>
+</div>
+
+<div id="gestureLabel"></div>
+<div id="guiHint">lil-gui → 手部样式</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+import { GUI }              from 'three/addons/libs/lil-gui.module.min.js';
+
+/* ═══════════════════════════════════════════
+   RENDERER & SCENE
+═══════════════════════════════════════════ */
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setSessionreferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d0d);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0, 1.4, 2.5);
+
+/* ── lights ── */
+scene.add(new THREE.AmbientLight(0x404040, 1.2));
+const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+dir.position.set(2, 4, 3);
+scene.add(dir);
+
+/* ── grid floor ── */
+const grid = new THREE.GridHelper(10, 20, 0x1a3a4a, 0x0e2030);
+scene.add(grid);
+
+/* ── OrbitControls (non-XR) ── */
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1, 0);
+controls.update();
+
+/* ═══════════════════════════════════════════
+   JOINT CONNECTIVITY — 21 joints per hand
+   Index references: wrist=0, thumb=1-4, index=5-8, middle=9-12, ring=13-16, pinky=17-20
+═══════════════════════════════════════════ */
+const FINGER_SEGMENTS = [
+  // wrist → thumb
+  [0,1],[1,2],[2,3],[3,4],
+  // wrist → index
+  [0,5],[5,6],[6,7],[7,8],
+  // wrist → middle
+  [0,9],[9,10],[10,11],[11,12],
+  // wrist → ring
+  [0,13],[13,14],[14,15],[15,16],
+  // wrist → pinky
+  [0,17],[17,18],[18,19],[19,20],
+];
+
+// Colors per joint index
+const JOINT_COLORS = (() => {
+  const c = new Array(21).fill(null);
+  c[0]  = new THREE.Color(0xffee00); // wrist – yellow
+  c[1]  = c[2] = c[3] = c[4]  = new THREE.Color(0x2266ff); // thumb – blue
+  c[5]  = c[6] = c[7] = c[8]  = new THREE.Color(0x22ff66); // index – green
+  c[9]  = c[10]= c[11]= c[12] = new THREE.Color(0x00ffee); // middle – cyan
+  c[13] = c[14]= c[15]= c[16] = new THREE.Color(0xff8822); // ring – orange
+  c[17] = c[18]= c[19]= c[20] = new THREE.Color(0xcc44ff); // pinky – purple
+  return c;
+})();
+
+/* ═══════════════════════════════════════════
+   HAND GEOMETRY HELPERS
+═══════════════════════════════════════════ */
+const MAX_JOINTS = 21;
+
+// LineSegments – skeleton lines
+function makeLineGeom() {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(MAX_JOINTS * 3);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return g;
+}
+
+// Points – joint dots
+function makePointsGeom() {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(MAX_JOINTS * 3);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return g;
+}
+
+function makeLineMat(color) {
+  return new THREE.LineBasicMaterial({ color, linewidth: 2, depthTest: true, transparent: true, opacity: 0.9 });
+}
+function makePointsMat(color) {
+  return new THREE.PointsMaterial({ color, size: 0.018, sizeAttenuation: true, depthTest: true, transparent: true, opacity: 0.9 });
+}
+
+/* per-hand rendering objects */
+function buildHandObjects(color) {
+  return {
+    lines  : new THREE.LineSegments(makeLineGeom(), makeLineMat(color)),
+    dots   : new THREE.Points(makePointsGeom(), makePointsMat(color)),
+  };
+}
+
+const leftLinesObj  = buildHandObjects(0xffffff);
+const rightLinesObj = buildHandObjects(0xffffff);
+[leftLinesObj.lines, leftLinesObj.dots,
+ rightLinesObj.lines, rightLinesObj.dots].forEach(o => scene.add(o));
+
+/* ═══════════════════════════════════════════
+   GESTURE EFFECTS
+═══════════════════════════════════════════ */
+// Pinch glow ring
+const pinchRing = new THREE.Mesh(
+  new THREE.TorusGeometry(0.025, 0.006, 12, 40),
+  new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.85 })
+);
+pinchRing.visible = false;
+scene.add(pinchRing);
+
+// Grab fist icon (simple sphere cluster)
+const fistGeo = new THREE.SphereGeometry(0.05, 12, 8);
+const fistMat = new THREE.MeshBasicMaterial({ color: 0xff5252, transparent: true, opacity: 0.8 });
+const fistMesh = new THREE.Mesh(fistGeo, fistMat);
+fistMesh.visible = false;
+scene.add(fistMesh);
+
+// Point line
+const pointLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+  new THREE.LineBasicMaterial({ color: 0xffee00, linewidth: 2 })
+);
+pointLine.visible = false;
+scene.add(pointLine);
+
+/* gesture label */
+const gestureLabel = document.getElementById('gestureLabel');
+let gestureTimer = null;
+function showGesture(text) {
+  gestureLabel.textContent = text;
+  gestureLabel.classList.add('visible');
+  clearTimeout(gestureTimer);
+  gestureTimer = setTimeout(() => gestureLabel.classList.remove('visible'), 1800);
+}
+
+/* ═══════════════════════════════════════════
+   GUI — hand visualization style
+═══════════════════════════════════════════ */
+const gui = new GUI({ title: '手部样式' });
+const vis = { style: 'both' }; // 'lines' | 'dots' | 'both'
+gui.add(vis, 'style', ['lines', 'dots', 'both']).name('可视化方式').onChange(applyVis);
+
+function applyVis() {
+  const s = vis.style;
+  [leftLinesObj, rightLinesObj].forEach(o => {
+    o.lines.visible = (s === 'lines' || s === 'both');
+    o.dots.visible  = (s === 'dots'  || s === 'both');
+  });
+}
+applyVis(); // default: both
+
+/* ═══════════════════════════════════════════
+   UPDATE HAND GEOMETRY
+═══════════════════════════════════════════ */
+function setPositionsFromJoints(geomObj, joints) {
+  const posArr = geomObj.lines.geometry.attributes.position.array;
+  const dotArr = geomObj.dots.geometry.attributes.position.array;
+
+  for (let i = 0; i < MAX_JOINTS; i++) {
+    const j = joints[i];
+    if (j) {
+      const wp = j.worldMatrix ? getWorldPosition(j) : new THREE.Vector3();
+      posArr[i*3]   = wp.x; posArr[i*3+1] = wp.y; posArr[i*3+2] = wp.z;
+      dotArr[i*3]   = wp.x; dotArr[i*3+1] = wp.y; dotArr[i*3+2] = wp.z;
+    } else {
+      posArr[i*3] = posArr[i*3+1] = posArr[i*3+2] = 0;
+      dotArr[i*3] = dotArr[i*3+1] = dotArr[i*3+2] = 0;
+    }
+  }
+  geomObj.lines.geometry.attributes.position.needsUpdate = true;
+  geomObj.dots.geometry.attributes.position.needsUpdate  = true;
+}
+
+function getWorldPosition(joint) {
+  const v = new THREE.Vector3();
+  if (joint.linearVelocity !== undefined) {
+    // WebXR joint — use getJointPose
+    return v; // placeholder; real update happens via XRFrame
+  }
+  return v;
+}
+
+/* update LineSegments from raw index/thumb tip distance + finger curliness */
+function updateHandLinesFromPose(handObj, jointArray) {
+  // jointArray: Float32Array[21*6] = [x,y,z, qx,qy,qz,qw, ...] or position-only
+  const posArr = handObj.lines.geometry.attributes.position.array;
+  const dotArr = handObj.dots.geometry.attributes.position.array;
+
+  for (let i = 0; i < MAX_JOINTS; i++) {
+    let x=0,y=0,z=0;
+    if (jointArray && jointArray[i]) {
+      const j = jointArray[i];
+      x = j.x ?? 0; y = j.y ?? 0; z = j.z ?? 0;
+    }
+    posArr[i*3]   = x; posArr[i*3+1] = y; posArr[i*3+2] = z;
+    dotArr[i*3]   = x; dotArr[i*3+1] = y; dotArr[i*3+2] = z;
+  }
+  handObj.lines.geometry.attributes.position.needsUpdate = true;
+  handObj.dots.geometry.attributes.position.needsUpdate  = true;
+  handObj.lines.geometry.setDrawRange(0, MAX_JOINTS);
+}
+
+/* ═══════════════════════════════════════════
+   GESTURE DETECTION
+═══════════════════════════════════════════ */
+const THUMB_TIP  = 4;
+const INDEX_TIP  = 8;
+const MIDDLE_TIP = 12;
+const RING_TIP   = 16;
+const PINKY_TIP  = 20;
+
+function dist(a, b) {
+  if (!a || !b) return Infinity;
+  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+  return Math.sqrt(dx*dx + dy*dy + dz*dz);
+}
+
+/**
+ * Returns 'pinch' | 'grab' | 'point' | null
+ * jointsA/B: array of {x,y,z} per joint index
+ */
+function detectGesture(joints) {
+  if (!joints) return null;
+
+  const thumbTip  = joints[THUMB_TIP];
+  const indexTip  = joints[INDEX_TIP];
+  const middleTip = joints[MIDDLE_TIP];
+  const ringTip   = joints[RING_TIP];
+  const pinkyTip  = joints[PINKY_TIP];
+  const wrist     = joints[0];
+
+  if (!thumbTip || !indexTip || !middleTip || !ringTip || !pinkyTip || !wrist) return null;
+
+  const pinchD = dist(thumbTip, indexTip);
+
+  // pinch: thumb & index tips within 0.04m
+  if (pinchD < 0.04) return 'pinch';
+
+  // grab: all fingertips close to wrist-palm centroid
+  const palm = new THREE.Vector3(wrist.x, wrist.y, wrist.z).add(
+    new THREE.Vector3(thumbTip.x, thumbTip.y, thumbTip.z)
+  ).multiplyScalar(0.5);
+  const grabThresh = 0.10;
+  const dIndex  = dist(indexTip,  palm);
+  const dMiddle = dist(middleTip, palm);
+  const dRing   = dist(ringTip,   palm);
+  const dPinky  = dist(pinkyTip,  palm);
+  if (dIndex < grabThresh && dMiddle < grabThresh && dRing < grabThresh && dPinky < grabThresh) {
+    return 'grab';
+  }
+
+  // point: index extended, others curled
+  const indexExtended = dist(indexTip, wrist) > 0.15;
+  const othersCurled  = dMiddle < grabThresh * 1.4 && dRing < grabThresh * 1.4 && dPinky < grabThresh * 1.4;
+  if (indexExtended && othersCurled) return 'point';
+
+  return null;
+}
+
+/* ═══════════════════════════════════════════
+   WEBXR SETUP
+═══════════════════════════════════════════ */
+let xrSession     = null;
+let xrRefSpace    = null;
+let handTracking  = false;
+let handInputSources = [];
+
+/* XRButton */
+const overlay   = document.getElementById('overlay');
+const xrBtn     = document.getElementById('xrBtn');
+const errorMsg  = document.getElementById('errorMsg');
+
+(async () => {
+  if (!navigator.xr) {
+    showUnsupported('此浏览器不支持 WebXR。');
+    return;
+  }
+  try {
+    const supported = await navigator.xr.isSessionSupported('immersive-ar');
+    if (supported) {
+      xrBtn.textContent  = 'Enter AR + Hand Tracking';
+      xrBtn.disabled     = false;
+      xrBtn.addEventListener('click', startXR);
+    } else {
+      showUnsupported('不支持 immersive-ar。请尝试 Android 版 Chrome 或 Meta Quest。');
+    }
+  } catch(e) {
+    showUnsupported('WebXR 检查失败: ' + e.message);
+  }
+})();
+
+function showUnsupported(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.style.display = 'block';
+  xrBtn.textContent  = 'WebXR 不可用';
+  xrBtn.disabled     = true;
+}
+
+async function startXR() {
+  try {
+    xrSession = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hand-tracking'],
+      optionalFeatures: ['dom-overlay', 'local-floor'],
+    });
+    renderer.xr.setSession(xrSession);
+    xrBtn.textContent = 'Connected…';
+    xrBtn.disabled    = true;
+    overlay.classList.add('hidden');
+
+    xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
+    handTracking = true;
+
+    xrSession.addEventListener('end', () => {
+      xrSession    = null;
+      xrRefSpace   = null;
+      overlay.classList.remove('hidden');
+      xrBtn.textContent = '进入 AR + 手部追踪';
+      xrBtn.disabled    = false;
+      // hide gesture effects
+      pinchRing.visible = false;
+      fistMesh.visible  = false;
+      pointLine.visible = false;
+    });
+  } catch(e) {
+    errorMsg.textContent = 'Failed: ' + e.message;
+    errorMsg.style.display = 'block';
+  }
+}
+
+/* ═══════════════════════════════════════════
+   RENDER LOOP
+═══════════════════════════════════════════ */
+// Demo mode data — fake hand positions for desktop preview (no XR)
+const demoLeft  = makeDemoJoints( 0.3,  1.2, -0.5);
+const demoRight = makeDemoHands_R(0.3,  1.2, -0.5);
+let demoTime    = 0;
+
+function makeDemoJoints(cx, cy, cz) {
+  const j = [];
+  for (let i = 0; i < 21; i++) j.push(new THREE.Vector3());
+  // wrist
+  j[0].set(cx, cy, cz);
+  // thumb
+  j[1].set(cx-0.05, cy+0.04, cz); j[2].set(cx-0.09, cy+0.08, cz);
+  j[3].set(cx-0.11, cy+0.11, cz);j[4].set(cx-0.12, cy+0.13, cz);
+  // index
+  j[5].set(cx, cy, cz+0.01); j[6].set(cx, cy-0.04, cz+0.02);
+  j[7].set(cx, cy-0.08, cz+0.03); j[8].set(cx, cy-0.11, cz+0.04);
+  // middle
+  j[9].set(cx, cy, cz-0.01); j[10].set(cx, cy-0.04, cz-0.02);
+  j[11].set(cx, cy-0.09, cz-0.03); j[12].set(cx, cy-0.12, cz-0.04);
+  // ring
+  j[13].set(cx, cy, cz-0.02); j[14].set(cx, cy-0.03, cz-0.04);
+  j[15].set(cx, cy-0.07, cz-0.06); j[16].set(cx, cy-0.10, cz-0.08);
+  // pinky
+  j[17].set(cx, cy, cz-0.03); j[18].set(cx, cy-0.02, cz-0.05);
+  j[19].set(cx, cy-0.05, cz-0.07); j[20].set(cx, cy-0.07, cz-0.09);
+  return j;
+}
+
+function makeDemoHands_R(cx, cy, cz) {
+  const j = [];
+  for (let i = 0; i < 21; i++) j.push(new THREE.Vector3());
+  j[0].set(-cx, cy, cz);
+  j[1].set(-cx+0.05, cy+0.04, cz); j[2].set(-cx+0.09, cy+0.08, cz);
+  j[3].set(-cx+0.11, cy+0.11, cz);j[4].set(-cx+0.12, cy+0.13, cz);
+  j[5].set(-cx, cy, cz+0.01); j[6].set(-cx, cy-0.04, cz+0.02);
+  j[7].set(-cx, cy-0.08, cz+0.03); j[8].set(-cx, cy-0.11, cz+0.04);
+  j[9].set(-cx, cy, cz-0.01); j[10].set(-cx, cy-0.04, cz-0.02);
+  j[11].set(-cx, cy-0.09, cz-0.03); j[12].set(-cx, cy-0.12, cz-0.04);
+  j[13].set(-cx, cy, cz-0.02); j[14].set(-cx, cy-0.03, cz-0.04);
+  j[15].set(-cx, cy-0.07, cz-0.06); j[16].set(-cx, cy-0.10, cz-0.08);
+  j[17].set(-cx, cy, cz-0.03); j[18].set(-cx, cy-0.02, cz-0.05);
+  j[19].set(-cx, cy-0.05, cz-0.07); j[20].set(-cx, cy-0.07, cz-0.09);
+  return j;
+}
+
+function animateDemo(dt) {
+  demoTime += dt;
+  const t = demoTime;
+
+  // gentle sway
+  const sway = Math.sin(t * 0.8) * 0.06;
+  demoLeft[0].x  =  0.28 + sway;
+  demoRight[0].x = -0.28 - sway;
+
+  // animate fingers — cycle through gestures
+  const phase = (t % 6) / 6;
+  let gesture = 'none';
+  if (phase < 0.33) gesture = 'pinch';
+  else if (phase < 0.66) gesture = 'grab';
+  else gesture = 'point';
+
+  applyGestureToDemo(gesture);
+
+  const gestureName = gesture.charAt(0).toUpperCase() + gesture.slice(1);
+  showGesture(gestureName);
+
+  updateSceneFromJoints(demoLeft, demoRight, gesture);
+}
+
+/* Apply a fake gesture to demo joints for preview */
+function applyGestureToDemo(gesture) {
+  const w = demoLeft[0];
+  const spread = 0.04;
+
+  // reset to neutral then apply gesture
+  // Neutral: fingers slightly curled out
+  [8,12,16,20].forEach((tip, fi) => {
+    const base = [5,9,13,17][fi];
+    const baseJ = demoLeft[base];
+    demoLeft[tip].set(
+      baseJ.x + (fi % 2 === 0 ? spread : -spread),
+      baseJ.y - 0.09,
+      baseJ.z + (fi < 2 ? 0.04 : -0.04)
+    );
+    const rp = demoRight[base];
+    demoRight[tip].set(
+      rp.x + (fi % 2 === 0 ? -spread : spread),
+      rp.y - 0.09,
+      rp.z + (fi < 2 ? 0.04 : -0.04)
+    );
+  });
+  demoLeft[4].copy(demoLeft[3]); demoLeft[4].x -= 0.02;
+  demoRight[4].copy(demoRight[3]); demoRight[4].x += 0.02;
+
+  if (gesture === 'pinch') {
+    // bring thumb & index tip together
+    demoLeft[8].copy(demoLeft[4]); demoLeft[8].x += 0.01;
+    demoRight[8].copy(demoRight[4]); demoRight[8].x -= 0.01;
+  } else if (gesture === 'grab') {
+    // curl all fingertips toward wrist
+    [8,12,16,20,4].forEach(idx => {
+      demoLeft[idx].lerp(demoLeft[0], 0.75);
+      demoRight[idx].lerp(demoRight[0], 0.75);
+    });
+  } else if (gesture === 'point') {
+    // extend index only
+    demoLeft[8].set(demoLeft[5].x, demoLeft[5].y - 0.18, demoLeft[5].z + 0.01);
+    demoRight[8].set(demoRight[5].x, demoRight[5].y - 0.18, demoRight[5].z + 0.01);
+    // curl others
+    [12,16,20,4].forEach(idx => {
+      demoLeft[idx].lerp(demoLeft[0], 0.7);
+      demoRight[idx].lerp(demoRight[0], 0.7);
+    });
+  }
+}
+
+function updateSceneFromJoints(leftJ, rightJ, gesture) {
+  updateHandLines(leftLinesObj, leftJ);
+  updateHandLines(rightLinesObj, rightJ);
+
+  // gesture effects
+  pinchRing.visible = false;
+  fistMesh.visible  = false;
+  pointLine.visible = false;
+
+  if (gesture === 'pinch' && leftJ && rightJ) {
+    // show ring at midpoint of left thumb/index tips
+    const tl = leftJ[THUMB_TIP], il = leftJ[INDEX_TIP];
+    if (tl && il) {
+      const mid = new THREE.Vector3().addVectors(tl, il).multiplyScalar(0.5);
+      pinchRing.position.copy(mid);
+      pinchRing.visible = true;
+    }
+  } else if (gesture === 'grab' && leftJ) {
+    fistMesh.position.copy(leftJ[0]);
+    fistMesh.visible = true;
+  } else if (gesture === 'point' && leftJ) {
+    const base = leftJ[5], tip = leftJ[8];
+    if (base && tip) {
+      const pts = pointLine.geometry.attributes.position;
+      pts.setXYZ(0, base.x, base.y, base.z);
+      pts.setXYZ(1, tip.x,  tip.y,  tip.z);
+      pts.needsUpdate = true;
+      pointLine.visible = true;
+    }
+  }
+}
+
+function updateHandLines(handObj, joints) {
+  const linePos = handObj.lines.geometry.attributes.position.array;
+  const dotPos  = handObj.dots.geometry.attributes.position.array;
+
+  // Write joint positions for all 21 joints
+  for (let i = 0; i < MAX_JOINTS; i++) {
+    const j = joints && joints[i] ? joints[i] : new THREE.Vector3();
+    linePos[i*3]   = j.x ?? 0; linePos[i*3+1] = j.y ?? 0; linePos[i*3+2] = j.z ?? 0;
+    dotPos[i*3]    = j.x ?? 0; dotPos[i*3+1]  = j.y ?? 0; dotPos[i*3+2]  = j.z ?? 0;
+  }
+  handObj.lines.geometry.attributes.position.needsUpdate = true;
+  handObj.dots.geometry.attributes.position.needsUpdate   = true;
+}
+
+/* ═══════════════════════════════════════════
+   XR HAND TRACKING UPDATE
+═══════════════════════════════════════════ */
+async function updateXRHands(session, refSpace) {
+  if (!session || !refSpace) return { leftJ: null, rightJ: null };
+
+  const inputSources = session.inputSources;
+  let leftJoints  = null;
+  let rightJoints = null;
+
+  for (const src of inputSources) {
+    if (!src.hand) continue;
+    const handPose    = await src.hand.getJointPose(refSpace);
+    // Collect all joint poses
+    const joints = [];
+    for (const j of src.hand.values()) {
+      // requestPose returns pose for this joint
+      const pose = await j.getPose(refSpace);
+      if (pose) {
+        joints.push(new THREE.Vector3(
+          pose.transform.position.x,
+          pose.transform.position.y,
+          pose.transform.position.z
+        ));
+      } else {
+        joints.push(null);
+      }
+    }
+    if (src.handedness === 'left')  leftJoints  = joints;
+    if (src.handedness === 'right') rightJoints = joints;
+  }
+  return { leftJ: leftJoints, rightJ: rightJoints };
+}
+
+// Cache last known joints for gesture detection in XR
+let lastLeftJ  = null;
+let lastRightJ = null;
+
+renderer.setAnimationLoop((timestamp, frame) => {
+  controls.update();
+
+  let gesture = null;
+  let leftJ = null, rightJ = null;
+
+  if (renderer.xr.isPresenting && xrSession && xrRefSpace) {
+    // XR mode
+    const inputSources = xrSession.inputSources;
+    for (const src of inputSources) {
+      if (!src.hand) continue;
+      // We need to iterate joints each frame
+      const joints = [];
+      for (const joint of src.hand.values()) {
+        try {
+          const pose = joint.getPose(xrRefSpace);
+          if (pose) {
+            joints.push(new THREE.Vector3(
+              pose.transform.position.x,
+              pose.transform.position.y,
+              pose.transform.position.z
+            ));
+          } else {
+            joints.push(null);
+          }
+        } catch(e) { joints.push(null); }
+      }
+      if (src.handedness === 'left')  { leftJ  = joints; lastLeftJ  = joints; }
+      if (src.handedness === 'right') { rightJ = joints; lastRightJ = joints; }
+    }
+    // detect gesture from left hand
+    gesture = detectGesture(leftJ);
+  } else {
+    // Demo / preview mode
+    const dt = 0.016;
+    animateDemo(dt);
+    gesture = null; // demo loop handles its own gesture display
+  }
+
+  if (leftJ && rightJ) {
+    updateSceneFromJoints(leftJ, rightJ, gesture);
+    if (gesture) showGesture(gesture.charAt(0).toUpperCase() + gesture.slice(1));
+  }
+
+  renderer.render(scene, camera);
+});
+
+/* ═══════════════════════════════════════════
+   RESIZE
+═══════════════════════════════════════════ */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
+</body>
+</html>

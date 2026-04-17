@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Web Audio · 频谱可视化</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; overflow: hidden; background: #000;
+    color: #fff; font: 14px -apple-system, sans-serif;
+  }
+  canvas { display: block; position: fixed; top: 0; left: 0; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    background: rgba(0,0,0,.6); padding: 8px 12px;
+    border-radius: 6px; z-index: 10; pointer-events: none;
+  }
+  #intro {
+    position: fixed; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; z-index: 5;
+  }
+  .start {
+    display: inline-block; padding: 14px 28px;
+    background: #4a90ff; color: #fff;
+    border-radius: 6px; cursor: pointer; font-size: 16px;
+  }
+  .start:hover { background: #5aa0ff; }
+  .hint { color: #888; font-size: 12px; }
+  audio {
+    position: fixed; bottom: 20px; left: 50%;
+    transform: translateX(-50%); z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div class="tip">Web Audio API · 频谱可视化</div>
+<div id="intro">
+  <label class="start">
+    🎵 选择音频文件
+    <input type="file" accept="audio/*" id="file" hidden />
+  </label>
+  <div class="hint">选一首 mp3 / wav / m4a 体验频谱律动</div>
+</div>
+<canvas id="c"></canvas>
+<audio id="audio" controls style="display:none"></audio>
+<script type="module" src="main.js"></script>
+</body>
+</html>

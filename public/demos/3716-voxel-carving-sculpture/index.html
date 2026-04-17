@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3716. Voxel Carving Sculpture</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#0a0a14;font-family:Segoe UI,sans-serif}
+canvas{display:block}
+#ui{position:fixed;top:14px;left:14px;z-index:10;color:#fff;font-size:12px;background:rgba(0,0,0,0.6);padding:10px 14px;border-radius:8px;line-height:1.8}
+#ui strong{color:#cc88ff}
+#tool{position:fixed;top:14px;right:14px;z-index:10;display:flex;flex-direction:column;gap:6px}
+.tool-btn{padding:6px 14px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;cursor:pointer;border-radius:4px;font-size:12px}
+.tool-btn:hover,.tool-btn.active{background:rgba(200,150,255,0.2);border-color:#cc88ff}
+</style>
+</head>
+<body>
+<div id="ui">
+  <strong>🎨 体素雕刻</strong><br>
+  左键拖动：旋转视角<br>
+  点击体素：雕刻/填充<br>
+  笔刷大小：1-5<br>
+  <input type="range" id="brush" min="1" max="5" value="2" style="width:100px">
+  <span id="brush-val">2</span><br>
+  R = 重置 | F = 填充模式
+</div>
+<div id="tool">
+  <button class="tool-btn active" id="btn-carve">⛏ 雕刻</button>
+  <button class="tool-btn" id="btn-fill">🧱 填充</button>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>

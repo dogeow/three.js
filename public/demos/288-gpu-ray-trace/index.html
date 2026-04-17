@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<!--
+  Title: GPU Ray Tracing Visualization
+  Description: A simplified real-time ray tracing scene featuring reflective spheres with Fresnel reflections,
+               refractive glass sphere with IOR, multiple colored lights, mirror floor with CubeCamera reflections,
+               and bloom post-processing for a visually impressive WebGL experience.
+               Use OrbitControls to navigate the scene and lil-gui to tweak parameters.
+-->
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPU 光线追踪可视化</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      color: rgba(255,255,255,0.7);
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+  </style>
+</head>
+<body>
+<div id="info">
+  <strong>GPU 光线追踪可视化</strong><br/>
+  拖动旋转 &bull; 滚轮缩放
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ── Renderer ───────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// ── Scene & Camera ──────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+scene.fog = new THREE.FogExp2(0x050510, 0.03);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 3, 10);
+camera.lookAt(0, 0, 0);
+
+// ── Controls ────────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.minDistance = 3;
+controls.maxDistance = 25;
+controls.target.set(0, 0.5, 0);
+
+// ── Environment Map (procedural cube camera) ───────────────────────────────
+const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, {
+  format: THREE.RGBAFormat,
+  generateMipmaps: true,
+  minFilter: THREE.LinearMipmapLinearFilter,
+});
+const cubeCamera = new THREE.CubeCamera(0.1, 100, cubeRenderTarget);
+scene.add(cubeCamera);
+
+// ── Lights ─────────────────────────────────────────────────────────────────
+const lights = {
+  red: new THREE.PointLight(0xff2244, 80, 20),
+  green: new THREE.PointLight(0x22ff66, 80, 20),
+  blue: new THREE.PointLight(0x2266ff, 80, 20),
+  white: new THREE.PointLight(0xffffff, 60, 20),
+  warm: new THREE.PointLight(0xffcc88, 50, 20),
+};
+
+lights.red.position.set(-4, 4, 2);
+lights.green.position.set(4, 4, -2);
+lights.blue.position.set(0, 5, 0);
+lights.white.position.set(0, 6, 5);
+lights.warm.position.set(-2, 3, -4);
+
+Object.values(lights).forEach(l => {
+  l.castShadow = true;
+  l.shadow.mapSize.set(512, 512);
+  l.shadow.camera.near = 0.1;
+  l.shadow.camera.far = 25;
+  scene.add(l);
+});
+
+// Small emissive spheres to visualize lights
+function lightOrb(color, light) {
+  const geo = new THREE.SphereGeometry(0.12, 12, 12);
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 4,
+    roughness: 0,
+    metalness: 0,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(light.position);
+  scene.add(mesh);
+}
+lightOrb(0xff2244, lights.red);
+lightOrb(0x22ff66, lights.green);
+lightOrb(0x2266ff, lights.blue);
+lightOrb(0xffffff, lights.white);
+lightOrb(0xffcc88, lights.warm);
+
+// ── Fresnel helpers ────────────────────────────────────────────────────────
+function fresnelSchlick(cosTheta, F0) {
+  return F0 + (1.0 - F0) * Math.pow(Math.max(1.0 - cosTheta, 0.0), 5.0);
+}
+
+// ── Materials ──────────────────────────────────────────────────────────────
+const matMetalGold = new THREE.MeshStandardMaterial({
+  color: 0xffcc44,
+  metalness: 1.0,
+  roughness: 0.08,
+  envMap: cubeRenderTarget.texture,
+  envMapIntensity: 1.5,
+});
+
+const matMetalSilver = new THREE.MeshStandardMaterial({
+  color: 0xdddddd,
+  metalness: 1.0,
+  roughness: 0.05,
+  envMap: cubeRenderTarget.texture,
+  envMapIntensity: 1.5,
+});
+
+const matMetalCopper = new THREE.MeshStandardMaterial({
+  color: 0xcc7744,
+  metalness: 1.0,
+  roughness: 0.12,
+  envMap: cubeRenderTarget.texture,
+  envMapIntensity: 1.5,
+});
+
+const matGlass = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff,
+  metalness: 0.0,
+  roughness: 0.0,
+  transmission: 1.0,
+  ior: 1.52,
+  thickness: 1.2,
+  envMap: cubeRenderTarget.texture,
+  envMapIntensity: 2.0,
+  transparent: true,
+});
+
+const matMirrorFloor = new THREE.MeshStandardMaterial({
+  color: 0x888899,
+  metalness: 0.9,
+  roughness: 0.0,
+  envMap: cubeRenderTarget.texture,
+  envMapIntensity: 2.0,
+});
+
+// ── Objects ─────────────────────────────────────────────────────────────────
+// Gold sphere
+const sphereGold = new THREE.Mesh(
+  new THREE.SphereGeometry(1.0, 64, 64),
+  matMetalGold
+);
+sphereGold.position.set(-2.5, 1.0, 0);
+sphereGold.castShadow = true;
+sphereGold.receiveShadow = true;
+sphereGold.updateMatrixWorld();
+sphereGold.uuid = 'gold';
+scene.add(sphereGold);
+
+// Silver sphere
+const sphereSilver = new THREE.Mesh(
+  new THREE.SphereGeometry(0.75, 64, 64),
+  matMetalSilver
+);
+sphereSilver.position.set(0, 0.75, -1.5);
+sphereSilver.castShadow = true;
+sphereSilver.receiveShadow = true;
+sphereSilver.uuid = 'silver';
+scene.add(sphereSilver);
+
+// Copper sphere
+const sphereCopper = new THREE.Mesh(
+  new THREE.SphereGeometry(0.85, 64, 64),
+  matMetalCopper
+);
+sphereCopper.position.set(2.2, 0.85, 1.0);
+sphereCopper.castShadow = true;
+sphereCopper.receiveShadow = true;
+sphereCopper.uuid = 'copper';
+scene.add(sphereCopper);
+
+// Glass sphere
+const sphereGlass = new THREE.Mesh(
+  new THREE.SphereGeometry(1.1, 64, 64),
+  matGlass
+);
+sphereGlass.position.set(0, 1.1, 2.5);
+sphereGlass.castShadow = false;
+sphereGlass.receiveShadow = false;
+sphereGlass.uuid = 'glass';
+scene.add(sphereGlass);
+
+// Small chrome ball
+const sphereChrome = new THREE.Mesh(
+  new THREE.SphereGeometry(0.4, 64, 64),
+  new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    metalness: 1.0,
+    roughness: 0.0,
+    envMap: cubeRenderTarget.texture,
+    envMapIntensity: 2.0,
+  })
+);
+sphereChrome.position.set(-1.0, 0.4, 3.0);
+sphereChrome.castShadow = true;
+sphereChrome.uuid = 'chrome';
+scene.add(sphereChrome);
+
+// Mirror floor
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(24, 24),
+  matMirrorFloor
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = 0;
+floor.receiveShadow = true;
+floor.uuid = 'floor';
+scene.add(floor);
+
+// Back wall
+const backWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(24, 12),
+  new THREE.MeshStandardMaterial({
+    color: 0x222233,
+    metalness: 0.2,
+    roughness: 0.8,
+  })
+);
+backWall.position.set(0, 6, -7);
+backWall.receiveShadow = true;
+scene.add(backWall);
+
+// Side walls
+const leftWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(14, 12),
+  new THREE.MeshStandardMaterial({ color: 0x1a1a2e, metalness: 0.1, roughness: 0.9 })
+);
+leftWall.position.set(-7, 6, 0);
+leftWall.rotation.y = Math.PI / 2;
+leftWall.receiveShadow = true;
+scene.add(leftWall);
+
+const rightWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(14, 12),
+  new THREE.MeshStandardMaterial({ color: 0x1a1a2e, metalness: 0.1, roughness: 0.9 })
+);
+rightWall.position.set(7, 6, 0);
+rightWall.rotation.y = -Math.PI / 2;
+rightWall.receiveShadow = true;
+scene.add(rightWall);
+
+// ── Post-processing ────────────────────────────────────────────────────────
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.8,   // strength
+  0.4,   // radius
+  0.2    // threshold
+);
+composer.addPass(bloomPass);
+
+// ── GUI ────────────────────────────────────────────────────────────────────
+const params = {
+  bloomStrength: 0.8,
+  bloomRadius: 0.4,
+  bloomThreshold: 0.2,
+  lightRed: 80,
+  lightGreen: 80,
+  lightBlue: 80,
+  lightWhite: 60,
+  lightWarm: 50,
+  toneExposure: 1.2,
+  reflectionQuality: 'High',
+};
+
+const gui = new GUI({ title: 'GPU 光线追踪控制' });
+
+const bloomFolder = gui.addFolder('泛光');
+bloomFolder.add(params, 'bloomStrength', 0, 3, 0.01).name('强度').onChange(v => { bloomPass.strength = v; });
+bloomFolder.add(params, 'bloomRadius', 0, 1, 0.01).name('半径').onChange(v => { bloomPass.radius = v; });
+bloomFolder.add(params, 'bloomThreshold', 0, 1, 0.01).name('阈值').onChange(v => { bloomPass.threshold = v; });
+bloomFolder.open();
+
+const lightsFolder = gui.addFolder('灯光');
+lightsFolder.add(params, 'lightRed', 0, 200, 1).name('红光').onChange(v => { lights.red.intensity = v; });
+lightsFolder.add(params, 'lightGreen', 0, 200, 1).name('绿光').onChange(v => { lights.green.intensity = v; });
+lightsFolder.add(params, 'lightBlue', 0, 200, 1).name('蓝光').onChange(v => { lights.blue.intensity = v; });
+lightsFolder.add(params, 'lightWhite', 0, 200, 1).name('白光').onChange(v => { lights.white.intensity = v; });
+lightsFolder.add(params, 'lightWarm', 0, 200, 1).name('暖光').onChange(v => { lights.warm.intensity = v; });
+lightsFolder.open();
+
+const renderFolder = gui.addFolder('渲染');
+renderFolder.add(params, 'toneExposure', 0.1, 3, 0.01).name('曝光').onChange(v => { renderer.toneMappingExposure = v; });
+renderFolder.add(params, 'reflectionQuality', ['Low', 'Medium', 'High']).name('反射质量').onChange(v => {
+  const res = { Low: 128, Medium: 256, High: 512 }[v];
+  cubeRenderTarget.setSize(res, res);
+});
+renderFolder.open();
+
+// ── Resize ─────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Animate ────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+// Reflective objects for CubeCamera update
+const cubeCameraObjects = [sphereGold, sphereSilver, sphereCopper, sphereGlass, sphereChrome, floor];
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  controls.update();
+
+  // Animate spheres gently
+  sphereGold.position.y = 1.0 + Math.sin(t * 0.7) * 0.15;
+  sphereSilver.position.y = 0.75 + Math.sin(t * 0.9 + 1.2) * 0.12;
+  sphereCopper.position.y = 0.85 + Math.sin(t * 0.6 + 2.4) * 0.18;
+  sphereGlass.position.y = 1.1 + Math.sin(t * 0.5 + 0.6) * 0.1;
+  sphereChrome.position.y = 0.4 + Math.sin(t * 1.2 + 3.0) * 0.08;
+
+  // Update CubeCamera reflections (hide reflective objects, render, show)
+  sphereGold.visible = false;
+  sphereSilver.visible = false;
+  sphereCopper.visible = false;
+  sphereGlass.visible = false;
+  sphereChrome.visible = false;
+  floor.visible = false;
+
+  cubeCamera.position.copy(sphereGold.position);
+  cubeCamera.update(renderer, scene);
+
+  sphereGold.visible = true;
+  sphereSilver.visible = true;
+  sphereCopper.visible = true;
+  sphereGlass.visible = true;
+  sphereChrome.visible = true;
+  floor.visible = true;
+
+  composer.render();
+}
+
+animate();
+</script>
+</body>
+</html>

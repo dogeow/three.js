@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3363. Confocal Microscopy Volume</title>
+<style>
+body{margin:0;overflow:hidden;background:#000;font-family:Arial,sans-serif}
+canvas{display:block}
+#label{position:absolute;top:16px;left:16px;color:#88ffaa;font-size:16px;font-weight:bold;text-shadow:0 0 8px #44ff88}
+#depth-bar{position:absolute;right:20px;top:50%;transform:translateY(-50%);width:16px;height:200px;background:linear-gradient(to bottom,#fff,#000);border-radius:3px;border:1px solid #333}
+#depth-label{position:absolute;right:42px;font-size:11px;color:#888}
+</style>
+</head>
+<body>
+<div id="label">共聚焦显微镜体积成像</div>
+<div id="depth-bar"></div>
+<div id="depth-label" style="top:calc(50% - 110px)">顶部</div>
+<div id="depth-label" style="top:calc(50% + 95px)">底部</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>

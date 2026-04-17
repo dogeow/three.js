@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>GLSL Shader · Plasma</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.6 -apple-system, sans-serif;
+    background: rgba(0,0,0,.4); padding: 8px 12px; border-radius: 6px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="tip">GLSL Shader · Plasma（纯 WebGL，每个像素在 GPU 上独立计算）</div>
+<canvas id="c"></canvas>
+<script type="module" src="main.js"></script>
+</body>
+</html>

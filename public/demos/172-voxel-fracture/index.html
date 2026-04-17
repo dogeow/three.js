@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>体素断裂</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #fps {
+    position: fixed; top: 12px; left: 12px; color: #fff;
+    font-family: monospace; font-size: 14px;
+    background: rgba(0,0,0,0.5); padding: 4px 8px;
+    border-radius: 4px; pointer-events: none; z-index: 999;
+  }
+</style>
+</head>
+<body>
+<div id="fps">FPS：--</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(14, 10, 14);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambient);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(8, 12, 8);
+scene.add(dirLight);
+const ptLight = new THREE.PointLight(0x4488ff, 1, 40);
+ptLight.position.set(-5, 8, 5);
+scene.add(ptLight);
+
+// Grid helper
+const gridHelper = new THREE.GridHelper(30, 30, 0x333333, 0x111111);
+gridHelper.position.y = -0.5;
+scene.add(gridHelper);
+
+const params = {
+  gridSize: 8,
+  explosionStrength: 15,
+  gravity: 9.8,
+  reset: () => initVoxels()
+};
+
+const gui = new GUI();
+gui.add(params, 'gridSize', 3, 16, 1).name('网格大小').onFinishChange(() => initVoxels());
+gui.add(params, 'explosionStrength', 1, 40, 0.5).name('爆炸强度');
+gui.add(params, 'gravity', 0, 30, 0.5).name('重力');
+gui.add(params, 'reset').name('重置');
+
+// Voxel data
+let mesh = null;
+const voxels = [];
+const GRAVITY = new THREE.Vector3(0, -params.gravity, 0);
+let exploded = false;
+let explosionTime = 0;
+
+function createVoxelMaterial(i, total) {
+  const hue = (i / total) * 0.15;
+  return new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL(hue, 0.7, 0.55),
+    roughness: 0.4,
+    metalness: 0.1
+  });
+}
+
+function initVoxels() {
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.forEach(m => m.dispose());
+  }
+  voxels.length = 0;
+  exploded = false;
+  explosionTime = 0;
+
+  const N = params.gridSize;
+  const spacing = 1.1;
+  const offset = (N - 1) * spacing * 0.5;
+  const count = N * N * N;
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const dummy = new THREE.Object3D();
+
+  mesh = new THREE.InstancedMesh(geometry, undefined, count);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  let idx = 0;
+  for (let x = 0; x < N; x++) {
+    for (let y = 0; y < N; y++) {
+      for (let z = 0; z < N; z++) {
+        const wx = x * spacing - offset;
+        const wy = y * spacing;
+        const wz = z * spacing - offset;
+        dummy.position.set(wx, wy, wz);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx, dummy.matrix);
+
+        voxels.push({
+          originalPos: new THREE.Vector3(wx, wy, wz),
+          velocity: new THREE.Vector3(),
+          alpha: 1.0,
+          active: false
+        });
+        idx++;
+      }
+    }
+  }
+
+  mesh.instanceMatrix.needsUpdate = true;
+  scene.add(mesh);
+}
+
+initVoxels();
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('click', (e) => {
+  if (exploded) return;
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  const intersects = raycaster.intersectObject(mesh);
+  if (intersects.length === 0) return;
+
+  const hitPoint = intersects[0].point;
+  exploded = true;
+  explosionTime = 0;
+
+  const strength = params.explosionStrength;
+  voxels.forEach(v => {
+    const dir = v.originalPos.clone().sub(hitPoint).normalize();
+    const dist = v.originalPos.distanceTo(hitPoint);
+    const force = strength / (dist * 0.5 + 1);
+    v.velocity.copy(dir).multiplyScalar(force);
+    v.active = true;
+  });
+});
+
+let lastTime = performance.now();
+let frameCount = 0;
+let fpsTime = 0;
+const fpsEl = document.getElementById('fps');
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  // FPS
+  frameCount++;
+  fpsTime += dt;
+  if (fpsTime >= 0.5) {
+    fpsEl.textContent = `FPS: ${Math.round(frameCount / fpsTime)}`;
+    frameCount = 0;
+    fpsTime = 0;
+  }
+
+  if (exploded) {
+    explosionTime += dt;
+    const g = params.gravity;
+    const dummy = new THREE.Object3D();
+
+    voxels.forEach((v, i) => {
+      if (!v.active) return;
+
+      v.velocity.y -= g * dt;
+      v.originalPos.addScaledVector(v.velocity, dt);
+
+      // Fade out after 3 seconds
+      if (explosionTime > 3) {
+        v.alpha = Math.max(0, v.alpha - dt * 1.5);
+      }
+
+      dummy.position.copy(v.originalPos);
+      dummy.scale.setScalar(v.alpha);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+
+    // Update opacity
+    if (mesh.material) {
+      mesh.material.forEach(m => { if (m.opacity !== undefined) m.opacity = voxels[0]?.alpha; });
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

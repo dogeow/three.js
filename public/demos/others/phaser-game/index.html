@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Phaser · 2D 游戏引擎</title>
+<style>
+  body {
+    margin: 0; overflow: hidden; background: #111;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; font: 14px -apple-system, sans-serif;
+  }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; background: rgba(0,0,0,.4);
+    padding: 8px 12px; border-radius: 6px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="tip">Phaser · 2D 游戏引擎（方向键 / WASD 移动，空格跳跃，收集金币）</div>
+<div id="game"></div>
+<script type="module" src="main.js"></script>
+</body>
+</html>

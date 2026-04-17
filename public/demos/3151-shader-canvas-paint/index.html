@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>3151 - Shader Canvas Paint</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#000;font-family:Segoe UI,sans-serif}
+canvas{display:block}
+#ui{position:fixed;top:14px;left:14px;z-index:10;display:flex;flex-direction:column;gap:8px}
+.color-row{display:flex;gap:6px;flex-wrap:wrap;max-width:220px}
+.color-swatch{width:26px;height:26px;border-radius:4px;cursor:pointer;border:2px solid transparent;transition:all .15s}
+.color-swatch:hover,.color-swatch.active{border-color:#fff;transform:scale(1.2)}
+.btn{padding:6px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);color:#fff;cursor:pointer;border-radius:4px;font-size:12px}
+.btn:hover{background:rgba(255,255,255,0.18)}
+#info{position:fixed;bottom:14px;left:14px;color:rgba(255,255,255,0.4);font-size:12px}
+</style>
+</head>
+<body>
+<div id="ui">
+  <div class="color-row" id="colors"></div>
+  <button class="btn" id="clearBtn">清除画布</button>
+</div>
+<div id="info">点击拖动绘制 | 空格 = 清除</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const PAL=[0xff2255,0xff8800,0xffdd00,0x00ff88,0x00ccff,0xaa44ff,0xff00aa,0xffffff,0x222222];
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x080808);
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,200);
+camera.position.set(0,0,12);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+controls.mouseButtons={MIDDLE:THREE.MOUSE.DOLLY,RIGHT:THREE.MOUSE.ROTATE};
+
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),1.5,0.4,0.55));
+
+const PW=2048,PH=2048;
+const paintC=document.createElement('canvas');
+paintC.width=PW;paintC.height=PH;
+const pctx=paintC.getContext('2d');
+pctx.fillStyle='#080808';pctx.fillRect(0,0,PW,PH);
+const paintTex=new THREE.CanvasTexture(paintC);
+
+scene.add(new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshBasicMaterial({map:paintTex})));
+
+const ray=new THREE.Raycaster();
+const m=new THREE.Vector2();
+const pl=new THREE.Plane(new THREE.Vector3(0,0,1),0);
+const hit=new THREE.Vector3();
+let paint=false,lastUX=0,lastUY=0,curCol=PAL[0];
+
+function toUV(mx,my){
+    ray.setFromCamera(new THREE.Vector2(mx,my),camera);
+    ray.ray.intersectPlane(pl,hit);
+    return[(hit.x/10+0.5)*PW,(0.5-hit.y/10)*PH];
+}
+
+function stroke(x1,y1,x2,y2,col,sz){
+    pctx.beginPath();
+    pctx.strokeStyle=col;pctx.lineWidth=sz;
+    pctx.lineCap='round';
+    pctx.moveTo(x1,y1);pctx.lineTo(x2,y2);pctx.stroke();
+    paintTex.needsUpdate=true;
+}
+
+const brush=new THREE.Mesh(
+    new THREE.SphereGeometry(0.35,16,16),
+    new THREE.MeshBasicMaterial({color:curCol,transparent:true,opacity:0.3,wireframe:true})
+);
+scene.add(brush);
+
+const crow=document.getElementById('colors');
+PAL.forEach(function(c,i){
+    const s=document.createElement('div');
+    s.className='color-swatch'+(i===0?' active':'');
+    s.style.background='#'+c.toString(16).padStart(6,'0');
+    s.onclick=function(){
+        document.querySelectorAll('.color-swatch').forEach(function(x){x.classList.remove('active');});
+        s.classList.add('active');curCol=c;
+        brush.material.color.setHex(c);
+    };
+    crow.appendChild(s);
+});
+document.getElementById('clearBtn').onclick=function(){
+    pctx.fillStyle='#080808';pctx.fillRect(0,0,PW,PH);paintTex.needsUpdate=true;
+};
+
+let t=0;
+function animate(){
+    requestAnimationFrame(animate);t+=0.016;
+    ray.setFromCamera(m,camera);ray.ray.intersectPlane(pl,hit);
+    brush.position.copy(hit);
+    controls.update();composer.render();
+}
+animate();
+
+window.addEventListener('mousemove',function(e){
+    m.x=(e.clientX/innerWidth)*2-1;
+    m.y=-(e.clientY/innerHeight)*2+1;
+    if(paint){
+        const u=toUV(m.x,m.y);
+        stroke(lastUX,lastUY,u[0],u[1],'#'+curCol.toString(16).padStart(6,'0'),6+Math.sin(t)*2);
+        lastUX=u[0];lastUY=u[1];
+    }
+});
+window.addEventListener('mousedown',function(e){
+    if(e.button===0){paint=true;const u=toUV(m.x,m.y);lastUX=u[0];lastUY=u[1];}
+});
+window.addEventListener('mouseup',function(){paint=false;});
+window.addEventListener('keydown',function(e){
+    if(e.code==='Space'){pctx.fillStyle='#080808';pctx.fillRect(0,0,PW,PH);paintTex.needsUpdate=true;}
+});
+window.addEventListener('resize',function(){
+    camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

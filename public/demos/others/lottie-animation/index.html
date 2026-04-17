@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Lottie · 矢量动画播放</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    font: 14px -apple-system, sans-serif; color: #fff;
+    padding: 60px 20px 20px;
+  }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    background: rgba(0,0,0,.4); padding: 8px 12px;
+    border-radius: 6px; pointer-events: none;
+  }
+  .layout {
+    max-width: 900px; margin: 0 auto;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  }
+  .panel {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px; padding: 20px;
+  }
+  .panel h2 { margin: 0 0 12px; font-size: 16px; }
+  #stage {
+    width: 100%; aspect-ratio: 1;
+    background: #fff; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .controls { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .controls label { font-size: 13px; color: #aaa; }
+  .controls input[type=range] { width: 100%; }
+  .controls button, .controls label.file {
+    display: inline-block; padding: 10px 16px; margin-right: 6px;
+    background: #4a90ff; color: #fff; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 14px;
+    text-align: center;
+  }
+  .controls button:hover { background: #5aa0ff; }
+  .hint { color: #888; font-size: 12px; line-height: 1.6; }
+  .hint a { color: #4a90ff; }
+</style>
+</head>
+<body>
+<div class="tip">Lottie · 播放 AE 导出的 JSON 矢量动画（无损缩放，文件极小）</div>
+<div class="layout">
+  <div class="panel">
+    <h2>🎬 动画舞台</h2>
+    <div id="stage"></div>
+  </div>
+  <div class="panel">
+    <h2>⚙️ 控制</h2>
+    <div class="controls">
+      <label class="file">
+        选择 Lottie JSON 文件
+        <input type="file" accept=".json" id="file" hidden />
+      </label>
+      <button id="play">▶ 播放</button>
+      <button id="pause">⏸ 暂停</button>
+      <button id="stop">⏹ 停止</button>
+      <label>速度 <span id="speedLabel">1.0×</span></label>
+      <input type="range" id="speed" min="0.1" max="3" step="0.1" value="1" />
+      <label>进度 <span id="frameLabel">0</span></label>
+      <input type="range" id="frame" min="0" max="100" value="0" />
+      <div class="hint">
+        默认加载了一个内置的示例动画。<br />
+        想换动画？去 <a href="https://lottiefiles.com/" target="_blank">lottiefiles.com</a> 下载 JSON，拖进来即可。
+      </div>
+    </div>
+  </div>
+</div>
+<script type="module" src="main.js"></script>
+</body>
+</html>

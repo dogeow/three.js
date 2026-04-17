@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>2910. Sandpile Self Organized</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(0, 0, 0, 0.82);
+      border: 1px solid rgba(100, 200, 255, 0.25);
+      border-radius: 8px;
+      padding: 14px 18px;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      line-height: 1.7;
+      max-width: 340px;
+      backdrop-filter: blur(8px);
+    }
+    #info h1 {
+      margin: 0 0 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #64c8ff;
+      border-bottom: 1px solid rgba(100, 200, 255, 0.25);
+      padding-bottom: 8px;
+    }
+    #info p {
+      margin: 0 0 8px;
+      color: #ccc;
+    }
+    #info ul {
+      margin: 0 0 8px;
+      padding-left: 18px;
+      color: #aaa;
+    }
+    #info li { margin-bottom: 3px; }
+    #info .tag {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 8px;
+      background: rgba(100, 200, 255, 0.15);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 4px;
+      font-size: 11px;
+      color: #64c8ff;
+    }
+    #stats {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.7);
+      border: 1px solid rgba(100,200,255,0.2);
+      border-radius: 6px;
+      padding: 8px 14px;
+      color: #aaa;
+      font-family: monospace;
+      font-size: 12px;
+      backdrop-filter: blur(6px);
+    }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <h1>自组织临界性沙堆 Sandpile</h1>
+    <p>向网格中心持续添加沙粒，当某格超过 3 粒时触发崩塌——向四邻各分配 1 粒。这个简单的规则会涌现出<span style="color:#64c8ff">幂律分布的雪崩</span>，体现自组织临界性。</p>
+    <ul>
+      <li>点击网格投放沙粒</li>
+      <li>颜色表示格内沙粒数量（蓝→绿→红→橙）</li>
+      <li>黄色闪烁表示正在崩塌的格子</li>
+      <li>幂律分布是自组织临界性的标志</li>
+    </ul>
+    <span class="tag">元胞自动机 · 自组织临界性 · 幂律分布 · InstancedMesh</span>
+  </div>
+  <div id="stats">沙粒：0 | 雪崩：0</div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

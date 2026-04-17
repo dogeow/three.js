@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>体素地形雕刻 | Voxel Terrain Carver</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #1a1a2e; font-family: sans-serif; }
+    canvas { display: block; }
+
+    /* Top-left info panel */
+    .info {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      color: #e0e0e0;
+      font-size: 13px;
+      line-height: 1.6;
+      background: rgba(0,0,0,0.55);
+      padding: 10px 14px;
+      border-radius: 8px;
+      pointer-events: none;
+      user-select: none;
+      z-index: 10;
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    /* Bottom color palette */
+    #palette {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.55);
+      padding: 10px 16px;
+      border-radius: 12px;
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.08);
+      z-index: 10;
+    }
+
+    .swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+
+    .swatch:hover { transform: scale(1.15); }
+    .swatch.active { border-color: #fff; transform: scale(1.1); }
+
+    /* Brush size indicator */
+    #brush-indicator {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #e0e0e0;
+      font-size: 12px;
+      background: rgba(0,0,0,0.55);
+      padding: 4px 12px;
+      border-radius: 8px;
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.08);
+      z-index: 10;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+<div class="info">体素地形雕刻 | Voxel Terrain Carver — 32³体素编辑，左键放块右键删除，滚轮调笔刷大小</div>
+  <div id="brush-indicator">笔刷大小 / Brush: 1</div>
+
+  <div id="palette"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ─── Constants ────────────────────────────────────────────────────────────
+    const GRID_W = 32, GRID_H = 16, GRID_D = 32;
+    const VOXEL_SIZE = 1;
+
+    // 8 preset colors (grass, dirt, stone, sand, wood, brick, snow, water)
+    const PRESET_COLORS = [
+      { name: '草地 grass',  hex: '#5a8f3e' },
+      { name: '泥土 dirt',   hex: '#8B5E3C' },
+      { name: '石头 stone',  hex: '#888888' },
+      { name: '沙子 sand',   hex: '#D4B483' },
+      { name: '木头 wood',   hex: '#A0682A' },
+      { name: '砖块 brick',  hex: '#B05030' },
+      { name: '雪地 snow',   hex: '#E8EEF2' },
+      { name: '水 water',    hex: '#2A6DB3' },
+    ];
+
+    // ─── Scene setup ──────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#1a1a2e');
+
+    const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
+    camera.position.set(40, 25, 40);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Orbit controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(GRID_W / 2, GRID_H / 2, GRID_D / 2);
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(20, 40, 20);
+    scene.add(dirLight);
+
+    // ─── Value Noise ──────────────────────────────────────────────────────────
+    // Simple hash-based value noise for terrain generation
+    function hash(x, y, z) {
+      let n = x + y * 57 + z * 113;
+      n = (n << 13) ^ n;
+      return ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 0x7fffffff;
+    }
+
+    function smoothNoise(x, y, z) {
+      const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+      const fx = x - ix, fy = y - iy, fz = z - iz;
+      // Smoothstep
+      const ux = fx * fx * (3 - 2 * fx);
+      const uy = fy * fy * (3 - 2 * fy);
+      const uz = fz * fz * (3 - 2 * fz);
+
+      const c000 = hash(ix,   iy,   iz  );
+      const c100 = hash(ix+1, iy,   iz  );
+      const c010 = hash(ix,   iy+1, iz  );
+      const c110 = hash(ix+1, iy+1, iz  );
+      const c001 = hash(ix,   iy,   iz+1);
+      const c101 = hash(ix+1, iy,   iz+1);
+      const c011 = hash(ix,   iy+1, iz+1);
+      const c111 = hash(ix+1, iy+1, iz+1);
+
+      return THREE.MathUtils.lerp(
+        THREE.MathUtils.lerp(THREE.MathUtils.lerp(c000, c100, ux), THREE.MathUtils.lerp(c010, c110, ux), uy),
+        THREE.MathUtils.lerp(THREE.MathUtils.lerp(c001, c101, ux), THREE.MathUtils.lerp(c011, c111, ux), uy),
+        uz
+      );
+    }
+
+    // Fractal Brownian Motion
+    function fbm(x, y, z, octaves = 4) {
+      let val = 0, amp = 0.5, freq = 1, max = 0;
+      for (let i = 0; i < octaves; i++) {
+        val += smoothNoise(x * freq, y * freq, z * freq) * amp;
+        max += amp;
+        amp *= 0.5;
+        freq *= 2;
+      }
+      return val / max;
+    }
+
+    // ─── Voxel data ───────────────────────────────────────────────────────────
+    // voxelMap: key string "x,y,z" → { color: THREE.Color }
+    const voxelMap = new Map();
+
+    function key(x, y, z) { return `${x},${y},${z}`; }
+
+    function setVoxel(x, y, z, color) {
+      const k = key(x, y, z);
+      if (color === null) {
+        voxelMap.delete(k);
+      } else {
+        voxelMap.set(k, { color });
+      }
+    }
+
+    function getVoxel(x, y, z) {
+      return voxelMap.get(key(x, y, z)) || null;
+    }
+
+    // ─── Initial terrain generation ───────────────────────────────────────────
+    // Use noise to generate a terrain surface; fill from base up
+    function generateTerrain() {
+      for (let gx = 0; gx < GRID_W; gx++) {
+        for (let gz = 0; gz < GRID_D; gz++) {
+          // Height from fbm noise (scaled to GRID_H range)
+          const nx = gx / GRID_W * 4;
+          const nz = gz / GRID_D * 4;
+          const rawHeight = fbm(nx, 0, nz);
+          const height = Math.floor(rawHeight * (GRID_H - 2)) + 1;
+
+          for (let gy = 0; gy <= height; gy++) {
+            let col;
+            if (gy === height) {
+              // Surface: grass
+              col = new THREE.Color(PRESET_COLORS[0].hex);
+            } else if (gy > height - 3) {
+              // Sub-surface: dirt
+              col = new THREE.Color(PRESET_COLORS[1].hex);
+            } else {
+              // Deep: stone
+              col = new THREE.Color(PRESET_COLORS[2].hex);
+            }
+            setVoxel(gx, gy, gz, col);
+          }
+        }
+      }
+    }
+
+    generateTerrain();
+
+    // ─── InstancedMesh setup ──────────────────────────────────────────────────
+    const MAX_INSTANCES = GRID_W * GRID_H * GRID_D;
+    const boxGeo = new THREE.BoxGeometry(VOXEL_SIZE * 0.96, VOXEL_SIZE * 0.96, VOXEL_SIZE * 0.96);
+
+    // Pre-allocate color array for instance colors
+    const colorArray = new Float32Array(MAX_INSTANCES * 3);
+
+    const instancedMesh = new THREE.InstancedMesh(
+      boxGeo,
+      new THREE.MeshLambertMaterial(), // material will be overridden per-instance via onBeforeCompile
+      MAX_INSTANCES
+    );
+    instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instancedMesh.count = 0;
+    scene.add(instancedMesh);
+
+    // Dummy object to compose instance matrices
+    const dummy = new THREE.Object3D();
+
+    // ─── Rebuild instanced mesh from voxelMap ──────────────────────────────────
+    function rebuildMesh() {
+      let idx = 0;
+      const tempColor = new THREE.Color();
+
+      for (const [k, { color }] of voxelMap) {
+        if (idx >= MAX_INSTANCES) break;
+        const [x, y, z] = k.split(',').map(Number);
+
+        dummy.position.set(x, y, z);
+        dummy.updateMatrix();
+        instancedMesh.setMatrixAt(idx, dummy.matrix);
+
+        colorArray[idx * 3]     = color.r;
+        colorArray[idx * 3 + 1] = color.g;
+        colorArray[idx * 3 + 2] = color.b;
+
+        idx++;
+      }
+
+      instancedMesh.count = idx;
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      instancedMesh.geometry.setAttribute(
+        'color',
+        new THREE.InstancedBufferAttribute(colorArray.slice(0, idx * 3), 3)
+      );
+    }
+
+    // Enable vertex colors
+    instancedMesh.material.vertexColors = true;
+    instancedMesh.material.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <color_vertex>',
+        /* glsl */`
+        #ifdef USE_INSTANCING_COLOR
+          attribute vec3 instanceColor;
+          vColor = instanceColor;
+        #endif
+        #include <color_vertex>
+        `
+      );
+    };
+
+    rebuildMesh();
+
+    // ─── Raycasting ───────────────────────────────────────────────────────────
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    // Virtual grid plane for raycasting (always matches world voxel grid)
+    const planeMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(GRID_W * 2, GRID_D * 2),
+      new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide })
+    );
+    planeMesh.rotation.x = -Math.PI / 2;
+    planeMesh.position.set(GRID_W / 2, GRID_H / 2, GRID_D / 2);
+    planeMesh.userData.isVoxelPlane = true;
+    scene.add(planeMesh);
+
+    // Raycasting against existing voxels (for removal)
+    let removalPlane = null; // not used directly — we use voxel map
+
+    function getVoxelPosition(event) {
+      mouse.x = (event.clientX / innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      // First try hitting instanced voxels
+      const hits = raycaster.intersectObject(instancedMesh);
+      if (hits.length > 0) {
+        const hit = hits[0];
+        const instanceId = hit.instanceId;
+        const mat = new THREE.Matrix4();
+        instancedMesh.getMatrixAt(instanceId, mat);
+        const pos = new THREE.Vector3();
+        pos.setFromMatrixPosition(mat);
+
+        if (event.button === 2) {
+          // Right-click: remove this voxel
+          return { action: 'remove', x: Math.round(pos.x), y: Math.round(pos.y), z: Math.round(pos.z) };
+        } else {
+          // Left-click: add adjacent voxel based on face normal
+          const normal = hit.face.normal.clone();
+          // Transform normal from local to world (apply instance rotation if any)
+          normal.transformDirection(hit.object.matrixWorld);
+          return {
+            action: 'add',
+            x: Math.round(pos.x + normal.x),
+            y: Math.round(pos.y + normal.y),
+            z: Math.round(pos.z + normal.z)
+          };
+        }
+      }
+
+      // If no voxel hit, use the ground plane for initial placement
+      const planeHits = raycaster.intersectObject(planeMesh);
+      if (planeHits.length > 0 && event.button === 0) {
+        const pt = planeHits[0].point;
+        return {
+          action: 'add',
+          x: Math.round(pt.x),
+          y: Math.round(pt.y),
+          z: Math.round(pt.z)
+        };
+      }
+
+      return null;
+    }
+
+    // ─── Brush ─────────────────────────────────────────────────────────────────
+    let brushSize = 1;
+    let selectedColor = new THREE.Color(PRESET_COLORS[0].hex);
+
+    function isInBounds(x, y, z) {
+      return x >= 0 && x < GRID_W && y >= 0 && y < GRID_H && z >= 0 && z < GRID_D;
+    }
+
+    function applyBrush(cx, cy, cz, action) {
+      const r = brushSize - 1;
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dz = -r; dz <= r; dz++) {
+            // Cubic brush shape
+            const x = cx + dx, y = cy + dy, z = cz + dz;
+            if (!isInBounds(x, y, z)) continue;
+            if (action === 'add') {
+              setVoxel(x, y, z, selectedColor.clone());
+            } else {
+              setVoxel(x, y, z, null);
+            }
+          }
+        }
+      }
+      rebuildMesh();
+    }
+
+    // ─── Event listeners ───────────────────────────────────────────────────────
+    let isPointerDown = false;
+    let lastVoxel = null;
+
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (e.target !== renderer.domElement) return;
+      isPointerDown = true;
+      handleClick(e);
+    });
+
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      if (!isPointerDown) return;
+      // Only paint while holding left/right button
+      handleClick(e);
+    });
+
+    renderer.domElement.addEventListener('pointerup', () => {
+      isPointerDown = false;
+      lastVoxel = null;
+    });
+
+    function handleClick(e) {
+      // Orbit controls take priority for camera movement
+      if (e.shiftKey) return;
+
+      const result = getVoxelPosition(e);
+      if (!result) return;
+
+      const { action, x, y, z } = result;
+      const vk = key(x, y, z);
+
+      // Avoid re-processing same voxel
+      if (lastVoxel === vk) return;
+      lastVoxel = vk;
+
+      applyBrush(x, y, z, action);
+    }
+
+    // Prevent context menu on right-click
+    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Scroll wheel for brush size
+    renderer.domElement.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        brushSize = Math.min(5, brushSize + 1);
+      } else {
+        brushSize = Math.max(1, brushSize - 1);
+      }
+      document.getElementById('brush-indicator').textContent = `笔刷大小 / Brush: ${brushSize}`;
+    }, { passive: false });
+
+    // ─── Color palette UI ──────────────────────────────────────────────────────
+    const palette = document.getElementById('palette');
+    PRESET_COLORS.forEach((preset, i) => {
+      const sw = document.createElement('div');
+      sw.className = 'swatch' + (i === 0 ? ' active' : '');
+      sw.style.background = preset.hex;
+      sw.title = preset.name;
+      sw.addEventListener('click', () => {
+        document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+        sw.classList.add('active');
+        selectedColor = new THREE.Color(preset.hex);
+      });
+      palette.appendChild(sw);
+    });
+
+    // ─── Auto-resize ───────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // ─── Animation loop ────────────────────────────────────────────────────────
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>

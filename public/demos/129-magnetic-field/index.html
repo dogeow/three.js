@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>磁场可视化</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #tip {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            background: rgba(10, 10, 20, 0.85);
+            color: #c0c0d0;
+            padding: 14px 18px;
+            border-radius: 10px;
+            font-size: 13px;
+            line-height: 1.6;
+            border: 1px solid rgba(100, 120, 180, 0.3);
+            backdrop-filter: blur(8px);
+            max-width: 280px;
+            z-index: 10;
+        }
+        #tip b {
+            color: #7ec8e3;
+        }
+        #panel {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: rgba(10, 10, 20, 0.85);
+            color: #c0c0d0;
+            padding: 18px;
+            border-radius: 10px;
+            font-size: 13px;
+            border: 1px solid rgba(100, 120, 180, 0.3);
+            backdrop-filter: blur(8px);
+            min-width: 220px;
+            z-index: 10;
+        }
+        #panel h3 {
+            margin-bottom: 14px;
+            color: #7ec8e3;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        #panel label {
+            display: block;
+            margin: 10px 0 4px;
+            font-size: 12px;
+            color: #9090a8;
+        }
+        #panel input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+        #panel .value {
+            display: inline-block;
+            font-size: 11px;
+            color: #7ec8e3;
+            min-width: 24px;
+        }
+        #panel button {
+            margin-top: 14px;
+            width: 100%;
+            padding: 9px 14px;
+            background: rgba(126, 200, 227, 0.15);
+            color: #7ec8e3;
+            border: 1px solid rgba(126, 200, 227, 0.4);
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        #panel button:hover {
+            background: rgba(126, 200, 227, 0.25);
+            border-color: rgba(126, 200, 227, 0.6);
+        }
+        #panel button:active {
+            background: rgba(126, 200, 227, 0.35);
+        }
+        .divider {
+            height: 1px;
+            background: rgba(100, 120, 180, 0.2);
+            margin: 12px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="tip">
+        <b>磁场可视化</b><br>
+        点击场景添加磁铁 (N/S)<br>
+        拖动磁铁来移动它<br>
+        右键点击磁铁来移除它<br>
+        滚轮缩放, 中键拖动平移
+    </div>
+<div id="panel">
+        <h3>磁场</h3>
+        <label>磁铁数量 <span class="value" id="magnetCountVal">2</span></label>
+        <input type="range" id="magnetCount" min="1" max="5" value="2" step="1">
+        <label>磁场线数量 <span class="value" id="lineCountVal">20</span></label>
+        <input type="range" id="lineCount" min="5" max="60" value="20" step="5">
+        <label>强度 <span class="value" id="strengthVal">1.0</span></label>
+        <input type="range" id="strength" min="0.3" max="3.0" value="1.0" step="0.1">
+        <div class="divider"></div>
+        <button id="addMagnet">添加磁铁</button>
+        <button id="clearAll" style="margin-top:8px; background:rgba(200,80,80,0.1); color:#e07070; border-color:rgba(200,80,80,0.3);">清除全部</button>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // ===== CONSTANTS =====
+        const MU0_4PI = 1e-6; // μ₀/4π for SI-like scaling
+        const STEP_SIZE = 0.08;
+        const RK4_H = 0.05;
+        const MAX_STEPS = 400;
+        const BOUNDARY = 8;
+        const SPHERE_R = 0.25;
+
+        // ===== SCENE SETUP =====
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050510);
+        scene.fog = new THREE.FogExp2(0x050510, 0.04);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+        camera.position.set(0, 6, 12);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.minDistance = 3;
+        controls.maxDistance = 30;
+        controls.maxPolarAngle = Math.PI * 0.9;
+
+        // ===== LIGHTING =====
+        const ambientLight = new THREE.AmbientLight(0x202040, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0x8090c0, 0.8);
+        dirLight.position.set(5, 10, 5);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.set(1024, 1024);
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 50;
+        dirLight.shadow.camera.left = -15;
+        dirLight.shadow.camera.right = 15;
+        dirLight.shadow.camera.top = 15;
+        dirLight.shadow.camera.bottom = -15;
+        scene.add(dirLight);
+
+        // ===== GROUND =====
+        const groundGeo = new THREE.PlaneGeometry(40, 40, 40, 40);
+        const groundMat = new THREE.MeshStandardMaterial({
+            color: 0x0a0a18,
+            roughness: 0.9,
+            metalness: 0.1,
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const gridHelper = new THREE.GridHelper(30, 30, 0x202050, 0x101028);
+        gridHelper.position.y = -1.99;
+        scene.add(gridHelper);
+
+        // ===== MAGNET STATE =====
+        const magnets = []; // { mesh, northMesh, southMesh, northLight, southLight, pole: +1 or -1, dipole }
+        let fieldLinesGroup = new THREE.Group();
+        scene.add(fieldLinesGroup);
+
+        // ===== MATERIALS =====
+        const northMat = new THREE.MeshPhysicalMaterial({
+            color: 0xe03020,
+            emissive: 0x800000,
+            emissiveIntensity: 0.5,
+            roughness: 0.2,
+            metalness: 0.1,
+            clearcoat: 0.5,
+            clearcoatRoughness: 0.2,
+        });
+        const southMat = new THREE.MeshPhysicalMaterial({
+            color: 0x2040e0,
+            emissive: 0x000080,
+            emissiveIntensity: 0.5,
+            roughness: 0.2,
+            metalness: 0.1,
+            clearcoat: 0.5,
+            clearcoatRoughness: 0.2,
+        });
+        const ringMat = new THREE.MeshStandardMaterial({
+            color: 0x404060,
+            roughness: 0.4,
+            metalness: 0.8,
+        });
+
+        // ===== MAGNET CLASS =====
+        function createMagnet(position, pole) {
+            const group = new THREE.Group();
+            group.position.copy(position);
+            group.userData.pole = pole;
+            group.userData.movable = false;
+            group.userData.dipole = 2.0;
+
+            // Main sphere
+            const sphereGeo = new THREE.SphereGeometry(SPHERE_R, 32, 24);
+            const mat = pole > 0 ? northMat.clone() : southMat.clone();
+            const sphere = new THREE.Mesh(sphereGeo, mat);
+            sphere.castShadow = true;
+            group.add(sphere);
+
+            // Equatorial ring
+            const ringGeo = new THREE.TorusGeometry(SPHERE_R * 0.95, 0.03, 8, 32);
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.castShadow = true;
+            group.add(ring);
+
+            // Pole cap indicator (small sphere on top)
+            const capGeo = new THREE.SphereGeometry(SPHERE_R * 0.25, 16, 12);
+            const cap = new THREE.Mesh(capGeo, pole > 0 ? northMat.clone() : southMat.clone());
+            cap.position.set(0, SPHERE_R + SPHERE_R * 0.15, 0);
+            cap.castShadow = true;
+            group.add(cap);
+
+            // Point light
+            const light = new THREE.PointLight(
+                pole > 0 ? 0xff3020 : 0x2030ff,
+                3,
+                6
+            );
+            group.add(light);
+
+            scene.add(group);
+
+            const magnet = {
+                mesh: group,
+                light,
+                pole,
+                dipole: group.userData.dipole,
+            };
+            return magnet;
+        }
+
+        function removeMagnet(magnet) {
+            scene.remove(magnet.mesh);
+            magnets.splice(magnets.indexOf(magnet), 1);
+        }
+
+        // ===== INITIAL MAGNETS =====
+        function addInitialMagnets() {
+            magnets.push(createMagnet(new THREE.Vector3(-2, 0, 0), 1));
+            magnets.push(createMagnet(new THREE.Vector3(2, 0, 0), -1));
+        }
+        addInitialMagnets();
+
+        // ===== FIELD COMPUTATION =====
+        function computeField(point, strengthMult) {
+            const B = new THREE.Vector3(0, 0, 0);
+            for (const m of magnets) {
+                const r = new THREE.Vector3().subVectors(point, m.mesh.position);
+                const dist = r.length();
+                if (dist < 0.15) continue;
+
+                const rHat = r.clone().normalize();
+                const mVec = rHat.clone().multiplyScalar(m.pole * m.dipole * strengthMult);
+
+                // B = (μ₀/4π) * (3(m·r̂)r̂ - m) / r³
+                const mDotR = mVec.dot(rHat);
+                const term1 = rHat.clone().multiplyScalar(3 * mDotR);
+                const term2 = mVec;
+                const B_i = term1.sub(term2).divideScalar(dist * dist * dist);
+                B.add(B_i);
+            }
+            return B;
+        }
+
+        // ===== RK4 STEP =====
+        function rk4Step(point, strengthMult, h) {
+            const k1 = computeField(point, strengthMult);
+            const k2 = computeField(new THREE.Vector3().addVectors(point, k1.clone().multiplyScalar(h / 2)), strengthMult);
+            const k3 = computeField(new THREE.Vector3().addVectors(point, k2.clone().multiplyScalar(h / 2)), strengthMult);
+            const k4 = computeField(new THREE.Vector3().addVectors(point, k3.clone().multiplyScalar(h)), strengthMult);
+
+            const dir = new THREE.Vector3()
+                .addScaledVector(k1, 1 / 6)
+                .addScaledVector(k2, 2 / 6)
+                .addScaledVector(k3, 2 / 6)
+                .addScaledVector(k4, 1 / 6);
+            return dir.normalize();
+        }
+
+        // ===== TRACE FIELD LINE =====
+        function traceFieldLine(startPoint, strengthMult, isForward) {
+            const points = [startPoint.clone()];
+            let current = startPoint.clone();
+            const dir = isForward ? 1 : -1;
+
+            for (let i = 0; i < MAX_STEPS; i++) {
+                // Step in field direction
+                const stepDir = rk4Step(current, strengthMult, RK4_H * dir);
+                if (stepDir.lengthSq() < 1e-6) break;
+
+                const next = new THREE.Vector3().addVectors(current, stepDir.clone().multiplyScalar(STEP_SIZE * dir));
+
+                // Boundary check
+                if (Math.abs(next.x) > BOUNDARY || Math.abs(next.y) > BOUNDARY || Math.abs(next.z) > BOUNDARY) break;
+
+                // Check if near a south pole (for forward trace from north)
+                if (isForward) {
+                    for (const m of magnets) {
+                        if (m.pole < 0) {
+                            if (next.distanceTo(m.mesh.position) < SPHERE_R * 1.5) {
+                                points.push(next.clone());
+                                return { points, reached: true, reachedMagnet: m };
+                            }
+                        }
+                    }
+                } else {
+                    for (const m of magnets) {
+                        if (m.pole > 0) {
+                            if (next.distanceTo(m.mesh.position) < SPHERE_R * 1.5) {
+                                points.push(next.clone());
+                                return { points, reached: true, reachedMagnet: m };
+                            }
+                        }
+                    }
+                }
+
+                points.push(next.clone());
+                current = next;
+            }
+            return { points, reached: false, reachedMagnet: null };
+        }
+
+        // ===== STRENGTH TO COLOR =====
+        function strengthToColor(strength, maxStr) {
+            // Map strength [0, maxStr] to blue -> cyan -> green -> yellow -> red
+            const t = Math.min(strength / maxStr, 1.0);
+            const r = Math.min(255, Math.round(t * 510));
+            const g = Math.min(255, Math.round((1 - t) * 510));
+            const b = Math.round((1 - Math.abs(t * 2 - 1)) * 200);
+            return new THREE.Color(`rgb(${r},${g},${b})`);
+        }
+
+        // ===== COMPUTE FIELD STRENGTH AT POINT =====
+        function getFieldStrength(point, strengthMult) {
+            return computeField(point, strengthMult).length();
+        }
+
+        // ===== BUILD FIELD LINES =====
+        let fieldLinesMeshes = [];
+
+        function buildFieldLines(strengthMult) {
+            // Remove old lines
+            while (fieldLinesGroup.children.length > 0) {
+                const child = fieldLinesGroup.children[0];
+                fieldLinesGroup.remove(child);
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            }
+            fieldLinesMeshes = [];
+
+            const northPoles = magnets.filter(m => m.pole > 0);
+            if (northPoles.length === 0) return;
+
+            const linesPerPole = Math.ceil(lineCount / northPoles.length);
+            let totalLines = 0;
+
+            for (const north of northPoles) {
+                const northPos = north.mesh.position;
+
+                for (let i = 0; i < linesPerPole; i++) {
+                    if (totalLines >= lineCount) break;
+                    totalLines++;
+
+                    // Distribute starting points on a sphere around N pole
+                    const phi = Math.acos(-1 + (2 * i) / linesPerPole);
+                    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+
+                    const offset = new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta),
+                        Math.sin(phi) * Math.sin(theta),
+                        Math.cos(phi)
+                    ).multiplyScalar(SPHERE_R + 0.05);
+
+                    const start = northPos.clone().add(offset);
+
+                    // Trace forward
+                    const forward = traceFieldLine(start, strengthMult, true);
+                    // Trace backward
+                    const backward = traceFieldLine(start, strengthMult, false);
+
+                    // Combine points: backward (reversed) + forward
+                    const allPoints = [];
+                    for (let j = backward.points.length - 1; j >= 0; j--) {
+                        allPoints.push(backward.points[j]);
+                    }
+                    for (let j = 0; j < forward.points.length; j++) {
+                        allPoints.push(forward.points[j]);
+                    }
+
+                    if (allPoints.length < 3) continue;
+
+                    // Color by field strength along the line
+                    const numSegments = allPoints.length - 1;
+                    const geometry = new THREE.BufferGeometry().setFromPoints(allPoints);
+
+                    // Create gradient colors
+                    const colors = [];
+                    for (let j = 0; j < allPoints.length; j++) {
+                        const str = getFieldStrength(allPoints[j], strengthMult);
+                        colors.push(strengthToColor(str, 5.0));
+                    }
+
+                    geometry.setAttribute('color', new THREE.Float32BufferAttribute(
+                        colors.flatMap(c => [c.r, c.g, c.b]), 3
+                    ));
+
+                    const material = new THREE.LineBasicMaterial({
+                        vertexColors: true,
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: 1,
+                    });
+
+                    const line = new THREE.Line(geometry, material);
+                    fieldLinesGroup.add(line);
+                    fieldLinesMeshes.push(line);
+                }
+            }
+        }
+
+        // ===== ARROW PARTICLES ALONG FIELD LINES =====
+        let arrowParticles = [];
+        const ARROW_COUNT = 300;
+
+        function createArrowParticles() {
+            arrowParticles.forEach(a => scene.remove(a.mesh));
+            arrowParticles = [];
+
+            if (magnets.length < 2) return;
+
+            for (let i = 0; i < ARROW_COUNT; i++) {
+                const geo = new THREE.ConeGeometry(0.04, 0.15, 6);
+                const mat = new THREE.MeshBasicMaterial({
+                    color: 0x7ec8e3,
+                    transparent: true,
+                    opacity: 0.5,
+                });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.visible = false;
+                scene.add(mesh);
+                arrowParticles.push({
+                    mesh,
+                    t: Math.random(),
+                    speed: 0.3 + Math.random() * 0.5,
+                    lineIdx: i % fieldLinesMeshes.length,
+                    offset: (Math.random() - 0.5) * 0.01,
+                });
+            }
+        }
+
+        function updateArrowParticles(strengthMult, delta) {
+            if (arrowParticles.length === 0 || fieldLinesMeshes.length === 0) return;
+
+            for (const a of arrowParticles) {
+                const line = fieldLinesMeshes[a.lineIdx % fieldLinesMeshes.length];
+                if (!line || !line.geometry) continue;
+
+                const positions = line.geometry.attributes.position;
+                if (!positions || positions.count < 2) continue;
+
+                a.t += delta * a.speed * 0.3;
+                if (a.t > 1) a.t -= 1;
+
+                const idx = Math.floor(a.t * (positions.count - 1));
+                const frac = (a.t * (positions.count - 1)) - idx;
+
+                const i0 = Math.min(idx, positions.count - 1);
+                const i1 = Math.min(idx + 1, positions.count - 1);
+
+                const x0 = positions.getX(i0), y0 = positions.getY(i0), z0 = positions.getZ(i0);
+                const x1 = positions.getX(i1), y1 = positions.getY(i1), z1 = positions.getZ(i1);
+
+                a.mesh.position.set(
+                    x0 + (x1 - x0) * frac,
+                    y0 + (y1 - y0) * frac,
+                    z0 + (z1 - z0) * frac
+                );
+
+                const dir = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0).normalize();
+                if (dir.lengthSq() > 0.001) {
+                    a.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+                }
+
+                a.mesh.visible = true;
+
+                // Color by strength
+                const str = getFieldStrength(a.mesh.position, strengthMult);
+                a.mesh.material.color.copy(strengthToColor(str, 5.0));
+                a.mesh.material.opacity = 0.3 + Math.min(str / 5, 1) * 0.4;
+            }
+        }
+
+        // ===== DRAG & INTERACTION =====
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let selectedMagnet = null;
+        let isDragging = false;
+        const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const dragOffset = new THREE.Vector3();
+        let dragActive = false;
+
+        function getMagnetFromObject(obj) {
+            for (const m of magnets) {
+                if (m.mesh === obj || m.mesh.children.includes(obj)) return m;
+            }
+            return null;
+        }
+
+        renderer.domElement.addEventListener('mousedown', (e) => {
+            if (e.button === 2) return; // right click handled separately
+            mouse.set(
+                (e.clientX / window.innerWidth) * 2 - 1,
+                -(e.clientY / window.innerHeight) * 2 + 1
+            );
+            raycaster.setFromCamera(mouse, camera);
+
+            // Check for magnet click
+            const magnetMeshes = magnets.flatMap(m => m.mesh.children);
+            const hits = raycaster.intersectObjects(magnetMeshes, false);
+            if (hits.length > 0) {
+                const magnet = getMagnetFromObject(hits[0].object);
+                if (magnet) {
+                    selectedMagnet = magnet;
+                    magnet.mesh.userData.movable = true;
+                    controls.enabled = false;
+                    dragActive = true;
+
+                    // Compute offset from click point to magnet center
+                    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -magnet.mesh.position.y);
+                    raycaster.ray.intersectPlane(plane, dragOffset);
+                    dragOffset.sub(magnet.mesh.position);
+                    isDragging = true;
+                    return;
+                }
+            }
+
+            // Click on ground to add magnet
+            const groundHits = raycaster.intersectObject(ground, false);
+            if (groundHits.length > 0) {
+                const pt = groundHits[0].point;
+                // Alternate poles
+                const pole = magnets.length % 2 === 0 ? 1 : -1;
+                magnets.push(createMagnet(pt, pole));
+                rebuild();
+                return;
+            }
+        });
+
+        renderer.domElement.addEventListener('mousemove', (e) => {
+            if (!dragActive || !selectedMagnet || !isDragging) return;
+            mouse.set(
+                (e.clientX / window.innerWidth) * 2 - 1,
+                -(e.clientY / window.innerHeight) * 2 + 1
+            );
+            raycaster.setFromCamera(mouse, camera);
+
+            // Intersect horizontal plane at magnet's Y
+            const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -selectedMagnet.mesh.position.y);
+            const intersection = new THREE.Vector3();
+            raycaster.ray.intersectPlane(plane, intersection);
+            if (intersection) {
+                selectedMagnet.mesh.position.copy(intersection);
+                rebuild();
+            }
+        });
+
+        renderer.domElement.addEventListener('mouseup', () => {
+            if (selectedMagnet) {
+                selectedMagnet.mesh.userData.movable = false;
+                selectedMagnet = null;
+            }
+            isDragging = false;
+            dragActive = false;
+            controls.enabled = true;
+        });
+
+        renderer.domElement.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            mouse.set(
+                (e.clientX / window.innerWidth) * 2 - 1,
+                -(e.clientY / window.innerHeight) * 2 + 1
+            );
+            raycaster.setFromCamera(mouse, camera);
+
+            const magnetMeshes = magnets.flatMap(m => m.mesh.children);
+            const hits = raycaster.intersectObjects(magnetMeshes, false);
+            if (hits.length > 0) {
+                const magnet = getMagnetFromObject(hits[0].object);
+                if (magnet && magnets.length > 1) {
+                    removeMagnet(magnet);
+                    rebuild();
+                }
+            }
+        });
+
+        // ===== REBUILD =====
+        let currentLineCount = 20;
+        let currentStrength = 1.0;
+
+        function rebuild() {
+            buildFieldLines(currentStrength);
+            createArrowParticles();
+        }
+
+        // ===== UI =====
+        const magnetCountSlider = document.getElementById('magnetCount');
+        const lineCountSlider = document.getElementById('lineCount');
+        const strengthSlider = document.getElementById('strength');
+        const magnetCountVal = document.getElementById('magnetCountVal');
+        const lineCountVal = document.getElementById('lineCountVal');
+        const strengthVal = document.getElementById('strengthVal');
+
+        magnetCountSlider.addEventListener('input', () => {
+            const target = parseInt(magnetCountSlider.value);
+            magnetCountVal.textContent = target;
+
+            while (magnets.length < target) {
+                const angle = (magnets.length / target) * Math.PI * 2;
+                const r = 2.5;
+                const pole = magnets.length % 2 === 0 ? 1 : -1;
+                magnets.push(createMagnet(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r), pole));
+            }
+            while (magnets.length > target && magnets.length > 1) {
+                removeMagnet(magnets[magnets.length - 1]);
+            }
+            rebuild();
+        });
+
+        lineCountSlider.addEventListener('input', () => {
+            currentLineCount = parseInt(lineCountSlider.value);
+            lineCountVal.textContent = currentLineCount;
+            rebuild();
+        });
+
+        strengthSlider.addEventListener('input', () => {
+            currentStrength = parseFloat(strengthSlider.value);
+            strengthVal.textContent = currentStrength.toFixed(1);
+            rebuild();
+        });
+
+        document.getElementById('addMagnet').addEventListener('click', () => {
+            if (magnets.length >= 5) return;
+            const angle = magnets.length * (Math.PI * 2 / 5);
+            const r = 2.5;
+            const pole = magnets.length % 2 === 0 ? 1 : -1;
+            magnets.push(createMagnet(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r), pole));
+            magnetCountSlider.value = Math.min(magnets.length, 5);
+            magnetCountVal.textContent = magnets.length;
+            rebuild();
+        });
+
+        document.getElementById('clearAll').addEventListener('click', () => {
+            while (magnets.length > 0) {
+                removeMagnet(magnets[0]);
+            }
+            magnetCountSlider.value = 1;
+            magnetCountVal.textContent = 1;
+            magnets.push(createMagnet(new THREE.Vector3(0, 0, 0), 1));
+            rebuild();
+        });
+
+        // ===== ANIMATION =====
+        const clock = new THREE.Clock();
+        let frameCount = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+            frameCount++;
+
+            // Gentle rotation of magnet rings
+            for (const m of magnets) {
+                m.mesh.children[1].rotation.x = elapsed * 0.8;
+                m.mesh.children[1].rotation.y = elapsed * 0.5;
+
+                // Pulse the light
+                m.light.intensity = 2.5 + Math.sin(elapsed * 3 + magnets.indexOf(m)) * 0.5;
+            }
+
+            // Update arrow particles at ~15fps rate to save perf
+            if (frameCount % 4 === 0) {
+                updateArrowParticles(currentStrength, delta * 4);
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // ===== RESIZE =====
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ===== ATTACH TO WINDOW =====
+        window.scene = scene;
+        window.camera = camera;
+        window.renderer = renderer;
+        window.controls = controls;
+        window.magnets = magnets;
+        window.fieldLines = fieldLinesGroup;
+        window.buildFieldLines = buildFieldLines;
+        window.fieldLinesMeshes = fieldLinesMeshes;
+
+        // ===== INIT =====
+        rebuild();
+        animate();
+    </script>
+</body>
+</html>

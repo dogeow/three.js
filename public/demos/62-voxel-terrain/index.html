@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>62 · 体素地形渲染 Voxel Terrain</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #0d1117; }
+  canvas { display: block; }
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    color: #fff; font: 14px/1.65 -apple-system, sans-serif;
+    background: rgba(0, 0, 0, 0.58); padding: 10px 14px; border-radius: 8px;
+    max-width: 380px;
+  }
+  .info {
+    position: fixed; bottom: 12px; left: 12px;
+    color: #7ee787; font: 13px/1 monospace;
+    background: rgba(0,0,0,.55); padding: 6px 10px; border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="tip">
+  <b>技术点：体素地形 / 噪声 + 面剔除 + 合并几何体</b><br>
+  · 32x16x32 体素网格，用 2D 噪声决定每列高度<br>
+  · 面剔除：相邻两个体素之间不生成面，大幅减少三角形数量<br>
+  · 所有可见面合并为一个大 BufferGeometry，单次 Draw Call<br>
+  · Ambient Occlusion：按顶点邻接数量压暗顶点颜色，模拟缝隙阴影<br>
+  · lil-gui 可调：体素大小、地形缩放、线框模式、分块轮廓
+</div>
+<div class="info" id="info">渲染调用：-- | 三角形：--</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0d1117)
+scene.fog = new THREE.Fog(0x0d1117, 60, 180)
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500)
+camera.position.set(38, 28, 38)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+document.body.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.target.set(0, 4, 0)
+
+scene.add(new THREE.AmbientLight(0x8ecae6, 0.6))
+const sun = new THREE.DirectionalLight(0xffffff, 1.4)
+sun.position.set(40, 60, 30)
+scene.add(sun)
+const fill = new THREE.DirectionalLight(0x6a4c93, 0.3)
+fill.position.set(-20, 10, -20)
+scene.add(fill)
+
+// ============ 2D 噪声 ============
+let seed = Math.random() * 1000
+function hash2(x, y) {
+  const n = Math.sin((x * 12.9898 + y * 78.233 + seed) * 43758.5453)
+  return (n - Math.floor(n)) * 2 - 1
+}
+function smoothstep(t) { return t * t * (3 - 2 * t) }
+function valueNoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y)
+  const xf = x - xi, yf = y - yi
+  const a = hash2(xi, yi)
+  const b = hash2(xi + 1, yi)
+  const c = hash2(xi, yi + 1)
+  const d = hash2(xi + 1, yi + 1)
+  const u = smoothstep(xf), v = smoothstep(yf)
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v
+}
+function fbm(x, y, octaves = 4) {
+  let sum = 0, amp = 1, freq = 1, max = 0
+  for (let i = 0; i < octaves; i++) {
+    sum += valueNoise(x * freq, y * freq) * amp
+    max += amp; amp *= 0.5; freq *= 2
+  }
+  return sum / max
+}
+
+// ============ 体素参数 ============
+const params = {
+  voxelSize: 0.95,   // 体素大小（1 = 紧密无缝隙）
+  terrainScale: 0.08, // 地形噪声频率
+  heightScale: 10,    // 高度缩放
+  wireframe: false,
+  chunkOutline: false,
+  showMerged: true,
+  rebuild: function() {
+    seed = Math.random() * 1000
+    buildTerrain()
+  }
+}
+
+// 体素颜色
+const COLOR_GRASS   = new THREE.Color(0x4a7c43)
+const COLOR_GRASS2  = new THREE.Color(0x5e8c4f)
+const COLOR_DIRT    = new THREE.Color(0x8b6914)
+const COLOR_DIRT2   = new THREE.Color(0x7a5c28)
+const COLOR_STONE   = new THREE.Color(0x6b7280)
+const COLOR_STONE2  = new THREE.Color(0x4b5563)
+const COLOR_SNOW    = new THREE.Color(0xe8e8f0)
+const COLOR_WATER   = new THREE.Color(0x1e4a6e)
+const WATER_LEVEL   = 0
+
+// 体素数据：true = 有体素
+let voxelData = null
+const GRID_X = 48
+const GRID_Y = 20
+const GRID_Z = 48
+
+// 生成体素数据
+function generateVoxels() {
+  voxelData = new Uint8Array(GRID_X * GRID_Y * GRID_Z)
+  for (let x = 0; x < GRID_X; x++) {
+    for (let z = 0; z < GRID_Z; z++) {
+      const nx = (x - GRID_X / 2) * params.terrainScale
+      const nz = (z - GRID_Z / 2) * params.terrainScale
+      const h = Math.round((fbm(nx, nz, 4) * 0.5 + 0.5) * params.heightScale)
+      const maxY = Math.min(GRID_Y - 1, Math.max(0, h))
+      for (let y = 0; y <= maxY; y++) {
+        voxelData[x + y * GRID_X + z * GRID_X * GRID_Y] = 1
+      }
+    }
+  }
+}
+
+function getVoxel(x, y, z) {
+  if (x < 0 || x >= GRID_X || y < 0 || y >= GRID_Y || z < 0 || z >= GRID_Z) return 0
+  return voxelData[x + y * GRID_X + z * GRID_X * GRID_Y]
+}
+
+// ============ 面定义（6个方向）============
+// 每个面的局部顶点（相对于体素中心，大小为 vs）
+// 法线朝外：+Y, -Y, +X, -X, +Z, -Z
+function faceVertices(direction, vs) {
+  const h = vs * 0.5
+  switch (direction) {
+    case 0: // top (+Y) 草
+      return [
+        -h,  h, -h,   h,  h, -h,   h,  h,  h,  -h,  h, -h,   h,  h,  h,  -h,  h,  h
+      ]
+    case 1: // bottom (-Y) 石头
+      return [
+        -h, -h,  h,   h, -h,  h,   h, -h, -h,  -h, -h,  h,   h, -h, -h,  -h, -h, -h
+      ]
+    case 2: // +X 侧面
+      return [
+         h, -h, -h,   h,  h, -h,   h,  h,  h,   h, -h, -h,   h,  h,  h,   h, -h,  h
+      ]
+    case 3: // -X 侧面
+      return [
+        -h, -h,  h,  -h,  h,  h,  -h,  h, -h,  -h, -h,  h,  -h,  h, -h,  -h, -h, -h
+      ]
+    case 4: // +Z 侧面
+      return [
+        -h, -h,  h,   h, -h,  h,   h,  h,  h,  -h, -h,  h,   h,  h,  h,  -h,  h,  h
+      ]
+    case 5: // -Z 侧面
+      return [
+         h, -h, -h,  -h, -h, -h,  -h,  h, -h,   h, -h, -h,  -h,  h, -h,   h,  h, -h
+      ]
+  }
+}
+
+function faceNormal(direction) {
+  switch (direction) {
+    case 0: return [0, 1, 0]
+    case 1: return [0, -1, 0]
+    case 2: return [1, 0, 0]
+    case 3: return [-1, 0, 0]
+    case 4: return [0, 0, 1]
+    case 5: return [0, 0, -1]
+  }
+}
+
+// 相邻坐标偏移（与面方向对应）
+const NEIGHBOR = [
+  [0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]
+]
+
+// 面是否可见（有邻接体素则不可见）
+function isFaceVisible(x, y, z, dir) {
+  const [dx, dy, dz] = NEIGHBOR[dir]
+  return getVoxel(x + dx, y + dy, z + dz) === 0
+}
+
+// 根据高度和方向选择颜色
+function chooseColor(x, y, z, dir) {
+  const maxY = GRID_Y - 1
+  let topY = -1
+  outer: for (let ty = GRID_Y - 1; ty >= 0; ty--) {
+    if (getVoxel(x, ty, z)) { topY = ty; break outer }
+  }
+
+  // 顶层
+  if (topY === y) {
+    if (y >= WATER_LEVEL + 2) {
+      return dir === 0 ? COLOR_GRASS : COLOR_DIRT
+    } else {
+      return COLOR_DIRT
+    }
+  }
+  // 水面以下
+  if (y < WATER_LEVEL) return COLOR_STONE
+  // 非顶层
+  if (y > topY - 3) {
+    return dir === 0 ? COLOR_GRASS2 : COLOR_DIRT2
+  }
+  return dir === 0 ? COLOR_SNOW : COLOR_STONE
+}
+
+// 顶点索引偏移（每面 6 个顶点）
+function faceIndices() {
+  return [0, 1, 2, 0, 2, 3]
+}
+
+// 构建合并几何体
+let terrainMesh = null
+let wireMesh = null
+let chunkOutline = null
+
+// 快速邻接检查表（用于 AO）
+function buildNeighbors() {
+  // 对于每个 (x,y,z)，构建它周围 8 个角的邻接计数
+  const nx = GRID_X, ny = GRID_Y, nz = GRID_Z
+  const aoGrid = new Uint8Array((nx + 1) * (ny + 1) * (nz + 1))
+  for (let x = 0; x <= nx; x++) {
+    for (let y = 0; y <= ny; y++) {
+      for (let z = 0; z <= nz; z++) {
+        let cnt = 0
+        for (let ox = 0; ox <= 1; ox++) {
+          for (let oy = 0; oy <= 1; oy++) {
+            for (let oz = 0; oz <= 1; oz++) {
+              const gx = Math.min(x + ox, nx - 1)
+              const gy = Math.min(y + oy, ny - 1)
+              const gz = Math.min(z + oz, nz - 1)
+              if (voxelData[gx + gy * nx + gz * nx * ny]) cnt++
+            }
+          }
+        }
+        aoGrid[x + y * (nx + 1) + z * (nx + 1) * (ny + 1)] = cnt
+      }
+    }
+  }
+  return aoGrid
+}
+
+function sampleAO(aoGrid, cx, cy, cz, nx, ny, nz) {
+  cx = Math.max(0, Math.min(cx, nx))
+  cy = Math.max(0, Math.min(cy, ny))
+  cz = Math.max(0, Math.min(cz, nz))
+  return aoGrid[cx + cy * (nx + 1) + cz * (nx + 1) * (ny + 1)]
+}
+
+function getVertexAO(aoGrid, x, y, z, vertIdx, nx, ny, nz) {
+  // vertIdx: 0..3 对应 4 个角顶点
+  // 每个角需要检查 3 个相邻体素
+  const corners = [
+    [[0, 0, 0], [1, 0, 0], [0, 0, 1], [1, 0, 1], [0, 1, 0], [1, 1, 0], [0, 1, 1], [1, 1, 1]], // 角 0: (-h,-h,-h) 附近
+    [[1, 0, 0], [1, 0, 1], [0, 0, 0], [0, 0, 1], [1, 1, 0], [1, 1, 1], [0, 1, 0], [0, 1, 1]], // 角 1: (+h,-h,-h)
+    [[0, 0, 1], [1, 0, 1], [0, 0, 0], [1, 0, 0], [0, 1, 1], [1, 1, 1], [0, 1, 0], [1, 1, 0]], // 角 2: (-h,-h,+h)
+    [[1, 0, 1], [1, 0, 0], [0, 0, 1], [0, 0, 0], [1, 1, 1], [1, 1, 0], [0, 1, 1], [0, 1, 0]], // 角 3: (+h,-h,+h)
+  ]
+  const v = corners[vertIdx]
+  let filled = 0
+  for (const [ox, oy, oz] of v) {
+    if (sampleAO(aoGrid, x + ox, y + oy, z + oz, nx, ny, nz) >= 3) filled++
+  }
+  return 1.0 - (filled / 3) * 0.45
+}
+
+function buildTerrain() {
+  generateVoxels()
+
+  const vs = params.voxelSize
+  const nx = GRID_X, ny = GRID_Y, nz = GRID_Z
+  const aoGrid = buildNeighbors()
+
+  // 收集所有顶点、三角形、颜色
+  const positions = []
+  const normals = []
+  const colors = []
+  const indices = []
+  let vertCount = 0
+
+  for (let x = 0; x < nx; x++) {
+    for (let y = 0; y < ny; y++) {
+      for (let z = 0; z < nz; z++) {
+        if (!getVoxel(x, y, z)) continue
+
+        for (let dir = 0; dir < 6; dir++) {
+          if (!isFaceVisible(x, y, z, dir)) continue
+
+          const verts = faceVertices(dir, vs)
+          const [nx2, ny2, nz2] = faceNormal(dir)
+          const baseColor = chooseColor(x, y, z, dir)
+
+          // 中心偏移到世界坐标
+          const wx = (x - nx / 2 + 0.5) * vs
+          const wy = y * vs
+          const wz = (z - nz / 2 + 0.5) * vs
+
+          // 添加 4 个顶点
+          for (let i = 0; i < 4; i++) {
+            positions.push(
+              verts[i * 3] + wx,
+              verts[i * 3 + 1] + wy,
+              verts[i * 3 + 2] + wz
+            )
+            normals.push(nx2, ny2, nz2)
+
+            // AO 暗化
+            const aoVal = getVertexAO(aoGrid, x, y, z, i, nx, ny, nz)
+            colors.push(baseColor.r * aoVal, baseColor.g * aoVal, baseColor.b * aoVal)
+          }
+
+          // 两个三角形
+          const fi = faceIndices()
+          indices.push(vertCount + fi[0], vertCount + fi[1], vertCount + fi[2])
+          indices.push(vertCount + fi[3], vertCount + fi[4], vertCount + fi[5])
+          vertCount += 4
+        }
+      }
+    }
+  }
+
+  // 构建几何体
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
+
+  // 材质
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.85,
+    metalness: 0.05,
+    flatShading: false
+  })
+
+  if (terrainMesh) {
+    scene.remove(terrainMesh)
+    terrainMesh.geometry.dispose()
+    terrainMesh.material.dispose()
+  }
+  terrainMesh = new THREE.Mesh(geometry, material)
+  terrainMesh.castShadow = true
+  terrainMesh.receiveShadow = true
+  scene.add(terrainMesh)
+
+  // 线框（同一几何体，叠加渲染）
+  const wireGeo = new THREE.WireframeGeometry(geometry)
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.2 })
+  if (wireMesh) {
+    scene.remove(wireMesh)
+    wireGeo.dispose()
+    wireMat.dispose()
+  }
+  wireMesh = new THREE.LineSegments(wireGeo, wireMat)
+  wireMesh.visible = params.wireframe
+  scene.add(wireMesh)
+
+  // 分块轮廓线
+  if (chunkOutline) {
+    scene.remove(chunkOutline)
+    chunkOutline.geometry.dispose()
+    chunkOutline.material.dispose()
+    chunkOutline = null
+  }
+  if (params.chunkOutline) {
+    const chunkLines = []
+    const chunkW = 8, chunkH = 8, chunkD = 8
+    const cw = nx / chunkW, ch = ny / chunkH, cd = nz / chunkD
+    const vs2 = vs
+    for (let cx = 0; cx < chunkW; cx++) {
+      for (let cy = 0; cy < chunkH; cy++) {
+        for (let cz = 0; cz < chunkD; cz++) {
+          const px = (cx * cw - nx / 2) * vs2
+          const py = cy * ch * vs2
+          const pz = (cz * cd - nz / 2) * vs2
+          const edges = [
+            [0, 0, 0, cw * vs2, 0, 0], [0, 0, 0, 0, 0, cd * vs2],
+            [cw * vs2, 0, 0, cw * vs2, 0, cd * vs2], [0, 0, cd * vs2, cw * vs2, 0, cd * vs2],
+            [0, ch * vs2, 0, cw * vs2, ch * vs2, 0], [0, ch * vs2, 0, 0, ch * vs2, cd * vs2],
+            [cw * vs2, ch * vs2, 0, cw * vs2, ch * vs2, cd * vs2], [0, ch * vs2, cd * vs2, cw * vs2, ch * vs2, cd * vs2],
+            [px, py, pz, px + cw * vs2, py, pz], [px, py, pz, px, py + ch * vs2, pz],
+            [px, py, pz, px, py, pz + cd * vs2], [px + cw * vs2, py + ch * vs2, pz + cd * vs2, px + cw * vs2, py, pz + cd * vs2],
+          ]
+          for (const [x1, y1, z1, x2, y2, z2] of edges) {
+            chunkLines.push(px + x1, py + y1, pz + z1, px + x2, py + y2, pz + z2)
+          }
+        }
+      }
+    }
+    const lineGeo = new THREE.BufferGeometry()
+    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(chunkLines, 3))
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xff79c6, transparent: true, opacity: 0.6 })
+    chunkOutline = new THREE.LineSegments(lineGeo, lineMat)
+    scene.add(chunkOutline)
+  }
+}
+
+// 初始构建
+buildTerrain()
+
+// ============ lil-gui ============
+const gui = new GUI({ title: '体素地形参数' })
+gui.add(params, 'voxelSize', 0.1, 1.0, 0.05).name('体素大小').onChange(() => buildTerrain())
+gui.add(params, 'terrainScale', 0.02, 0.2, 0.005).name('地形频率').onChange(() => buildTerrain())
+gui.add(params, 'heightScale', 2, 18, 0.5).name('高度缩放').onChange(() => buildTerrain())
+gui.add(params, 'wireframe').name('显示线框').onChange(v => { wireMesh.visible = v })
+gui.add(params, 'chunkOutline').name('显示分块轮廓').onChange(v => {
+  if (v !== params.chunkOutline) buildTerrain()
+})
+gui.add(params, 'rebuild').name('重新生成地形')
+
+// ============ 地面（基岩层）============
+const groundGeo = new THREE.BoxGeometry(GRID_X * params.voxelSize + 2, 2, GRID_Z * params.voxelSize + 2)
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.95, metalness: 0 })
+const groundMesh = new THREE.Mesh(groundGeo, groundMat)
+groundMesh.position.y = -1.5
+groundMesh.receiveShadow = true
+scene.add(groundMesh)
+
+// ============ 水面 ============
+const waterGeo = new THREE.PlaneGeometry(GRID_X * 2, GRID_Z * 2)
+const waterMat = new THREE.MeshStandardMaterial({
+  color: COLOR_WATER, transparent: true, opacity: 0.75,
+  roughness: 0.15, metalness: 0.1
+})
+const waterMesh = new THREE.Mesh(waterGeo, waterMat)
+waterMesh.rotation.x = -Math.PI / 2
+waterMesh.position.y = WATER_LEVEL * params.voxelSize - 0.05
+scene.add(waterMesh)
+
+// ============ 渲染循环 ============
+const $info = document.getElementById('info')
+let lastTime = performance.now()
+let frames = 0
+
+function animate() {
+  requestAnimationFrame(animate)
+  controls.update()
+  renderer.render(scene, camera)
+
+  frames++
+  const now = performance.now()
+  if (now - lastTime > 500) {
+    $info.textContent =
+      'Draw Calls: ' + renderer.info.render.calls +
+      ' | Triangles: ' + (renderer.info.render.triangles).toLocaleString() +
+      ' | Vertices: ' + (terrainMesh ? terrainMesh.geometry.attributes.position.count : 0).toLocaleString()
+    frames = 0
+    lastTime = now
+  }
+}
+animate()
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+})
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><title>2950. Voronoi Tissue</title><style>
+body{margin:0;overflow:hidden;background:#000}canvas{display:block}
+#ui{position:fixed;top:20px;left:20px;z-index:10;color:#aaccff;font-family:'SF Pro',-apple-system,BlinkMacSystemFont,sans-serif;pointer-events:none;max-width:280px}
+#ui h1{font-size:15px;font-weight:600;letter-spacing:0.5px;margin:0 0 8px;color:#fff}
+#ui p{font-size:12px;line-height:1.6;margin:0 0 6px;opacity:0.75}
+#ui p b{color:#88ddff;font-weight:500}
+#ui .legend{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:11px;opacity:0.8}
+#ui .legend-item{display:flex;align-items:center;gap:8px}
+#ui .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+#ui .tip{margin-top:12px;padding-top:8px;border-top:1px solid rgba(136,204,255,0.15);font-size:11px;opacity:0.5}
+</style></head><body>
+<div id="ui">
+  <h1>Voronoi Tissue · Voronoi 组织</h1>
+  <p>模拟生物细胞组织的 <b>Voronoi 结构</b>，每个细胞包含一个细胞核（彩色球体）和细胞膜（透明球壳）。</p>
+  <p>细胞具有<b>呼吸动画</b>——半径周期性收缩扩张，模拟新陈代谢。点击屏幕可<b>添加新细胞</b>。</p>
+  <div class="legend">
+    <div class="legend-item"><span class="dot" style="background:#ff3344"></span>细胞核 — 每个细胞的遗传物质中心</div>
+    <div class="legend-item"><span class="dot" style="background:rgba(255,255,255,0.3);border:1px solid #336688"></span>细胞膜 — 半透明球壳包围细胞质</div>
+    <div class="legend-item"><span class="dot" style="background:rgba(51,102,136,0.5)"></span>细胞骨架 — 线框结构</div>
+  </div>
+  <p class="tip">拖拽旋转 · 滚轮缩放 · 点击添加细胞</p>
+</div>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module" src="main.js"></script></body></html>

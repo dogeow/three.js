@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>WIND TURBINE AERODYNAMICS</title>
+<style>
+*{margin:0;padding:0}
+body{overflow:hidden;background:#001020;font-family:'Segoe UI',sans-serif}
+canvas{display:block}
+#ui{position:fixed;top:16px;left:16px;z-index:10;color:#fff;font-size:12px}
+#ui h2{font-size:13px;opacity:.6;margin-bottom:8px}
+#vals span{display:block;color:#00ffcc;margin-bottom:2px}
+</style>
+</head>
+<body>
+<div id="ui"><h2>风力发电机 BEM</h2>
+<div id="vals"><span id="tsr">叶尖速比：6.0</span><span id="cp">功率系数：0.44</span><span id="ct">推力系数：0.79</span></div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x001020);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,500);
+camera.position.set(15,10,25);camera.lookAt(0,0,0);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+scene.add(new THREE.AmbientLight(0x334466,0.8));
+const dirLight = new THREE.DirectionalLight(0x88ccff, 1.5);
+dirLight.position.set(20, 30, 10);
+scene.add(dirLight);
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.7,0.5,0.2));
+
+const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.8,2.5,16),new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.9,roughness:0.2}));
+hub.rotation.x=Math.PI/2;scene.add(hub);
+const bladeGroup=new THREE.Group();scene.add(bladeGroup);
+const BLADE_LEN=12;
+for(let b=0;b<3;b++){
+  const sh=new THREE.Shape();
+  sh.moveTo(0,-0.3);sh.bezierCurveTo(1.2,-0.5,3,-0.4,BLADE_LEN,-0.15);
+  sh.lineTo(BLADE_LEN,0.15);sh.bezierCurveTo(3,0.4,1.2,0.5,0,0.3);sh.lineTo(0,-0.3);
+  const blade=new THREE.Mesh(new THREE.ExtrudeGeometry(sh,{depth:0.25,bevelEnabled:false}),new THREE.MeshStandardMaterial({color:0xddeeff,metalness:0.5,roughness:0.3,side:THREE.DoubleSide}));
+  blade.rotation.y=b*(Math.PI*2/3);blade.position.z=-0.125;bladeGroup.add(blade);
+}
+scene.add(new THREE.Mesh(new THREE.BoxGeometry(3,2,2),new THREE.MeshStandardMaterial({color:0xeeeeee,metalness:0.6,roughness:0.3}))).position.z=-2;
+const tower=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.7,18,12),new THREE.MeshStandardMaterial({color:0x888899,metalness:0.4,roughness:0.6}));
+tower.position.y=-9;scene.add(tower);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(100,100),new THREE.MeshStandardMaterial({color:0x1a2a1a,roughness:1}));
+ground.rotation.x=-Math.PI/2;ground.position.y=-18;scene.add(ground);
+
+const N_P=3000;
+const pPos=new Float32Array(N_P*3),pVel=new Float32Array(N_P*3);
+for(let i=0;i<N_P;i++){
+  pPos[i*3]=(Math.random()-0.5)*40;pPos[i*3+1]=(Math.random()-0.5)*25+5;pPos[i*3+2]=(Math.random()-0.5)*40;
+  pVel[i*3]=8+Math.random()*2;
+}
+const pGeo=new THREE.BufferGeometry();pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));
+const particles=new THREE.Points(pGeo,new THREE.PointsMaterial({color:0x88ddff,size:0.12,transparent:true,opacity:0.6,depthWrite:false}));
+scene.add(particles);
+
+const vortexMat=new THREE.LineBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.3});
+for(let i=0;i<8;i++){
+  const pts=[];
+  for(let z=0;z<40;z+=0.5){const theta=z*0.15+i*(Math.PI*2/8);const r=1.5+Math.sin(z*0.1)*0.5;pts.push(new THREE.Vector3(r*Math.cos(theta),r*Math.sin(theta),z-25));}
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),vortexMat));
+}
+
+let TSR=6,omega=0;
+const V0=8;
+function animate(t){
+  requestAnimationFrame(animate);
+  const dt=0.016;
+  const targetOmega=TSR*V0/BLADE_LEN;
+  omega+=(targetOmega-omega)*0.02;
+  bladeGroup.rotation.z+=omega*dt;
+  const pos=pGeo.attributes.position.array;
+  for(let i=0;i<N_P;i++){
+    const x=pos[i*3],y=pos[i*3+1],z=pos[i*3+2];
+    if(z>-5&&z<5&&Math.sqrt(x*x+y*y)<BLADE_LEN){
+      const r=Math.sqrt(x*x+y*y),alpha=Math.atan2(y,x)+omega*dt*2;
+      pos[i*3]=r*Math.cos(alpha);pos[i*3+1]=r*Math.sin(alpha);
+    }
+    pos[i*3]+=pVel[i*3]*dt;
+    if(z>25){pos[i*3]=(Math.random()-0.5)*40;pos[i*3+1]=(Math.random()-0.5)*25+5;pos[i*3+2]=-25;}
+  }
+  pGeo.attributes.position.needsUpdate=true;
+  const Cp=4*(1-1/(TSR+0.001))*(1-1/(TSR+0.001))*(1-1/(TSR+0.001));
+  const a=1/(TSR+0.001),Ct=4*a*(1-a);
+  document.getElementById('tsr').textContent='TSR: '+TSR.toFixed(1);
+  document.getElementById('cp').textContent='Cp: '+Math.min(Cp,0.59).toFixed(3)+' (Betz: 0.59)';
+  document.getElementById('ct').textContent='Ct: '+Math.min(Ct,1).toFixed(3);
+  controls.update();composer.render();
+}
+animate(0);
+window.addEventListener('wheel',e=>{TSR=Math.max(1,Math.min(12,TSR+e.deltaY*0.01));});
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);});
+</script>
+</body></html>

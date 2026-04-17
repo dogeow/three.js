@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raymarched Water Surface with Refraction</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #tip {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(0,0,0,0.7);
+      color: #8cf;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.6;
+      max-width: 320px;
+      border: 1px solid rgba(100,180,255,0.3);
+    }
+    #tip b { color: #fff; }
+  </style>
+</head>
+<body>
+<div id="tip">
+  <b>技术提示：</b>本示例使用光线步进（Raymarching）渲染水面。<br>
+  - <b>菲涅尔反射</b>：掠射角反射更强。<br>
+  - <b>色差折射</b>：RGB三通道分别偏移，模拟水的色散。<br>
+  - <b>FBM噪声</b>：分形布朗运动驱动动态波浪。<br>
+  - <b>边缘泡沫</b>：基于波峰高度生成白色泡沫。
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'three/addons/libs/lil-gui.module.min.js';
+
+// ===== 渲染器与场景 =====
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 3, 6);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.minDistance = 2;
+controls.maxDistance = 20;
+
+// ===== GUI 参数 =====
+const params = {
+  waterColor: '#1a5f7a',
+  waveHeight: 0.4,
+  refractionStrength: 0.8,
+  foamThreshold: 0.6,
+  foamColor: '#ffffff',
+  envSky: true,
+};
+
+// ===== GLSL 顶点着色器 =====
+// 全屏四边形顶点着色器，直接输出 NDC 坐标
+const vertexShader = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  // 仅用于编译检查，片元着色器自行计算射线方向
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+// ===== GLSL 片元着色器 =====
+// 核心：Raymarching 渲染动态水面
+const fragmentShader = `
+precision highp float;
+
+uniform float uTime;
+uniform vec2  uResolution;
+uniform vec3  uWaterColor;
+uniform float uWaveHeight;
+uniform float uRefractionStrength;
+uniform float uFoamThreshold;
+uniform vec3  uFoamColor;
+uniform bool  uEnvSky;
+
+// 常量
+#define MAX_STEPS 80
+#define MAX_DIST  50.0
+#define SURF_DIST 0.001
+#define PI        3.14159265359
+
+varying vec2 vUv;
+
+// ==================== 噪声函数 ====================
+
+// 伪随机
+float hash(vec2 p) {
+  p = fract(p * vec2(234.34, 435.345));
+  p += dot(p, p + 34.23);
+  return fract(p.x * p.y);
+}
+
+// 平滑噪声
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash(i), hash(i + vec2(1,0)), f.x),
+    mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x),
+    f.y
+  );
+}
+
+// 分形布朗运动（FBM）—— 驱动波浪高度
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    v += a * noise(p);
+    p *= 2.0;
+    a *= 0.5;
+  }
+  return v;
+}
+
+// ==================== 水面高度 ====================
+// 多层 FBM 叠加 + 时间动画
+float waterHeight(vec2 p) {
+  float h = 0.0;
+  h += fbm(p * 0.8 + uTime * 0.15) * uWaveHeight;
+  h += fbm(p * 1.5 - uTime * 0.2)  * uWaveHeight * 0.4;
+  h += fbm(p * 3.0 + uTime * 0.3)  * uWaveHeight * 0.15;
+  return h;
+}
+
+// ==================== 水面 SDF ====================
+// 水面定义：y = waterHeight(xz)
+float sdWater(vec3 p) {
+  return p.y - waterHeight(p.xz);
+}
+
+// ==================== Raymarching ====================
+float rayMarch(vec3 ro, vec3 rd) {
+  float d = 0.0;
+  for (int i = 0; i < MAX_STEPS; i++) {
+    vec3 p = ro + rd * d;
+    float dist = sdWater(p);
+    if (dist < SURF_DIST) return d;
+    if (d > MAX_DIST) break;
+    d += dist * 0.6; // 步进因子，防止过冲
+  }
+  return MAX_DIST;
+}
+
+// ==================== 法线计算 ====================
+vec3 getNormal(vec3 p) {
+  float e = 0.01;
+  return normalize(vec3(
+    waterHeight(p.xz - vec2(e, 0.0)) - waterHeight(p.xz + vec2(e, 0.0)),
+    2.0 * e,
+    waterHeight(p.xz - vec2(0.0, e)) - waterHeight(p.xz + vec2(0.0, e))
+  ));
+}
+
+// ==================== 天空背景 ====================
+vec3 sky(vec3 rd) {
+  // 简易渐变天空
+  float t = clamp(rd.y * 0.5 + 0.5, 0.0, 1.0);
+  vec3 top = vec3(0.3, 0.55, 0.9);
+  vec3 bot = vec3(0.85, 0.9, 1.0);
+  vec3 col = mix(bot, top, t);
+  // 简单太阳光晕
+  vec3 sunDir = normalize(vec3(0.8, 0.4, 0.2));
+  float sun = pow(max(dot(rd, sunDir), 0.0), 128.0);
+  col += sun * vec3(1.0, 0.9, 0.7) * 2.0;
+  return col;
+}
+
+// ==================== 焦散纹理（模拟） ====================
+float caustic(vec2 p) {
+  float c = fbm(p * 2.5 + uTime * 0.1);
+  c = pow(c, 2.0) * 3.0;
+  return clamp(c, 0.0, 1.0);
+}
+
+// ==================== 主片元函数 ====================
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y;
+
+  // 相机参数（固定眼位置）
+  vec3 ro = vec3(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+  vec3 target = vec3(0.0, 0.0, 0.0);
+  vec3 forward = normalize(target - ro);
+  vec3 right   = normalize(cross(vec3(0,1,0), forward));
+  vec3 up      = cross(forward, right);
+
+  // 射线方向（考虑视角FOV）
+  float fov = tan(radians(30.0)); // 等效60度
+  vec3 rd = normalize(uv.x * right * fov + uv.y * up * fov + forward);
+
+  // Raymarch 水面
+  float d = rayMarch(ro, rd);
+  vec3 col;
+
+  if (d < MAX_DIST) {
+    vec3 p = ro + rd * d;
+    vec3 n = getNormal(p);
+    vec3 viewDir = -rd;
+
+    // --- 菲涅尔反射 ---
+    float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 4.0);
+    fresnel = mix(0.04, 1.0, fresnel);
+
+    // 反射方向 & 反射颜色
+    vec3 reflDir = reflect(rd, n);
+    vec3 reflCol = uEnvSky ? sky(reflDir) : vec3(0.6, 0.7, 0.8);
+
+    // --- 色差折射（RGB 三通道独立偏移） ---
+    float ior = 1.33; // 水的折射率
+    vec3 refrDirR = refract(rd, n, 1.0 / (ior - uRefractionStrength * 0.05));
+    vec3 refrDirG = refract(rd, n, 1.0 / ior);
+    vec3 refrDirB = refract(rd, n, 1.0 / (ior + uRefractionStrength * 0.05));
+
+    // 估算折射深度采样位置（简化：水下 1~2 单位处）
+    float depth = 1.5;
+    vec3 refrColR = vec3(0.1, 0.3, 0.4) * caustic(p.xz + refrDirR.xz * depth);
+    vec3 refrColG = vec3(0.1, 0.35, 0.45) * caustic(p.xz + refrDirG.xz * depth);
+    vec3 refrColB = vec3(0.1, 0.4, 0.5) * caustic(p.xz + refrDirB.xz * depth);
+    vec3 refrCol = vec3(refrColR.r, refrColG.g, refrColB.b);
+
+    // 水底颜色混合
+    refrCol = mix(refrCol, uWaterColor * 0.6, 0.5);
+
+    // --- 组合颜色 ---
+    col = mix(refrCol, reflCol, fresnel);
+
+    // --- 边缘泡沫 ---
+    float wh = waterHeight(p.xz);
+    float foam = smoothstep(uFoamThreshold, uFoamThreshold + 0.1, wh);
+    // 泡沫强度随浪高增加
+    foam *= smoothstep(uFoamThreshold * 0.5, uFoamThreshold, wh);
+    col = mix(col, uFoamColor, foam * 0.7);
+
+    // --- 高光（太阳） ---
+    vec3 sunDir = normalize(vec3(0.8, 0.4, 0.2));
+    float spec = pow(max(dot(reflDir, sunDir), 0.0), 64.0);
+    col += spec * vec3(1.0, 0.95, 0.8) * 0.5;
+
+    // 距离衰减
+    float fog = exp(-d * 0.04);
+    col = mix(vec3(0.5, 0.6, 0.7), col, fog);
+
+  } else {
+    // 未命中水面 → 天空
+    col = uEnvSky ? sky(rd) : vec3(0.55, 0.65, 0.75);
+  }
+
+  // Gamma 校正
+  col = pow(col, vec3(0.4545));
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// ===== 全屏四边形 =====
+const geometry = new THREE.PlaneGeometry(2, 2);
+
+const uniforms = {
+  uTime:            { value: 0.0 },
+  uResolution:      { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+  uWaterColor:      { value: new THREE.Color(params.waterColor) },
+  uWaveHeight:      { value: params.waveHeight },
+  uRefractionStrength: { value: params.refractionStrength },
+  uFoamThreshold:   { value: params.foamThreshold },
+  uFoamColor:       { value: new THREE.Color(params.foamColor) },
+  uEnvSky:          { value: params.envSky },
+  cameraPosition:   { value: camera.position },
+};
+
+const material = new THREE.ShaderMaterial({
+  vertexShader,
+  fragmentShader,
+  uniforms,
+  depthWrite: false,
+  depthTest: false,
+});
+
+const mesh = new THREE.Mesh(geometry, material);
+mesh.frustumCulled = false;
+scene.add(mesh);
+
+// ===== GUI =====
+const gui = new GUI({ title: '水面参数控制' });
+gui.addColor(params, 'waterColor').name('水面颜色').onChange(v => {
+  uniforms.uWaterColor.value.set(v);
+});
+gui.add(params, 'waveHeight', 0.05, 1.2, 0.01).name('波浪高度').onChange(v => {
+  uniforms.uWaveHeight.value = v;
+});
+gui.add(params, 'refractionStrength', 0.0, 2.0, 0.01).name('折射强度').onChange(v => {
+  uniforms.uRefractionStrength.value = v;
+});
+gui.add(params, 'foamThreshold', 0.2, 1.0, 0.01).name('泡沫阈值').onChange(v => {
+  uniforms.uFoamThreshold.value = v;
+});
+gui.addColor(params, 'foamColor').name('泡沫颜色').onChange(v => {
+  uniforms.uFoamColor.value.set(v);
+});
+gui.add(params, 'envSky').name('天空背景').onChange(v => {
+  uniforms.uEnvSky.value = v;
+});
+
+// ===== 窗口 resize =====
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  uniforms.uResolution.value.set(w, h);
+});
+
+// ===== 动画循环 =====
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  uniforms.uTime.value = clock.getElapsedTime();
+  uniforms.cameraPosition.value.copy(camera.position);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

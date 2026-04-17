@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D 向量场可视化</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0f;
+      overflow: hidden;
+      font-family: 'JetBrains Mono', monospace;
+      color: #e0e0e0;
+    }
+
+    canvas { display: block; }
+
+    #tip {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 10, 20, 0.82);
+      border: 1px solid rgba(80, 200, 255, 0.2);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #a0c8d8;
+      max-width: 320px;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    #tip strong {
+      color: #50c8ff;
+      font-weight: 500;
+    }
+
+    #title {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      font-size: 15px;
+      font-weight: 500;
+      color: #50c8ff;
+      letter-spacing: 0.05em;
+      pointer-events: none;
+      text-shadow: 0 0 20px rgba(80, 200, 255, 0.4);
+    }
+
+    #stats {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(10, 10, 20, 0.75);
+      border: 1px solid rgba(80, 200, 255, 0.15);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 11px;
+      color: #7090a0;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+
+    .lil-gui {
+      --background-color: rgba(10, 10, 20, 0.88) !important;
+      --widget-color: rgba(30, 35, 55, 0.9) !important;
+      --focus-color: rgba(80, 200, 255, 0.25) !important;
+      --hover-color: rgba(50, 150, 200, 0.2) !important;
+      --font-family: 'JetBrains Mono', monospace !important;
+      --font-size: 11px !important;
+      --title-background-color: rgba(15, 15, 30, 0.95) !important;
+      --title-text-color: #50c8ff !important;
+      --number-color: #7ce8ff !important;
+      --string-color: #c8a0ff !important;
+      backdrop-filter: blur(10px) !important;
+      border: 1px solid rgba(80, 200, 255, 0.18) !important;
+      border-radius: 8px !important;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="title">3D 向量场</div>
+  <div id="tip">
+    <strong>RK4 粒子追踪</strong><br/>
+    粒子沿场线运动，采用四阶龙格-库塔积分。<br/>
+    颜色表示速度大小（蓝→青→白）。<br/>
+    拖动旋转场源。滚轮缩放。
+  </div>
+<div id="stats">FPS: <span id="fps">--</span> | Particles: <span id="pcount">0</span></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+    // ─── Config ────────────────────────────────────────────────────────────────
+    const params = {
+      fieldType: 'dipole',
+      particleCount: 3000,
+      arrowDensity: 12,
+      animSpeed: 1.0,
+      arrowScale: 0.45,
+      showArrows: true,
+    };
+
+    // ─── Scene Setup ─────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x0a0a0f, 1);
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0a0a0f, 0.025);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+    camera.position.set(0, 4, 18);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.minDistance = 5;
+    controls.maxDistance = 60;
+
+    // Ambient light
+    scene.add(new THREE.AmbientLight(0x112233, 0.5));
+    const dirLight = new THREE.DirectionalLight(0x50c8ff, 0.8);
+    dirLight.position.set(5, 10, 5);
+    scene.add(dirLight);
+
+    // ─── Field Source (draggable) ─────────────────────────────────────────────
+    const sourceGroup = new THREE.Group();
+    scene.add(sourceGroup);
+
+    const sourceMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 32, 32),
+      new THREE.MeshStandardMaterial({
+        color: 0xff6a00,
+        emissive: 0xff4400,
+        emissiveIntensity: 1.5,
+        roughness: 0.3,
+        metalness: 0.6,
+      })
+    );
+    sourceGroup.add(sourceMesh);
+
+    // Glow ring
+    const glowMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.38, 32, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0xff6a00,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.BackSide,
+      })
+    );
+    sourceGroup.add(glowMesh);
+
+    // Poles visualizer
+    const poleGeo = new THREE.SphereGeometry(0.12, 16, 16);
+    const poleMatP = new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0xff0000, emissiveIntensity: 1.2 });
+    const poleMatN = new THREE.MeshStandardMaterial({ color: 0x3333ff, emissive: 0x0044ff, emissiveIntensity: 1.2 });
+    const poleP = new THREE.Mesh(poleGeo, poleMatP);
+    const poleN = new THREE.Mesh(poleGeo, poleMatN);
+    sourceGroup.add(poleP);
+    sourceGroup.add(poleN);
+
+    let sourceAngle = 0.4;
+    let sourceElevation = 0.0;
+    let sourceRadius = 1.5;
+
+    function updateSourcePosition() {
+      const x = sourceRadius * Math.cos(sourceAngle) * Math.cos(sourceElevation);
+      const y = sourceRadius * Math.sin(sourceElevation);
+      const z = sourceRadius * Math.sin(sourceAngle) * Math.cos(sourceElevation);
+      sourceGroup.position.set(x, y, z);
+      // Place poles along the dipole axis (y-axis of sourceGroup in world)
+      poleP.position.set(0, 0.5, 0);
+      poleN.position.set(0, -0.5, 0);
+    }
+    updateSourcePosition();
+
+    // Mouse drag to rotate field source
+    let isDraggingSource = false;
+    let prevMouse = { x: 0, y: 0 };
+
+    renderer.domElement.addEventListener('mousedown', (e) => {
+      if (e.button === 0) {
+        isDraggingSource = true;
+        prevMouse = { x: e.clientX, y: e.clientY };
+      }
+    });
+    window.addEventListener('mouseup', () => { isDraggingSource = false; });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDraggingSource) return;
+      const dx = (e.clientX - prevMouse.x) * 0.008;
+      const dy = (e.clientY - prevMouse.y) * 0.008;
+      sourceAngle += dx;
+      sourceElevation = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, sourceElevation + dy));
+      prevMouse = { x: e.clientX, y: e.clientY };
+      updateSourcePosition();
+      buildArrows();
+    });
+
+    // ─── Vector Field Functions ───────────────────────────────────────────────
+    function getDipoleField(x, y, z) {
+      const r2 = x * x + y * y + z * z;
+      const r = Math.sqrt(r2);
+      if (r < 0.3) return new THREE.Vector3(0, 0, 0);
+      const r5 = r2 * r2 * r;
+      const m = 1.8;
+      const px = poleP.position.x, py = poleP.position.y, pz = poleP.position.z;
+      const nx = poleN.position.x, ny = poleN.position.y, nz = poleN.position.z;
+      const wx = x - px, wy = y - py, wz = z - pz;
+      const wn = Math.sqrt(wx*wx + wy*wy + wz*wz);
+      const vn2 = (x-nx)*(x-nx) + (y-ny)*(y-ny) + (z-nz)*(z-nz);
+      const vn = Math.sqrt(vn2);
+
+      let bx = 0, by = 0, bz = 0;
+      if (wn > 0.05) {
+        const w5 = wn*wn*wn*wn*wn;
+        bx += m * wx / w5;
+        by += m * wy / w5;
+        bz += m * wz / w5;
+      }
+      if (vn > 0.05) {
+        const v5 = vn*vn*vn*vn*vn;
+        bx -= m * (x-nx) / v5;
+        by -= m * (y-ny) / v5;
+        bz -= m * (z-nz) / v5;
+      }
+      return new THREE.Vector3(bx, by, bz);
+    }
+
+    function getQuadrupoleField(x, y, z) {
+      const r2 = x*x + y*y + z*z;
+      const r = Math.sqrt(r2);
+      if (r < 0.3) return new THREE.Vector3(0, 0, 0);
+      const r7 = r2*r2*r2*r;
+      const q = 2.5;
+      return new THREE.Vector3(
+        q * x / r7,
+        q * y / r7,
+        q * z / r7
+      );
+    }
+
+    function getTurbulentField(x, y, z, t) {
+      const s = 0.55;
+      const p = 1.0;
+      const bx = Math.sin(y * s + t * p) * 1.2 + Math.cos(z * s * 1.3) * 0.7;
+      const by = Math.sin(z * s * 0.9 + t * p * 0.8) * 1.0 + Math.cos(x * s * 1.1) * 0.5;
+      const bz = Math.sin(x * s * 0.8 + t * p * 1.1) * 0.9 + Math.cos(y * s * 1.2) * 0.8;
+      const len = Math.sqrt(bx*bx + by*by + bz*bz);
+      const scale = 1.0 / Math.max(len, 1.0);
+      return new THREE.Vector3(bx * scale, by * scale, bz * scale);
+    }
+
+    function getField(x, y, z, t = 0) {
+      switch (params.fieldType) {
+        case 'dipole': return getDipoleField(x, y, z);
+        case 'quadrupole': return getQuadrupoleField(x, y, z);
+        case 'turbulent': return getTurbulentField(x - sourceGroup.position.x, y - sourceGroup.position.y, z - sourceGroup.position.z, t);
+        default: return getDipoleField(x, y, z);
+      }
+    }
+
+    // ─── Arrow Mesh (InstancedMesh) ─────────────────────────────────────────────
+    let arrowMesh = null;
+    const ARROW_COUNT = 8000;
+    const arrow_buf = new Float32Array(ARROW_COUNT * 3); // positions
+    const dummy = new THREE.Object3D();
+
+    function buildArrows() {
+      if (arrowMesh) {
+        scene.remove(arrowMesh);
+        arrowMesh.geometry.dispose();
+        arrowMesh.material.dispose();
+        arrowMesh = null;
+      }
+      if (!params.showArrows) return;
+
+      const density = params.arrowDensity;
+      const count = Math.min(ARROW_COUNT, density * density * density);
+      const half = density / 2;
+
+      // Create cone geometry for arrow body + sphere for head
+      const coneGeo = new THREE.ConeGeometry(0.04, 0.22, 6, 1);
+      const shaftGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.18, 5, 1);
+      const combinedGeo = new THREE.CylinderGeometry(0.018, 0.04, 0.4, 6, 1);
+      const arrowGeo = new THREE.ConeGeometry(0.055, 0.18, 6, 1);
+
+      arrowMesh = new THREE.InstancedMesh(
+        arrowGeo,
+        new THREE.MeshStandardMaterial({
+          color: 0x50c8ff,
+          emissive: 0x2050aa,
+          emissiveIntensity: 0.4,
+          roughness: 0.4,
+          metalness: 0.3,
+          transparent: true,
+          opacity: 0.7,
+        }),
+        count
+      );
+
+      let idx = 0;
+      for (let ix = 0; ix < density && idx < count; ix++) {
+        for (let iy = 0; iy < density && idx < count; iy++) {
+          for (let iz = 0; iz < density && idx < count; iz++) {
+            const x = (ix / half - 1.0) * 5.5;
+            const y = (iy / half - 1.0) * 5.5;
+            const z = (iz / half - 1.0) * 5.5;
+            const field = getField(x, y, z);
+            const flen = field.length();
+            if (flen < 0.001) {
+              dummy.position.set(1000, 1000, 1000);
+              dummy.scale.set(0, 0, 0);
+              dummy.quaternion.identity();
+            } else {
+              field.normalize();
+              dummy.position.set(x, y, z);
+              const arrowLen = Math.min(flen * params.arrowScale, 0.7);
+              dummy.scale.set(1, arrowLen * 3.5, 1);
+              dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), field);
+            }
+            dummy.updateMatrix();
+            arrowMesh.setMatrixAt(idx++, dummy.matrix);
+          }
+        }
+      }
+      arrowMesh.instanceMatrix.needsUpdate = true;
+      scene.add(arrowMesh);
+    }
+
+    // ─── Particles ─────────────────────────────────────────────────────────────
+    const BOUNDS = 6.0;
+    let particles = [];
+    let pointsMesh = null;
+    let trailGeo = null;
+    let trailMesh = null;
+
+    const colorLow  = new THREE.Color(0x1040ff);
+    const colorMid  = new THREE.Color(0x00c8ff);
+    const colorHigh = new THREE.Color(0xffffff);
+
+    function velToColor(speed) {
+      const t = Math.min(speed / 2.5, 1.0);
+      if (t < 0.5) {
+        return colorLow.clone().lerp(colorMid, t * 2.0);
+      } else {
+        return colorMid.clone().lerp(colorHigh, (t - 0.5) * 2.0);
+      }
+    }
+
+    function resetParticle(p) {
+      p.pos.set(
+        (Math.random() - 0.5) * BOUNDS * 2,
+        (Math.random() - 0.5) * BOUNDS * 2,
+        (Math.random() - 0.5) * BOUNDS * 2
+      );
+      p.vel.set(0, 0, 0);
+      p.acc.set(0, 0, 0);
+      p.life = Math.random() * 4.0 + 2.0;
+      p.maxLife = p.life;
+    }
+
+    function initParticles() {
+      particles = [];
+      for (let i = 0; i < params.particleCount; i++) {
+        const p = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), acc: new THREE.Vector3(), life: 0, maxLife: 1 };
+        resetParticle(p);
+        p.life = Math.random() * p.maxLife;
+        particles.push(p);
+      }
+
+      if (pointsMesh) {
+        scene.remove(pointsMesh);
+        pointsMesh.geometry.dispose();
+        pointsMesh.material.dispose();
+      }
+
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(params.particleCount * 3);
+      const colors    = new Float32Array(params.particleCount * 3);
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+
+      pointsMesh = new THREE.Points(
+        geo,
+        new THREE.PointsMaterial({
+          size: 0.08,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.85,
+          sizeAttenuation: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        })
+      );
+      scene.add(pointsMesh);
+    }
+
+    // RK4 integration step
+    function rk4Step(pos, dt, t) {
+      function derivative(p) {
+        return getField(p.x, p.y, p.z, t);
+      }
+      const k1 = derivative(pos);
+      const p2 = pos.clone().addScaledVector(k1, dt * 0.5);
+      const k2 = derivative(p2);
+      const p3 = pos.clone().addScaledVector(k2, dt * 0.5);
+      const k3 = derivative(p3);
+      const p4 = pos.clone().addScaledVector(k3, dt);
+      const k4 = derivative(p4);
+
+      const vel = getField(pos.x, pos.y, pos.z, t);
+      const result = vel.clone()
+        .addScaledVector(k2, 2.0)
+        .addScaledVector(k3, 2.0)
+        .add(k1)
+        .add(k4)
+        .multiplyScalar(dt / 6.0);
+      return result;
+    }
+
+    // ─── Grid / Axis Helpers ──────────────────────────────────────────────────
+    function addGrid() {
+      const grid = new THREE.GridHelper(20, 20, 0x112233, 0x0d1a28);
+      grid.position.y = -6;
+      scene.add(grid);
+    }
+    addGrid();
+
+    // Subtle axis indicators
+    function addAxis() {
+      const axes = [
+        { dir: [1, 0, 0], color: 0xff4444 },
+        { dir: [0, 1, 0], color: 0x44ff44 },
+        { dir: [0, 0, 1], color: 0x4488ff },
+      ];
+      axes.forEach(a => {
+        const mesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.015, 0.015, 2.5, 6),
+          new THREE.MeshBasicMaterial({ color: a.color, transparent: true, opacity: 0.35 })
+        );
+        mesh.position.set(a.dir[0] * 1.25, a.dir[1] * 1.25, a.dir[2] * 1.25);
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...a.dir));
+        scene.add(mesh);
+      });
+    }
+    addAxis();
+
+    // ─── GUI ──────────────────────────────────────────────────────────────────
+    const gui = new GUI({ title: '向量场控制', width: 260 });
+    gui.add(params, 'fieldType', { Dipole: 'dipole', Quadrupole: 'quadrupole', Turbulent: 'turbulent' })
+      .name('场类型')
+      .onChange(() => buildArrows());
+    gui.add(params, 'particleCount', 500, 10000, 100)
+      .name('粒子数量')
+      .onChange(() => initParticles());
+    gui.add(params, 'arrowDensity', 5, 25, 1)
+      .name('箭头密度')
+      .onChange(() => buildArrows());
+    gui.add(params, 'animSpeed', 0.1, 4.0, 0.05).name('动画速度');
+    gui.add(params, 'arrowScale', 0.1, 2.0, 0.05).name('箭头缩放').onChange(() => buildArrows());
+    gui.add(params, 'showArrows').name('显示箭头').onChange(() => buildArrows());
+
+    // ─── Animation ────────────────────────────────────────────────────────────
+    let clock = new THREE.Clock();
+    let frameCount = 0;
+    let lastFpsTime = 0;
+    const fpsSpan  = document.getElementById('fps');
+    const pcountSpan = document.getElementById('pcount');
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const elapsed = clock.elapsedTime;
+
+      // FPS counter
+      frameCount++;
+      if (elapsed - lastFpsTime > 0.5) {
+        fpsSpan.textContent = Math.round(frameCount / (elapsed - lastFpsTime));
+        pcountSpan.textContent = params.particleCount;
+        frameCount = 0;
+        lastFpsTime = elapsed;
+      }
+
+      controls.update();
+
+      // Rotate source glow
+      glowMesh.rotation.y += dt * 0.6;
+      glowMesh.rotation.x += dt * 0.3;
+
+      // Animate particles
+      if (particles.length > 0 && pointsMesh) {
+        const positions = pointsMesh.geometry.attributes.position.array;
+        const colors    = pointsMesh.geometry.attributes.color.array;
+        const speed = params.animSpeed;
+
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          p.life -= dt * speed;
+
+          if (p.life <= 0 || p.pos.length() > BOUNDS + 1) {
+            resetParticle(p);
+          }
+
+          const step = rk4Step(p.pos, dt * speed * 0.4, elapsed);
+          p.pos.add(step);
+
+          positions[i * 3]     = p.pos.x;
+          positions[i * 3 + 1] = p.pos.y;
+          positions[i * 3 + 2] = p.pos.z;
+
+          const fieldVel = getField(p.pos.x, p.pos.y, p.pos.z, elapsed);
+          const spd = fieldVel.length();
+          const col = velToColor(spd);
+          colors[i * 3]     = col.r;
+          colors[i * 3 + 1] = col.g;
+          colors[i * 3 + 2] = col.b;
+        }
+
+        pointsMesh.geometry.attributes.position.needsUpdate = true;
+        pointsMesh.geometry.attributes.color.needsUpdate    = true;
+      }
+
+      // Turbulent field update
+      if (params.fieldType === 'turbulent') {
+        buildArrows();
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    // ─── Resize Handler ───────────────────────────────────────────────────────
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    window.addEventListener('resize', onResize);
+
+    // ─── Init ──────────────────────────────────────────────────────────────────
+    buildArrows();
+    initParticles();
+    animate();
+  </script>
+</body>
+</html>

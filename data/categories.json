@@ -1,0 +1,100 @@
+[
+  {
+    "name": "入门基础",
+    "start": "#4ade80",
+    "end": "#22c55e",
+    "dot": "#4ade80",
+    "count": 8
+  },
+  {
+    "name": "交互与控制",
+    "start": "#60a5fa",
+    "end": "#3b82f6",
+    "dot": "#60a5fa",
+    "count": 31
+  },
+  {
+    "name": "几何体与建模",
+    "start": "#f472b6",
+    "end": "#ec4899",
+    "dot": "#f472b6",
+    "count": 53
+  },
+  {
+    "name": "光照与环境",
+    "start": "#38bdf8",
+    "end": "#0ea5e9",
+    "dot": "#38bdf8",
+    "count": 88
+  },
+  {
+    "name": "着色器与材质",
+    "start": "#a78bfa",
+    "end": "#8b5cf6",
+    "dot": "#a78bfa",
+    "count": 80
+  },
+  {
+    "name": "粒子系统",
+    "start": "#fb923c",
+    "end": "#f97316",
+    "dot": "#fb923c",
+    "count": 90
+  },
+  {
+    "name": "物理与模拟",
+    "start": "#f87171",
+    "end": "#ef4444",
+    "dot": "#f87171",
+    "count": 54
+  },
+  {
+    "name": "音频可视化",
+    "start": "#c084fc",
+    "end": "#a855f7",
+    "dot": "#c084fc",
+    "count": 19
+  },
+  {
+    "name": "数据可视化",
+    "start": "#fbbf24",
+    "end": "#f59e0b",
+    "dot": "#fbbf24",
+    "count": 26
+  },
+  {
+    "name": "游戏与交互",
+    "start": "#34d399",
+    "end": "#10b981",
+    "dot": "#34d399",
+    "count": 16
+  },
+  {
+    "name": "角色与动画",
+    "start": "#f472b6",
+    "end": "#db2777",
+    "dot": "#f472b6",
+    "count": 10
+  },
+  {
+    "name": "程序化生成",
+    "start": "#22d3ee",
+    "end": "#06b6d4",
+    "dot": "#22d3ee",
+    "count": 45
+  },
+  {
+    "name": "科学与数学",
+    "start": "#e879f9",
+    "end": "#d946ef",
+    "dot": "#e879f9",
+    "count": 123
+  },
+  {
+    "name": "其他效果",
+    "start": "#94a3b8",
+    "end": "#64748b",
+    "dot": "#94a3b8",
+    "count": 71
+  }
+]

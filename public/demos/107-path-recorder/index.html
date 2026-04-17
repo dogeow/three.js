@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>107 · 轨迹录制与回放 Path Recorder</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; }
+  canvas { display: block; }
+
+  .tip {
+    position: fixed; top: 12px; left: 12px;
+    background: rgba(0,0,0,0.7); color: #e2e8f0;
+    font: 13px/1.8 -apple-system, sans-serif;
+    padding: 12px 16px; border-radius: 10px;
+    max-width: 320px; backdrop-filter: blur(10px);
+    border: 1px solid rgba(139,92,246,0.3);
+  }
+  .tip strong { color: #a78bfa; font-size: 14px; }
+  .tip span { color: #64748b; font-size: 12px; }
+
+  .panel {
+    position: fixed; top: 12px; right: 12px;
+    background: rgba(0,0,0,0.78); border: 1px solid rgba(139,92,246,0.25);
+    border-radius: 14px; padding: 16px 18px;
+    backdrop-filter: blur(12px); min-width: 200px;
+    font-family: -apple-system, sans-serif;
+  }
+  .panel h3 { margin: 0 0 14px; font-size: 13px; color: #a78bfa; letter-spacing: 0.1em; text-transform: uppercase; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .btn {
+    padding: 7px 16px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05); color: #e2e8f0;
+    font-size: 12px; cursor: pointer; transition: all 0.15s;
+    font-family: inherit;
+  }
+  .btn:hover { background: rgba(255,255,255,0.12); }
+  .btn.active-rec {
+    background: rgba(239,68,68,0.25);
+    border-color: rgba(239,68,68,0.6);
+    color: #f87171;
+    box-shadow: 0 0 12px rgba(239,68,68,0.3);
+  }
+  .btn.active-play {
+    background: rgba(52,211,153,0.2);
+    border-color: rgba(52,211,153,0.5);
+    color: #34d399;
+    box-shadow: 0 0 12px rgba(52,211,153,0.3);
+  }
+  .btn.danger { border-color: rgba(248,113,113,0.35); color: #f87171; }
+  .btn.danger:hover { background: rgba(248,113,113,0.15); }
+  .btn.speed-btn { min-width: 44px; text-align: center; }
+  .btn.speed-btn.active {
+    background: rgba(167,139,250,0.25);
+    border-color: rgba(167,139,250,0.5);
+    color: #a78bfa;
+  }
+  .stat { font-size: 12px; color: #475569; margin-top: 10px; line-height: 1.9; }
+  .stat span { color: #94a3b8; font-weight: 600; }
+  .rec-dot {
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 6px; vertical-align: middle;
+    background: #ef4444; animation: blink 1s infinite;
+  }
+  .play-dot {
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 6px; vertical-align: middle;
+    background: #22c55e; animation: blink 1.5s infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+</style>
+</head>
+<body>
+<div class="tip">
+  <strong>技术点：轨迹录制与回放</strong><br>
+  用鼠标拖动视角飞过场景，按 <strong>R</strong> 开始录制路径<br>
+  录完后按 <strong>P</strong> 回放，<strong>C</strong> 清空
+</div>
+
+<div class="panel">
+  <h3>路径控制</h3>
+  <div class="btn-row">
+    <button class="btn" id="btnRec">⏺ 录制</button>
+    <button class="btn" id="btnPlay">▶ 回放</button>
+    <button class="btn danger" id="btnClear">✕ 清空</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn speed-btn" id="s05">0.5×</button>
+    <button class="btn speed-btn active" id="s1">1×</button>
+    <button class="btn speed-btn" id="s2">2×</button>
+    <button class="btn speed-btn" id="s4">4×</button>
+  </div>
+  <div class="stat">
+    状态：<span id="statStatus">空闲</span><br>
+    路径点：<span id="statPoints">0</span><br>
+    回放：<span id="statProgress">—</span>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+// ─── Scene ───────────────────────────────────────────────────────────
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x030308)
+scene.fog = new THREE.FogExp2(0x030308, 0.012)
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 400)
+camera.position.set(0, 18, 50)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.2
+document.body.appendChild(renderer.domElement)
+
+// ─── Lights ──────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x1a0533, 2))
+const sun = new THREE.DirectionalLight(0x7c3aed, 1.5)
+sun.position.set(20, 40, 20)
+scene.add(sun)
+const fill = new THREE.PointLight(0x06b6d4, 60, 80, 1.5)
+fill.position.set(-20, 10, -10)
+scene.add(fill)
+
+// ─── Ground ──────────────────────────────────────────────────────────
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(300, 300),
+  new THREE.MeshStandardMaterial({ color: 0x080812, roughness: 0.95, metalness: 0.1 })
+)
+ground.rotation.x = -Math.PI / 2
+scene.add(ground)
+
+// Road grid
+const roadMat = new THREE.MeshStandardMaterial({ color: 0x0f0f1e, roughness: 0.9 })
+const laneMat = new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.5 })
+
+for (let i = -4; i <= 4; i++) {
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 300), roadMat)
+  road.rotation.x = -Math.PI / 2
+  road.position.set(i * 8, 0.01, 0)
+  scene.add(road)
+  const lane = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 300), laneMat)
+  lane.rotation.x = -Math.PI / 2
+  lane.position.set(i * 8, 0.02, 0)
+  scene.add(lane)
+}
+for (let i = -4; i <= 4; i++) {
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(300, 0.8), roadMat)
+  road.rotation.x = -Math.PI / 2
+  road.position.set(0, 0.01, i * 8)
+  scene.add(road)
+  const lane = new THREE.Mesh(new THREE.PlaneGeometry(300, 0.06), laneMat)
+  lane.rotation.x = -Math.PI / 2
+  lane.position.set(0, 0.02, i * 8)
+  scene.add(lane)
+}
+
+// ─── Buildings ───────────────────────────────────────────────────────
+const palettes = [
+  0x7c3aed, 0x4f46e5, 0x06b6d4, 0x10b981,
+  0xf59e0b, 0xef4444, 0xec4899, 0x8b5cf6
+]
+
+function makeBuilding(x, z, w, d, h, colorHex) {
+  const geo = new THREE.BoxGeometry(w, h, d)
+  const mat = new THREE.MeshStandardMaterial({
+    color: colorHex, roughness: 0.3, metalness: 0.7,
+    emissive: colorHex, emissiveIntensity: 0.08
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(x, h / 2, z)
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  scene.add(mesh)
+
+  // Window lights
+  const wCount = Math.floor(Math.random() * 8) + 4
+  for (let i = 0; i < wCount; i++) {
+    const side = Math.floor(Math.random() * 4)
+    const wGeo = new THREE.PlaneGeometry(
+      side < 2 ? 0.08 : w * 0.4,
+      side < 2 ? d * 0.4 : 0.08
+    )
+    const wMat = new THREE.MeshBasicMaterial({
+      color: 0xfbbf24, transparent: true,
+      opacity: 0.3 + Math.random() * 0.5,
+      side: THREE.DoubleSide
+    })
+    const wMesh = new THREE.Mesh(wGeo, wMat)
+    const wx = side === 0 ? x - w/2 - 0.01 : side === 1 ? x + w/2 + 0.01 : x + (Math.random()-0.5) * w
+    const wz = side === 2 ? z - d/2 - 0.01 : side === 3 ? z + d/2 + 0.01 : z + (Math.random()-0.5) * d
+    const wy = Math.random() * (h - 1) + 0.5
+    wMesh.position.set(wx, wy, wz)
+    if (side === 1 || side === 3) wMesh.rotation.y = Math.PI / 2
+    scene.add(wMesh)
+  }
+
+  // Antenna glow on tall buildings
+  if (h > 15) {
+    const antGeo = new THREE.SphereGeometry(0.12, 8, 8)
+    const antMat = new THREE.MeshBasicMaterial({ color: colorHex })
+    const ant = new THREE.Mesh(antGeo, antMat)
+    ant.position.set(x, h + 0.12, z)
+    scene.add(ant)
+  }
+}
+
+const rng = (() => { let s = 42; return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; } })()
+for (let i = 0; i < 80; i++) {
+  const x = (rng() - 0.5) * 80
+  const z = (rng() - 0.5) * 80
+  const w = 1.5 + rng() * 4
+  const d = 1.5 + rng() * 4
+  const h = 3 + rng() * 22
+  const c = palettes[Math.floor(rng() * palettes.length)]
+  makeBuilding(x, z, w, d, h, c)
+}
+
+// Central tower
+const towerGeo = new THREE.CylinderGeometry(1.5, 2.5, 28, 6)
+const towerMat = new THREE.MeshStandardMaterial({
+  color: 0x4f46e5, roughness: 0.2, metalness: 0.8,
+  emissive: 0x4f46e5, emissiveIntensity: 0.15
+})
+const tower = new THREE.Mesh(towerGeo, towerMat)
+tower.position.set(0, 14, 0)
+scene.add(tower)
+
+const towerTop = new THREE.Mesh(
+  new THREE.SphereGeometry(0.8, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0xa78bfa })
+)
+towerTop.position.set(0, 28.8, 0)
+scene.add(towerTop)
+
+// Tower beam
+const beamGeo = new THREE.CylinderGeometry(0.04, 0.04, 30, 8)
+const beamMat = new THREE.MeshBasicMaterial({
+  color: 0xa78bfa, transparent: true, opacity: 0.4
+})
+const beam = new THREE.Mesh(beamGeo, beamMat)
+beam.position.set(0, 43, 0)
+scene.add(beam)
+
+// ─── Particles ────────────────────────────────────────────────────────
+const pCount = 3000
+const pPos = new Float32Array(pCount * 3)
+for (let i = 0; i < pCount; i++) {
+  pPos[i*3]   = (Math.random() - 0.5) * 120
+  pPos[i*3+1] = Math.random() * 40
+  pPos[i*3+2] = (Math.random() - 0.5) * 120
+}
+const pGeo = new THREE.BufferGeometry()
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3))
+const pMesh = new THREE.Points(pGeo, new THREE.PointsMaterial({
+  color: 0x60a5fa, size: 0.06, transparent: true, opacity: 0.5, depthWrite: false
+}))
+scene.add(pMesh)
+
+// ─── Path Viz ─────────────────────────────────────────────────────────
+let pathPoints = []
+let pathCurve = null
+let pathLine = null
+const pathDotMeshes = []
+const dotGeo = new THREE.SphereGeometry(0.18, 8, 8)
+const dotMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b })
+
+const curveMat = new THREE.LineBasicMaterial({
+  color: 0x22d3ee, transparent: true, opacity: 0.7
+})
+const tubeMat = new THREE.MeshBasicMaterial({
+  color: 0x22d3ee, transparent: true, opacity: 0.2, side: THREE.DoubleSide
+})
+
+let pathTube = null
+
+function rebuildPathViz() {
+  if (pathLine) { scene.remove(pathLine); pathLine.geometry.dispose() }
+  if (pathTube) { scene.remove(pathTube); pathTube.geometry.dispose() }
+  pathLine = null; pathTube = null
+  for (const d of pathDotMeshes) scene.remove(d)
+  pathDotMeshes.length = 0
+
+  if (pathPoints.length < 2) return
+
+  pathCurve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.5)
+  const pts = pathCurve.getSpacedPoints(pathPoints.length * 10)
+
+  const lineGeo = new THREE.BufferGeometry().setFromPoints(pts)
+  pathLine = new THREE.Line(lineGeo, curveMat)
+  scene.add(pathLine)
+
+  try {
+    pathTube = new THREE.Mesh(
+      new THREE.TubeGeometry(pathCurve, Math.min(pathPoints.length * 4, 200), 0.06, 6, false),
+      tubeMat
+    )
+    scene.add(pathTube)
+  } catch(e) {}
+
+  for (const p of pathPoints) {
+    const dot = new THREE.Mesh(dotGeo, dotMat)
+    dot.position.copy(p)
+    scene.add(dot)
+    pathDotMeshes.push(dot)
+  }
+}
+
+function addPathPoint(pos) {
+  pathPoints.push(pos.clone())
+  rebuildPathViz()
+}
+
+// ─── Controls ──────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.06
+controls.minDistance = 2
+controls.maxDistance = 120
+controls.target.set(0, 5, 0)
+
+// ─── State ────────────────────────────────────────────────────────────
+let isRecording = false
+let isPlaying   = false
+let playbackT   = 0
+let playbackSpeed = 1
+const pathDuration = 8
+
+const ui = {
+  btnRec: document.getElementById('btnRec'),
+  btnPlay: document.getElementById('btnPlay'),
+  btnClear: document.getElementById('btnClear'),
+  statStatus: document.getElementById('statStatus'),
+  statPoints: document.getElementById('statPoints'),
+  statProgress: document.getElementById('statProgress'),
+}
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'KeyR') ui.btnRec.click()
+  if (e.code === 'KeyP') ui.btnPlay.click()
+  if (e.code === 'KeyC') ui.btnClear.click()
+})
+
+ui.btnRec.addEventListener('click', () => {
+  if (isPlaying) {
+    isPlaying = false
+    ui.btnPlay.classList.remove('active-play')
+  }
+  isRecording = !isRecording
+  ui.btnRec.classList.toggle('active-rec', isRecording)
+  if (isRecording) {
+    pathPoints = []
+    rebuildPathViz()
+  }
+  updateStatus()
+})
+
+ui.btnPlay.addEventListener('click', () => {
+  if (pathPoints.length < 2) return
+  if (isRecording) {
+    isRecording = false
+    ui.btnRec.classList.remove('active-rec')
+  }
+  isPlaying = !isPlaying
+  ui.btnPlay.classList.toggle('active-play', isPlaying)
+  if (isPlaying) { playbackT = 0; controls.enabled = false }
+  else controls.enabled = true
+  updateStatus()
+})
+
+ui.btnClear.addEventListener('click', () => {
+  isRecording = false; isPlaying = false
+  pathPoints = []; playbackT = 0; pathCurve = null
+  rebuildPathViz()
+  ui.btnRec.classList.remove('active-rec')
+  ui.btnPlay.classList.remove('active-play')
+  controls.enabled = true
+  updateStatus()
+})
+
+// Speed buttons
+function setSpeed(s) {
+  playbackSpeed = s
+  document.getElementById('s05').classList.toggle('active', s === 0.5)
+  document.getElementById('s1').classList.toggle('active', s === 1)
+  document.getElementById('s2').classList.toggle('active', s === 2)
+  document.getElementById('s4').classList.toggle('active', s === 4)
+}
+document.getElementById('s05').addEventListener('click', () => setSpeed(0.5))
+document.getElementById('s1').addEventListener('click',  () => setSpeed(1))
+document.getElementById('s2').addEventListener('click',  () => setSpeed(2))
+document.getElementById('s4').addEventListener('click',  () => setSpeed(4))
+
+function updateStatus() {
+  if (isRecording) ui.statStatus.innerHTML = '<span class="rec-dot"></span>录制中'
+  else if (isPlaying) ui.statStatus.innerHTML = '<span class="play-dot"></span>回放中'
+  else ui.statStatus.innerHTML = '空闲'
+  ui.statPoints.textContent = pathPoints.length
+  setSpeed(playbackSpeed)
+}
+
+// ─── Clock ────────────────────────────────────────────────────────────
+const clock = new THREE.Clock()
+let recordTimer = 0
+const RECORD_INTERVAL = 0.06
+let lastRecPos = null
+
+// ─── Animation ────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate)
+  const delta = clock.getDelta()
+  const t = clock.elapsedTime
+
+  if (isRecording) {
+    recordTimer += delta
+    if (recordTimer >= RECORD_INTERVAL) {
+      recordTimer = 0
+      const p = camera.position.clone()
+      if (!lastRecPos || p.distanceTo(lastRecPos) > 0.2) {
+        addPathPoint(p)
+        lastRecPos = p.clone()
+      }
+    }
+    ui.statPoints.textContent = pathPoints.length
+  }
+
+  if (isPlaying && pathCurve) {
+    playbackT += delta * playbackSpeed / pathDuration
+    if (playbackT >= 1) {
+      playbackT = 1
+      isPlaying = false
+      ui.btnPlay.classList.remove('active-play')
+      controls.enabled = true
+    }
+    const pos = pathCurve.getPoint(playbackT)
+    const lookAhead = pathCurve.getPoint(Math.min(1, playbackT + 0.03))
+    camera.position.lerp(pos, 0.1)
+    controls.target.lerp(lookAhead, 0.1)
+    ui.statProgress.textContent = (playbackT * 100).toFixed(1) + '%'
+  } else if (!isPlaying) {
+    ui.statProgress.textContent = '—'
+    controls.update()
+  }
+
+  // Pulse dots
+  for (let i = 0; i < pathDotMeshes.length; i++) {
+    pathDotMeshes[i].scale.setScalar(1 + Math.sin(t * 4 + i * 0.5) * 0.25)
+  }
+
+  // Animate particles
+  pMesh.rotation.y += delta * 0.008
+
+  // Tower beam pulse
+  beam.material.opacity = 0.2 + Math.sin(t * 2) * 0.15
+
+  // Tower light pulse
+  towerTop.material.color.setHSL(0.72 + Math.sin(t * 0.5) * 0.05, 0.8, 0.6)
+
+  renderer.render(scene, camera)
+}
+
+updateStatus()
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+animate()
+</script>
+</body>
+</html>

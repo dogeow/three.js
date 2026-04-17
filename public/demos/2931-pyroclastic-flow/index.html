@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>2931. Pyroclastic Flow</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(10, 5, 8, 0.85);
+      border: 1px solid rgba(255, 100, 0, 0.3);
+      border-radius: 8px;
+      padding: 14px 18px;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      line-height: 1.7;
+      max-width: 320px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 20px rgba(255, 68, 0, 0.1);
+    }
+    #info h1 {
+      margin: 0 0 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #ff8844;
+      border-bottom: 1px solid rgba(255, 100, 0, 0.3);
+      padding-bottom: 8px;
+    }
+    #info p {
+      margin: 0 0 8px;
+      color: #ccc;
+    }
+    #info ul {
+      margin: 0;
+      padding-left: 18px;
+      color: #aaa;
+    }
+    #info li {
+      margin-bottom: 3px;
+    }
+    #info .tag {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 8px;
+      background: rgba(255, 68, 0, 0.2);
+      border: 1px solid rgba(255, 68, 0, 0.4);
+      border-radius: 4px;
+      font-size: 11px;
+      color: #ff8844;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <h1>火山碎屑流 Pyroclastic Flow</h1>
+    <p>火山喷发时，炽热的岩浆碎屑和气体混合物沿山坡高速滚落。本演示模拟这一过程：</p>
+    <ul>
+      <li>8000 个粒子从火山口喷发，受重力与阻力影响</li>
+      <li>粒子颜色从炽热橙黄渐变为冷却暗灰</li>
+      <li>2000 个灰烬粒子持续飘散</li>
+      <li>火山口熔岩与光照持续闪烁</li>
+    </ul>
+    <span class="tag">粒子系统 · 火山模拟 · 自定义着色器</span>
+  </div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
