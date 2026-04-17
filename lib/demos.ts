@@ -33,6 +33,15 @@ function getDemoPriority(demo: Demo): number {
   return priority;
 }
 
+function compareDemos(a: Demo, b: Demo): number {
+  const aIndex = a.index ?? Number.MAX_SAFE_INTEGER;
+  const bIndex = b.index ?? Number.MAX_SAFE_INTEGER;
+
+  if (aIndex !== bIndex) return aIndex - bIndex;
+  if (!!a.autoRegistered !== !!b.autoRegistered) return Number(!!a.autoRegistered) - Number(!!b.autoRegistered);
+  return a.slug.localeCompare(b.slug, 'zh-CN', { numeric: true, sensitivity: 'base' });
+}
+
 function normalizeDemos(source: Demo[]): Demo[] {
   const deduped = new Map<string, Demo>();
 
@@ -50,7 +59,7 @@ function normalizeDemos(source: Demo[]): Demo[] {
     }
   }
 
-  return Array.from(deduped.values());
+  return Array.from(deduped.values()).sort(compareDemos);
 }
 
 function normalizeCategories(source: Category[], demoList: Demo[]): Category[] {

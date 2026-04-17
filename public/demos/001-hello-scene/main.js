@@ -27,8 +27,12 @@ scene.add(cube)
 renderer.render(scene, camera)
 
 // 6. 处理窗口缩放
+// 这个示例是静态场景，不需要持续动画循环。
+// 但在窗口或 iframe 尺寸变化后，renderer.setSize() 会重置绘制缓冲区，
+// 所以这里需要补一次 render，否则在分栏拖动后画面会变空白。
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight
   camera.updateProjectionMatrix()
   renderer.setSize(innerWidth, innerHeight)
+  renderer.render(scene, camera)
 })

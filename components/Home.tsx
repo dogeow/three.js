@@ -12,6 +12,12 @@ export default function Home({ demos, categories }: Props) {
   const [query, setQuery] = useState('');
   const [openDemo, setOpenDemo] = useState<Demo | null>(null);
 
+  const displayIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    demos.forEach((demo, idx) => m.set(demo.slug, idx + 1));
+    return m;
+  }, [demos]);
+
   const catColor = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of categories) m.set(c.name, c.dot);
@@ -135,12 +141,12 @@ export default function Home({ demos, categories }: Props) {
                 onClick={(e) => handleOpen(d, e)}
               >
                 <div className="card-header">
-                  {d.index !== null && (
+                  {displayIndex.get(d.slug) !== undefined && (
                     <span
                       className="card-index"
                       style={{ background: `linear-gradient(135deg, ${catColor.get(d.categories[0] || '') || '#888'}, ${catColor.get(d.categories[0] || '') || '#555'})` }}
                     >
-                      {d.index}
+                      {displayIndex.get(d.slug)}
                     </span>
                   )}
                   <span className="card-tags-row">
