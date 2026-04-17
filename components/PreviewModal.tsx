@@ -62,6 +62,31 @@ export default function PreviewModal({ demo, siblings = [], onNavigate, onClose 
     [demo.slug],
   );
 
+  useEffect(() => {
+    const { body, documentElement } = document;
+    const scrollY = window.scrollY;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyWidth = body.style.width;
+    const prevHtmlOverflow = documentElement.style.overflow;
+
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    documentElement.style.overflow = 'hidden';
+
+    return () => {
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.width = prevBodyWidth;
+      documentElement.style.overflow = prevHtmlOverflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
   // Close on Escape, ArrowLeft/Right to navigate
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

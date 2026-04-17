@@ -149,6 +149,7 @@ body::after {
   background: rgba(5, 5, 10, 0.85); backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
   padding: 20px;
+  overscroll-behavior: contain;
 }
 .modal-shell {
   width: 100%; height: 100%; max-width: 1600px; max-height: 920px;
@@ -167,7 +168,7 @@ body::after {
 .modal-btn.primary:hover { background: #3b82f6; color: #fff; }
 
 .modal-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
-.info-sidebar { width: 260px; flex-shrink: 0; padding: 16px; background: var(--bg-modal); border-right: 1px solid var(--border-color); overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.info-sidebar { width: 260px; flex-shrink: 0; padding: 16px; background: var(--bg-modal); border-right: 1px solid var(--border-color); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 16px; }
 .info-sidebar .info-block { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
 .info-sidebar .info-value { color: var(--text-primary); line-height: 1.55; word-break: break-word; }
 .info-sidebar .info-value.mono { font-family: var(--font-mono); font-size: 11.5px; color: #a5b4fc; }
@@ -196,7 +197,7 @@ body::after {
 .editor-actions { display: flex; gap: 2px; }
 .code-close { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: transparent; border: none; border-radius: 4px; color: var(--text-muted); cursor: pointer; font-size: 14px; transition: all .15s; }
 .code-close:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-.code-scroll { flex: 1; overflow: auto; background: var(--bg-code); }
+.code-scroll { flex: 1; overflow: auto; overscroll-behavior: contain; background: var(--bg-code); }
 .code-pre { margin: 0; padding: 12px 14px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; tab-size: 2; }
 .code-pre code { background: transparent !important; padding: 0 !important; font-family: inherit; }
 .code-loading { padding: 20px; color: var(--text-muted); font-size: 12px; }

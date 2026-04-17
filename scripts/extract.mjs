@@ -56,7 +56,7 @@ for (const m of html.matchAll(cardRe)) {
   });
 }
 
-const registered = new Set(cards.map((c) => c.slug));
+const registered = new Set(cards.map((c) => canonicalKey(c.slug)));
 
 // ---- Merge with filesystem directories ----
 const fsDirs = readdirSync(ROOT)
@@ -70,7 +70,7 @@ const fsDirs = readdirSync(ROOT)
   })
   .sort();
 
-const missing = fsDirs.filter((d) => !registered.has(d));
+const missing = fsDirs.filter((d) => !registered.has(canonicalKey(d)));
 console.log(`Parsed: ${cards.length} cards, ${categories.length} categories`);
 console.log(`FS dirs: ${fsDirs.length}, missing from HTML: ${missing.length}`);
 
@@ -126,4 +126,7 @@ function prettify(slug) {
 function parseLeadingNum(slug) {
   const m = slug.match(/^(\d+)-/);
   return m ? Number(m[1]) : null;
+}
+function canonicalKey(slug) {
+  return slug.replace(/^\d+-/, '').trim().toLowerCase();
 }
