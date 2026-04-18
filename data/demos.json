@@ -172,7 +172,7 @@
     "slug": "008-material-showcase",
     "name": "008-material-showcase",
     "title": "Material Showcase",
-    "desc": "四种材质对比：MeshBasicMaterial（无光照）、MeshLambertMaterial（漫反射）、MeshPhongMaterial（高光）、MeshStandardMaterial（PBR）。",
+    "desc": "固定相同球体与 TorusKnot、固定同一套灯光，只替换 MeshBasic / Lambert / Phong / Standard 四种材质，对比它们对光照与高光的响应差异。",
     "categories": [
       "入门基础"
     ],
@@ -319,14 +319,28 @@
     "slug": "02-geometry-material",
     "name": "02-geometry-material",
     "title": "Geometry Material",
-    "desc": "展示 Three.js 中各种几何体（立方体、球体、圆柱体等）和基础材质（Basic、Lambert、Phong）的使用方法。",
+    "desc": "统一使用 MeshStandardMaterial 与同一套灯光，只对比 Box / Sphere / Cone / Cylinder / Torus / TorusKnot 等几何体的轮廓、分段与体积差异。",
     "categories": [
       "几何体与建模",
       "光照与环境",
       "着色器与材质"
     ],
     "index": 53,
-    "features": [],
+    "features": [
+      "AmbientLight",
+      "BoxGeometry",
+      "ConeGeometry",
+      "CylinderGeometry",
+      "DirectionalLight",
+      "EdgesGeometry",
+      "GridHelper",
+      "Mesh",
+      "MeshStandardMaterial",
+      "OrbitControls",
+      "SphereGeometry",
+      "TorusGeometry",
+      "TorusKnotGeometry"
+    ],
     "extraCount": 0
   },
   {

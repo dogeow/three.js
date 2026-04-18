@@ -2,11 +2,11 @@
 // 核心三要素：Scene（场景）、Camera（相机）、Renderer（渲染器）
 import * as THREE from 'three'
 
-// 1. 创建场景（所有 3D 物体的容器）
+// 1. 创建 Scene（场景），所有 3D 物体的容器
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x111111)
+scene.background = new THREE.Color(0x3C3C3C)
 
-// 2. 创建透视相机
+// 2. 创建透视相机（模拟人眼，远小近大）
 // 参数：视野角(FOV) | 宽高比 | 近裁剪面 | 远裁剪面
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000)
 camera.position.set(3, 2, 5)
@@ -15,7 +15,7 @@ camera.lookAt(0, 0, 0)
 // 3. 创建 WebGL 渲染器
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(innerWidth, innerHeight)
-renderer.setPixelRatio(devicePixelRatio)
+renderer.setPixelRatio(devicePixelRatio) // 高清屏不糊
 document.body.appendChild(renderer.domElement)
 
 // 4. 创建一个绿色立方体

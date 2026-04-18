@@ -11,87 +11,40 @@
     color: #fff; font: 14px/1.6 -apple-system, sans-serif;
     background: rgba(0,0,0,.4); padding: 8px 12px; border-radius: 6px;
   }
+  .legend {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    display: grid; grid-template-columns: repeat(6, minmax(88px, 1fr)); gap: 8px;
+    width: min(920px, calc(100vw - 24px));
+    color: #d8e6ff; font: 12px/1.4 -apple-system, sans-serif;
+    pointer-events: none;
+  }
+  .legend span {
+    padding: 8px 10px; text-align: center;
+    background: rgba(8, 12, 20, 0.55); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px; backdrop-filter: blur(10px);
+  }
 </style>
 </head>
 <body>
-<div class="tip">几何体与材质：6 种常用 Geometry，搭配不同 Material</div>
+<div class="tip">统一使用 MeshStandardMaterial，仅对比 Geometry 轮廓、分段与体积差异</div>
+<div class="legend">
+  <span>Box</span>
+  <span>Sphere</span>
+  <span>Cone</span>
+  <span>Cylinder</span>
+  <span>Torus</span>
+  <span>TorusKnot</span>
+</div>
 
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
   }
 }
 </script>
 
-<script type="module">
-import * as THREE from 'three'
-
-const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
-camera.position.set(0, 2, 8)
-camera.lookAt(0, 0, 0)
-
-const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
-renderer.setPixelRatio(devicePixelRatio)
-document.body.appendChild(renderer.domElement)
-
-// ============ 灯光（StandardMaterial 需要光才能看见） ============
-scene.add(new THREE.AmbientLight(0xffffff, 0.4))
-const dir = new THREE.DirectionalLight(0xffffff, 1)
-dir.position.set(5, 5, 5)
-scene.add(dir)
-
-// ============ 6 个几何体 ============
-// 第二个参数都是「分段数」，越高越圆滑，但顶点更多
-const geometries = [
-  new THREE.BoxGeometry(1, 1, 1),                    // 立方体
-  new THREE.SphereGeometry(0.6, 32, 32),             // 球体
-  new THREE.ConeGeometry(0.6, 1.2, 32),              // 圆锥
-  new THREE.CylinderGeometry(0.5, 0.5, 1.2, 32),     // 圆柱
-  new THREE.TorusGeometry(0.5, 0.2, 16, 64),         // 圆环
-  new THREE.TorusKnotGeometry(0.4, 0.15, 100, 16)    // 环面纽结
-]
-
-// ============ 4 种常用材质对比 ============
-// MeshBasicMaterial   — 不受光影响，纯色/贴图，最便宜
-// MeshLambertMaterial — 漫反射光照，无高光，便宜
-// MeshPhongMaterial   — 有高光，可调 shininess
-// MeshStandardMaterial— 物理基础渲染(PBR)，支持 metalness/roughness，最真实
-
-const meshes = []
-geometries.forEach((geo, i) => {
-  const mat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color().setHSL(i / geometries.length, 0.6, 0.5),
-    metalness: 0.3,
-    roughness: 0.4
-  })
-  const mesh = new THREE.Mesh(geo, mat)
-  // 横向排开
-  mesh.position.x = (i - (geometries.length - 1) / 2) * 1.8
-  scene.add(mesh)
-  meshes.push(mesh)
-})
-
-// ============ 渲染循环 ============
-function animate() {
-  requestAnimationFrame(animate)
-  meshes.forEach((m, i) => {
-    m.rotation.x += 0.005 + i * 0.001
-    m.rotation.y += 0.01
-  })
-  renderer.render(scene, camera)
-}
-animate()
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-})
-
-window.meshes = meshes
-</script>
+<script type="module" src="main.js"></script>
 </body>
 </html>

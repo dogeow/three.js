@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x111111)
+scene.background = new THREE.Color(0x3C3C3C)
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000)
 camera.position.set(3, 2, 5)
